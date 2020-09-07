@@ -1,0 +1,617 @@
+ /*   SIST ENDRET PÅ PROD   2002.10.30  8.56.00 AV   JDA2970          */        
+ /*       SIST ENDRET 09/06-98 08.32.13 AV   SPA7339                  */        
+ /*       SIST ENDRET 26/05-98 09.37.33 AV   RFA9991                  */        
+ /* ***************************************************************** */        
+ %SKIP;                                /*  */                                   
+ /* ***************************************************************** */        
+ /*               R 0 0 1 0 6 0 5                                     */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R0010605   KONTROLL_UP_SPES   SUBPROGRAM         */        
+ /*  PROGRAM-SPRÅK : PLI                                              */        
+ /*  PROGRAMMERER  : PER F. BERGESTAD                                 */        
+ /*  PROGRAMMET BLE LAGET : APRIL 1981                                */        
+ /*  ENDRINGSDATO  :                                                  */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  KONTROLLERER GRUNNBLANKETT UP - DEN SPESIELLE DEL.               */        
+ /*  RETURNERER FEIL_FUNNET = '1'B VED FEIL, ELLERS '0'B.             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMET INCLUDES AV R0010601 - KONTROLL_GRUNNBLANKETT_AP      */        
+ /*  ARBEIDSOMRÅDET P0010601 ER INCLUDET I HOVEDPROG.                 */        
+ /*  BRUK :                                                           */        
+ /*      CALL KONTROLL_UP_SPES(FEIL_FUNNET);                          */        
+ /*                                                                   */        
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN INCLUDES I HOVEDPROG :       */        
+ /*      R0019910 - F_NUMERISK                                        */        
+ /*      R0019912 - F_FELT_PIC_CHARNN                                 */        
+ /*      VERIFY   - BUILTIN-FUNCTION                                  */        
+ /*                                                                   */        
+ /*  EKSTERN PROSEDYRE SOM CALLES :                                   */        
+ /*      R0010608 - TT_UP_EP     (INCLUDE I HOVEDPROG)                */        
+ /*                                                                   */        
+ /*  INTERNE PROSEDYRER :                                             */        
+ /*      KONTROLL_UP_SPES(FEIL_FUNNET)                                */        
+ /*      SJEKK_TT_NUMERISK                                            */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*   STATTAB - STATSBORGERSKAPSTABELL - EXEC CICS READ DATASET       */        
+ /*                                      ('STATTAB')........          */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */        
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */        
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDINGER PÅ SKJERMBILDET.   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ KONTROLL_UP_SPES:                                                              
+   PROC(FEIL_FUNNET);                                                           
+ %PAGE;                                                                         
+   DCL                                                                          
+      FEIL_FUNNET         BIT(1);                                               
+   DCL                                                                          
+      KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),                    
+      KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),                    
+      KEY_PEKER1                 POINTER,                                       
+      KEY_PEKER2                 POINTER,                                       
+      ST_RECL                    CHAR (35);                                     
+   DCL                                                                          
+      T_FNR               PIC'(11)9';                                           
+   DCL                                                                          
+      1 FNR DEF T_FNR,                                                          
+         2 DG             PIC'99',                                              
+         2 MN             PIC'99',                                              
+         2 ÅR             PIC'99',                                              
+         2 PERSNR,                                                              
+            3 ÅRHUNDRE    PIC'999',                                             
+            3 REST        PIC'99';                                              
+                                                                                
+   DCL                                                                          
+      FNR13                    PIC '(13)9',                                     
+      FNR13_MÅ POS (3) DEF FNR13 PIC '999999',                                  
+      FNR13_D  POS (1) DEF FNR13 PIC '99',                                      
+      FNR13_M  POS (3) DEF FNR13 PIC '99',                                      
+      FNR13_Å  POS (5) DEF FNR13 PIC '9999';                                    
+                                                                                
+   DCL                                                                          
+       FNR13_ÅMD                      PIC '99999999';                           
+   DCL                                                                          
+       F_AAR  DEF FNR13  POS(5)       PIC '9999';                               
+   DCL                                                                          
+      1 ALDER_67       DEF FYLT_SEKSTISJU,                                      
+        2 ÅR                   PIC'9999',                                       
+        2 MND                  PIC'99',                                         
+        2 DG                   PIC'99';                                         
+   DCL                                                                          
+      1 ALDER_70       DEF FYLT_SYTTI,                                          
+        2 ÅR                   PIC'9999',                                       
+        2 MND                  PIC'99',                                         
+        2 DG                   PIC'99';                                         
+                                                                                
+   DCL                                                                          
+      FYLT_SEKSTISJU      PIC'(8)9',                                            
+      FYLT_SYTTI          PIC'(8)9';                                            
+   DCL                                                                          
+      TT                  PIC'99',                                              
+      TT_EK               PIC'99',                                              
+      MAKS_TT_ETTER_UFT   PIC'(4)9',                                            
+      ELLEVE_NITTINI      FIXED DEC (5) INIT (01199),                           
+      TT_FRAMT_8_1_MMMM   PIC'(4)9',                                            
+      FEIL                BIT(1),                                               
+      SUM                 PIC'99';                                              
+   DCL                                                                          
+      MAKS_TT_ETTER_UFT_M PIC'(2)9' DEF MAKS_TT_ETTER_UFT POS(1),               
+      MAKS_TT_ETTER_UFT_Å PIC'(2)9' DEF MAKS_TT_ETTER_UFT POS(3);               
+   DCL                                                                          
+      MAKS_TT_FØR_1967    PIC'99',                                              
+      TT_TIL_TPK          PIC'(4)9',                                            
+      TT_E66_ÅM           PIC'(4)9',                                            
+      W_TT_E66_Å_EK       PIC'99';                                              
+ %SKIP(2);                                                                      
+      T_FNR       = UPS.FNR;                                                    
+      TT_E66_ÅM   = UPSP.TT_E66_Å * 100 + UPSP.TT_E66_M;                        
+      FNR13       = KONV_FNR11_FNR13(T_FNR);                                    
+      FNR13_ÅMD   = FNR13_Å * 10000 +                                           
+                    FNR13_M * 100   +                                           
+                    FNR13_D           ;                                         
+                                                                                
+ %PAGE;                                /*    */                                 
+                                                                                
+ /* ***************************************************************** */        
+ /* TESTER OM FORUTSETNINGENE FOR Å KONTROLLERE FELTENE I SPES.INFO   */        
+ /* DELEN ER TILSTEDE. DVS.:                                          */        
+ /* - ET ELLER FLERE FELT MÅ VÆRE UTFYLT                              */        
+ /* - NUMERISKE FELT KAN BARE INNEHOLDE NUMERISKE VERDIER             */        
+ /* ***************************************************************** */        
+                                                                                
+    FEIL_FUNNET = '0'B;                                                         
+    KEY_PEKER1  = ADDR(UPSP.STATSBORGER);                                       
+    KEY_PEKER2  = ADDR(UPSP.BOSATT);                                            
+    CALL SJEKK_TT_NUMERISK;                                                     
+                                                                                
+    IF ^FEIL_FUNNET THEN                                                        
+      DO;                                                                       
+                                                                                
+ /* ***************************************************************** */        
+ /* HVIS ALLE FELT ER BLANKE ELLER 0, ER DET FEIL...................  */        
+ /* ***************************************************************** */        
+                                                                                
+        IF UPSP.TT_F67         = 0 & UPSP.TT_E66_Å     = 0 &                    
+           UPSP.TT_E66_M       = 0 & UPSP.TT_F67_EK    = 0 &                    
+           UPSP.TT_E66_Å_EK    = 0 & UPSP.TT_E66_M_EK  = 0 &                    
+           UPSP.TT_FRAMT_8_1_Å = 0 & UPSP.TT_ETTER_UFT = 0 &                    
+           F_FELT_PIC_CHAR3(UPSP.STATSBORGER) = '000' &                         
+           F_FELT_PIC_CHAR3(UPSP.BOSATT)      = '000' &                         
+           UPSP.FRAVIK_BOSATT  = ' ' &                                          
+           UPSP.TRYGDET_3ÅR    = ' ' & UPSP.FRA_TRY_3ÅR    = ' ' &              
+           UPSP.FRAVIK_8_1     = ' ' & UPSP.KONVENSJON     = ' ' &              
+           UPSP.FRAVIK_19_3    = ' ' & UPSP.FRAVIK_FLYKT   = ' ' &              
+           UPSP.OVERKOMP_UTL   = ' ' & UPSP.UFØR_U_BOTID   = ' ' &              
+           UPSP.IKKE_GP        = ' ' THEN                                       
+           DO;                                                                  
+              FEIL_FUNNET         = '1'B;                                       
+              UPS.NORSK_BOSATTNR = 61;                                          
+           END;                                                                 
+        ELSE                                                                    
+           DO;                                                                  
+                                                                                
+ /* ***************************************************************** */        
+ /* FELTKONTROLLER........                                            */        
+ /* ***************************************************************** */        
+                                                                                
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)               
+                                               INTO(ST_RECL);                   
+              GOTO STAT_UT;                                                     
+          NOTFND1:                                                              
+              FEIL_FUNNET        = '1'B;                                        
+              UPSP.STATSBORGERNR = 24;                                          
+              GOTO STAT_UT;                                                     
+          STAT_UT:                                                              
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT2)               
+                                               INTO(ST_RECL);                   
+              GOTO BO_UT;                                                       
+          NOTFND2:                                                              
+              FEIL_FUNNET   = '1'B;                                             
+              UPSP.BOSATTNR = 25;                                               
+              GOTO BO_UT;                                                       
+          BO_UT:                                                                
+                                                                                
+            IF ^(UPSP.FRAVIK_BOSATT = ' ' ! UPSP.FRAVIK_BOSATT = 'J' !          
+                 UPSP.FRAVIK_BOSATT = 'N') THEN                                 
+               DO;                                                              
+                  FEIL_FUNNET          = '1'B;                                  
+                  UPSP.FRAVIK_BOSATTNR = 119;                                   
+               END;                                                             
+            IF ^(UPSP.TRYGDET_3ÅR = 'J' ! UPSP.TRYGDET_3ÅR = 'N') THEN          
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  UPSP.TRYGDET_3ÅRNR = 37;                                      
+               END;                                                             
+            IF ^(UPSP.FRA_TRY_3ÅR = ' ' !                                       
+                 UPSP.FRA_TRY_3ÅR = 'J') THEN                                   
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  UPSP.FRA_TRY_3ÅRNR = 120;                                     
+               END;                                                             
+            IF ^(UPSP.FRAVIK_8_1 = ' ' ! UPSP.FRAVIK_8_1 = 'J') THEN            
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  UPSP.FRAVIK_8_1NR = 58;                                       
+               END;                                                             
+            IF ^(UPSP.KONVENSJON = ' ' ! UPSP.KONVENSJON = 'J') THEN            
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  UPSP.KONVENSJONNR = 125;                                      
+               END;                                                             
+            IF UPSP.KONVENSJON = 'J' & (UPSP.TRYGDET_3ÅR = 'J' &                
+               UPSP.BOSATT = 0) THEN                                            
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  UPSP.BOSATTNR = 240;                                          
+                  UPSP.TRYGDET_3ÅRNR = 999;                                     
+                  UPSP.KONVENSJONNR = 999;                                      
+               END;                                                             
+            IF ^(UPSP.FRAVIK_FLYKT = ' ' ! UPSP.FRAVIK_FLYKT = 'J')             
+               THEN                                                             
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  UPSP.FRAVIK_FLYKTNR = 26;                                     
+               END;                                                             
+            IF ^(UPSP.OVERKOMP_UTL = 'N' ! UPSP.OVERKOMP_UTL = 'J') &           
+                 F_AAR < 1937   THEN                                            
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  UPSP.OVERKOMP_UTLNR = 35;                                     
+               END;                                                             
+            IF ^(UPSP.OVERKOMP_UTL = ' ' ) &                                    
+                 F_AAR > 1936   THEN                                            
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  UPSP.OVERKOMP_UTLNR = 623;                                    
+               END;                                                             
+            IF ^(                                                               
+              UPSP.UFØR_U_BOTID  = ' ' ! UPSP.UFØR_U_BOTID = 'J' !              
+               UPSP.UFØR_U_BOTID = 'N') THEN                                    
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  UPSP.UFØR_U_BOTIDNR = '59';                                   
+               END;                                                             
+            IF ^(UPSP.IKKE_GP = ' ' ! UPSP.IKKE_GP = 'J') THEN                  
+               DO;                                                              
+                  FEIL_FUNNET    = '1'B;                                        
+                  UPSP.IKKE_GPNR = 36;                                          
+               END;                                                             
+           END;                                                                 
+        END;                                                                    
+ %PAGE;                                /*    */                                 
+                                                                                
+ /* ***************************************************************** */        
+ /*              DIV. KRYSSKONTROLLER                                 */        
+ /* ***************************************************************** */        
+                                                                                
+      IF ^FEIL_FUNNET THEN                                                      
+         DO;                                                                    
+ %PAGE;                                                                         
+            IF UPSP.TRYGDET_3ÅR = 'N' & UPSP.FRA_TRY_3ÅR = ' ' &                
+               UPS.YSKADE_TILLEGG ^= 'J'              &                         
+               UPSP.TT_F67 = 0 &                                                
+               UPSP.TT_E66_Å = 0 & UPSP.TT_E66_M = 0  THEN                      
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  UPSP.TRYGDET_3ÅRNR = 147;                                     
+                  UPSP.FRA_TRY_3ÅRNR = 999;                                     
+                  UPSP.KONVENSJONNR  = 999;                                     
+               END;                                                             
+            IF UPSP.KONVENSJON = 'J' & UPSP.FRAVIK_8_1  = 'J' THEN              
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                   UPSP.KONVENSJONNR = 155;                                     
+                  UPSP.FRAVIK_8_1NR  = 999;                                     
+               END;                                                             
+            IF UPSP.FRAVIK_FLYKT = 'J' & (UPSP.TT_F67 > 0 !                     
+               UPSP.TT_E66_Å > 0 ! UPSP.TT_E66_M > 0) THEN                      
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  UPSP.FRAVIK_FLYKTNR = 157;                                    
+                  UPSP.TT_F67NR       = 999;                                    
+                  UPSP.TT_E66_ÅNR     = 999;                                    
+                  UPSP.TT_E66_MNR     = 999;                                    
+               END;                                                             
+                                                                                
+  /* *************************************************************** */         
+  /*        IF UPSP.FRAVIK_8_1 = 'J' & UPSP.TT_FRAMT_8_1_Å > 0 THEN  */         
+  /*           DO;                                                   */         
+  /*              FEIL_FUNNET           = '1'B;                      */         
+  /*              UPSP.FRAVIK_8_1NR     = 126;                       */         
+  /*              UPSP.TT_FRAMT_8_1_ÅNR = 999;                       */         
+  /*           END;                                                  */         
+  /* *************************************************************** */         
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+            IF UPSP.TRYGDET_3ÅR = 'J' & UPSP.FRA_TRY_3ÅR ^= ' ' THEN            
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  UPSP.TRYGDET_3ÅRNR    = 103;                                  
+                  UPSP.FRA_TRY_3ÅRNR    = 999;                                  
+               END;                                                             
+            IF UPSP.BOSATT > 0 & UPSP.FRAVIK_BOSATT = 'N' &                     
+               UPS.YSKADE_TILLEGG ^= 'J'              &                         
+               UPSP.KONVENSJON = ' ' & UPSP.IKKE_GP = ' ' THEN                  
+               DO;                                                              
+                  FEIL_FUNNET          = '1'B;                                  
+                  UPSP.BOSATTNR        = 128;                                   
+                  UPSP.FRAVIK_BOSATTNR = 999;                                   
+                  UPSP.KONVENSJONNR    = 999;                                   
+                  UPSP.IKKE_GPNR       = 999;                                   
+               END;                                                             
+ %PAGE;                                                                         
+            IF UPSP.FRAVIK_8_1 = 'J' & UPSP.KONVENSJON = 'J' THEN               
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  UPSP.FRAVIK_8_1NR  = 155;                                     
+                  UPSP.KONVENSJONNR  = 999;                                     
+               END;                                                             
+            IF UPSP.KONVENSJON  = 'J' &                                         
+               (UPSP.FRAVIK_BOSATT = 'J' ! UPSP.FRAVIK_BOSATT = 'N' !           
+                UPSP.FRAVIK_8_1  = 'J' ! UPSP.FRA_TRY_3ÅR = 'J') THEN           
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  UPSP.KONVENSJONNR     = 105;                                  
+                  UPSP.FRAVIK_BOSATTNR  = 999;                                  
+                  UPSP.FRAVIK_8_1NR     = 999;                                  
+                  UPSP.FRA_TRY_3ÅRNR    = 999;                                  
+               END;                                                             
+            IF UPSP.FRAVIK_8_1 = 'J' & UPSP.BOSATT = 0 THEN                     
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  UPSP.BOSATTNR         = 106;                                  
+                  UPSP.FRAVIK_8_1NR     = 999;                                  
+               END;                                                             
+ %PAGE;                                                                         
+                                                                                
+  /* *************************************************************** */         
+  /*        IF UPSP.TT_FRAMT_8_1_Å > 0 & UPSP.FRAVIK_8_1 = ' ' THEN  */         
+  /*           DO;                                                   */         
+  /*              FEIL_FUNNET           = '1'B;                      */         
+  /*              UPSP.TT_FRAMT_8_1_ÅNR = 109;                       */         
+  /*              UPSP.FRAVIK_8_1NR     = 999;                       */         
+  /*           END;                                                  */         
+  /* *************************************************************** */         
+                                                                                
+            IF UPSP.BOSATT = 0 & UPSP.FRAVIK_BOSATT ^= ' ' THEN                 
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  UPSP.BOSATTNR         = 110;                                  
+                  UPSP.FRAVIK_BOSATTNR  = 999;                                  
+               END;                                                             
+                                                                                
+            IF UPSP.TT_FRAMT_8_1_Å > 0 & UPSP.TT_ETTER_UFT > 0 THEN             
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  UPSP.TT_FRAMT_8_1_ÅNR = 224;                                  
+                  UPSP.TT_ETTER_UFTNR   = 999;                                  
+               END;                                                             
+            IF UPSP.KONVENSJON = 'J' & UPSP.FRAVIK_BOSATT = 'J' THEN            
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  UPSP.FRAVIK_BOSATTNR = 189;                                   
+                  UPSP.KONVENSJONNR   = 999;                                    
+               END;                                                             
+            IF UPSP.KONVENSJON = 'J' & UPSP.FRAVIK_BOSATT = 'N' THEN            
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  UPSP.FRAVIK_BOSATTNR = 105;                                   
+                  UPSP.KONVENSJONNR   = 999;                                    
+               END;                                                             
+          END;                                                                  
+ %PAGE;   /*  */                                                                
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* KRYSSKONTROLLER HVOR UPSP.FRAVIK_19_3 INNGÅR I ALLE               */        
+ /* ***************************************************************** */        
+                                                                                
+  IF ^FEIL_FUNNET THEN                                                          
+     DO;                                                                        
+        IF UPSP.FRAVIK_19_3 ^= ' ' THEN                                         
+           DO;                                                                  
+           /** FRAVIK_19_3 ER UTFYLT **/                                        
+              IF VERIFY(UPSP.FRAVIK_19_3,'012345678') ^= 0 THEN                 
+                 DO;                                                            
+                    FEIL_FUNNET        = '1'B;                                  
+                    UPSP.FRAVIK_19_3NR = 28;                                    
+                 END;                                                           
+              IF UPSP.BOSATT = 0 THEN                                           
+                 DO;                                                            
+                    FEIL_FUNNET           = '1'B;                               
+                    UPSP.BOSATTNR         = 219;                                
+                    UPSP.FRAVIK_19_3NR    = 999;                                
+                 END;                                                           
+              IF (FNR.ÅR+1900+16) > 1967 THEN                                   
+                 DO;                                                            
+                    FEIL_FUNNET               = '1'B;                           
+                    UPSP.FRAVIK_19_3NR        = 102;                            
+                 END;                                                           
+              IF UPSP.UFØR_U_BOTID = 'J' & UPSP.FRAVIK_19_3 ^= '8' THEN         
+                 DO;                                                            
+                    FEIL_FUNNET         = '1'B;                                 
+                    UPSP.UFØR_U_BOTIDNR = '87';                                 
+                    UPSP.FRAVIK_19_3NR  = 999;                                  
+                 END;                                                           
+              IF UPSP.FRAVIK_BOSATT = 'N' & UPSP.FRAVIK_19_3 ^= '0' THEN        
+                 DO;                                                            
+                    FEIL_FUNNET               = '1'B;                           
+                    UPSP.FRAVIK_BOSATTNR      = 101;                            
+                    UPSP.FRAVIK_19_3NR        = 999;                            
+                 END;                                                           
+           END;  /* FRAVIK_19_3 ER UTFYLT */                                    
+     END;  /* FEIL_FUNNET */                                                    
+                                                                                
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /*  KONTROLL AV TT ETTER UFØRETIDSPUNKT                              */        
+ /* ***************************************************************** */        
+                                                                                
+  IF ^FEIL_FUNNET THEN                                                          
+     DO;                                                                        
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* REGNER UT ÅR OG MND VEDKOMMENDE FYLLER 67 ÅR (MMM)                */        
+ /*(SIFFER 7-9 ANGIR ÅRHUNDRE:1800-TALLET 500-749,1900-TALLET 000-499)*/        
+ /* ***************************************************************** */        
+      /* 2000-3 */                                                              
+    FYLT_SEKSTISJU  = FNR13_ÅMD  + 670000;                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* REGNER UT ÅR OG MND VEDKOMMENDE FYLLER 70 ÅR (MMM)   (SE OVENFOR) */        
+ /* ***************************************************************** */        
+                                                                                
+     FYLT_SYTTI =  FNR13_ÅMD  + 700000 ;   /*Y2K*/                              
+ %PAGE;                                /*   */                                  
+                                                                                
+ /* ***************************************************************** */        
+ /* KONTROLLERER SØKERENS TRYGDETID :                                 */        
+ /* - OM TT FØR 1967 ER FOR HØY                                       */        
+ /* - OM TT FOM. 1/1 1967 TOM. UFØREMÅNEDEN ER FOR HØY                */        
+ /* - LEGGER 1 ÅR TIL TT_E66_Å HVIS TT_E66_M > 0                      */        
+ /* ***************************************************************** */        
+                                                                                
+        IF UPSP.TT_F67 = 0 & UPSP.TT_E66_Å = 0 &                                
+           UPSP.TT_E66_M = 0 THEN                                               
+           DO;                                                                  
+                                                                                
+                                                                                
+           END;                                                                 
+        ELSE                                                                    
+           DO;                                                                  
+           /* TRYGDETID TIL SØKER ER UTFYLT */                                  
+              CALL TT_UP_EP(UPS.FNR,UPS.UFT_ÅMD,MAKS_TT_FØR_1967,               
+              TT_TIL_TPK);                                                      
+                                                                                
+   DCL TEST1  PIC '(2)9' INIT(0);                                               
+       TEST1 = MAKS_TT_FØR_1967;                                                
+                                                                                
+              IF UPSP.TT_F67 > MAKS_TT_FØR_1967 THEN                            
+                 DO;                                                            
+                    FEIL_FUNNET     = '1'B;                                     
+                    UPSP.TT_F67NR   = 111;                                      
+                 END;                                                           
+              IF TT_E66_ÅM > TT_TIL_TPK THEN                                    
+                 DO;                                                            
+                    FEIL_FUNNET     = '1'B;                                     
+                    UPSP.TT_E66_ÅNR = 112;                                      
+                    UPSP.TT_E66_MNR = 999;                                      
+                 END;                                                           
+              IF UPSP.TT_E66_M > 0 THEN                                         
+                 TT = UPSP.TT_F67 + (UPSP.TT_E66_Å + 1);                        
+              ELSE                                                              
+                 TT = UPSP.TT_F67 + UPSP.TT_E66_Å;                              
+                                                                                
+ /* ***************************************************************** */        
+ /* KRYSSKONTROLL   UPSP.FRAVIK_19_3 OG TT                            */        
+ /* ***************************************************************** */        
+                                                                                
+              IF UPSP.FRAVIK_19_3 = '0' & UPSP.TT_F67 > 0 THEN                  
+                 DO;                                                            
+                    FEIL_FUNNET           = '1'B;                               
+                    UPSP.FRAVIK_19_3NR    = 220;                                
+                    UPSP.TT_F67NR         = 999;                                
+                 END;                                                           
+              IF UPSP.FRAVIK_19_3 = '1' & UPSP.TT_F67 > 30 THEN                 
+                 DO;                                                            
+                    FEIL_FUNNET           = '1'B;                               
+                    UPSP.FRAVIK_19_3NR    = 85;                                 
+                    UPSP.TT_F67NR         = 999;                                
+                 END;                                                           
+              IF UPSP.FRAVIK_19_3 = '2' & TT < 40 THEN                          
+                 DO;                                                            
+                    FEIL_FUNNET           = '1'B;                               
+                    UPSP.FRAVIK_19_3NR    = 86;                                 
+                    UPSP.TT_F67NR         = 999;                                
+                    UPSP.TT_E66_ÅNR       = 999;                                
+                    UPSP.TT_E66_MNR       = 999;                                
+                 END;                                                           
+           /* END TRYGDETID TIL SØKER ER UTFYLT */                              
+           END;                                                                 
+ %PAGE;                                /*   */                                  
+                                                                                
+ /* ***************************************************************** */        
+ /* KONTROLLERER EKTEFELLENS TRYGDETID, OG LEGGER 1 ÅR TIL TT_E66_Å   */        
+ /* HVIS TT_E66_M > 0                                                 */        
+ /* ***************************************************************** */        
+                                                                                
+        IF UPS.FNR_EK > 0 THEN                                                  
+           DO;                                                                  
+              IF UPS.TILL_EK = 'J' & UPSP.BOSATT > 0 THEN                       
+                 DO;                                                            
+                    IF UPSP.TT_F67_EK > 0 !                                     
+                       UPSP.TT_E66_Å_EK > 0 !                                   
+                       UPSP.TT_E66_M_EK > 0 THEN                                
+                       DO;                                                      
+                                                                                
+                          IF UPSP.TT_E66_M_EK > 0 THEN                          
+                             TT_EK = UPSP.TT_F67_EK +                           
+                                     (UPSP.TT_E66_Å_EK + 1);                    
+                          ELSE                                                  
+                             TT_EK = UPSP.TT_F67_EK +                           
+                                     UPSP.TT_E66_Å_EK;                          
+                       END;                                                     
+                    IF VERIFY(UPSP.FRAVIK_19_3,'1345') = 0 THEN                 
+                       DO;                                                      
+                          IF TT_EK = 0 THEN                                     
+                             DO;                                                
+                                FEIL_FUNNET           = '1'B;                   
+                                UPSP.TT_F67NR         = 221;                    
+                                UPSP.TT_E66_M_EKNR    = 999;                    
+                                UPSP.TT_E66_Å_EKNR    = 999;                    
+                             END;                                               
+                           ELSE                                                 
+                             DO;                                                
+                                IF TT_EK < 5 THEN                               
+                                   DO;                                          
+                                      FEIL_FUNNET           = '1'B;             
+                                      UPSP.TT_F67_EKNR      = 238;              
+                                      UPSP.TT_E66_M_EKNR    = 999;              
+                                   END;                                         
+                             END;                                               
+                       END; /* 19_3 = 1,3,4,5 */                                
+                   END; /* TILLEGG_EK = J OG BOSATT > 0 */                      
+              ELSE                                                              
+                  DO;                                                           
+                  /* EKTEFELLENS TRYGDETID SKAL IKKE VÆRE UTFYLT */             
+                     IF UPSP.TT_F67_EK > 0 ! UPSP.TT_E66_Å_EK > 0 !             
+                        UPSP.TT_E66_M_EK > 0  THEN                              
+                        DO;                                                     
+                           FEIL_FUNNET        = '1'B;                           
+                           UPS.TILL_EKNR      = 33;                             
+                           UPSP.TT_F67_EKNR   = 999;                            
+                           UPSP.TT_E66_Å_EKNR = 999;                            
+                           UPSP.TT_E66_M_EKNR = 999;                            
+                        END;                                                    
+                  END;                                                          
+           END;   /* FNR_EK > 0 */                                              
+   END;                                                                         
+ %PAGE;                                                                         
+   SJEKK_TT_NUMERISK:                                                           
+    PROC;                                                                       
+ %SKIP;                                                                         
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(UPSP.TT_F67)) THEN                         
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_F67NR         = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(UPSP.TT_E66_Å)) THEN                       
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_E66_ÅNR       = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(UPSP.TT_E66_M)) THEN                       
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_E66_MNR       = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(UPSP.TT_F67_EK)) THEN                      
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_F67_EKNR      = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(UPSP.TT_E66_Å_EK)) THEN                    
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_E66_Å_EKNR    = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(UPSP.TT_E66_M_EK)) THEN                    
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_E66_M_EKNR    = 200;                                         
+        END;                                                                    
+ %PAGE;                                                                         
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(UPSP.TT_FRAMT_8_1_Å)) THEN                 
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_FRAMT_8_1_ÅNR = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR3(UPSP.TT_ETTER_UFT)) THEN                   
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           UPSP.TT_ETTER_UFTNR   = 200;                                         
+        END;                                                                    
+   END SJEKK_TT_NUMERISK;                                                       
+ %SKIP(2);                                                                      
+  END KONTROLL_UP_SPES;                                                         

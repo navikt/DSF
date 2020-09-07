@@ -1,0 +1,522 @@
+ /*       SIST ENDRET 09/12-98 13.56.42 AV   JDA7339                  */00000000
+ /*       SIST ENDRET 09/12-98 13.55.33 AV   JDA7339                  */00000010
+ /*       SIST ENDRET 02/09-98 10.29.24 AV   SPA7339                  */00000020
+ R001I80:                                                               00000030
+   PROC(INTERN_KOM_PTR) OPTIONS(MAIN);                                  00000040
+                                                                        00000050
+ /******************************************************************* */00000060
+ /*IDENTIFIKASJON:                                                    */00000070
+ /************************                                            */00000080
+ /*  PROGRAM-IDENT   : R001I801 - FJERNER FRA STRYKREGISTERET.        */00000090
+ /*  PROGRAM-SPRÅK   : PLI/CICS                                       */00000100
+ /*  PROGRAMMERER    : SVERRE LUNDEBY . DATA-UTVIKLING A/S            */00000110
+ /*  PROGRAM. LAGET  : JULI 1986                                      */00000120
+ /*  ENDR. DATO      : 08.06.1998       ÅR2000-TILPASNING.            */00000130
+ /*  ENDR. GJELDER   : VIRK_DATO_ÅMD (4 --> 8) + PAKKET_AAR (FD3-->5) */00000140
+ /*  ENDR. UTFØRT AV : O.GØYTIL.                                      */00000150
+ /******************************************************************* */00000160
+ /*HENSIKT:*/                                                           00000170
+ /************                                                        */00000180
+ /*  PROGRAMMET FJERNER INNTEKTER SOM TIDLIGERE ER LAGT PÅ STRYK-     */00000190
+ /*  REGISTERET.                                                      */00000200
+ /*  REGISTRERING. PROGRAMMETS TRANSKODE ER R0I8.                     */00000210
+ /*  PROGRAMMET BLIR AKTIVISERT NÅR OPERATØREN TASTER INN 'FS' I      */00000220
+ /*  STYRINGS-KODEN PÅ MAP S001I1 MAPSET S001I13.                     */00000230
+ /*                                                                   */00000240
+ /******************************************************************* */00000250
+ /*PROGRAMTILKNYTTING:                                                */00000260
+ /**********************                                              */00000270
+ /*  PROGRAMMET BLIR AKTIVISERT FRA CICS MED TRANSID = R0I8.          */00000280
+ /*  R0I8: KONTROLLEN KOMMER FRA R001I101                             */00000290
+ /*                                                                   */00000300
+ /******************************************************************* */00000310
+ /*DATASETTOPPLYSNINGER:                                              */00000320
+ /*************************                                           */00000330
+ /*  STRYK-REGISTERET.                                                */00000340
+ /*                                                                   */00000350
+ /******************************************************************* */00000360
+ /*FEILMELDINGER:                                                     */00000370
+ /*********************                                               */00000380
+ /* 'UGYLDIG ÅR'        BLIR SKREVET PÅ SKJERMBILDET NÅR INNTEKTSÅRET */00000390
+ /*  IKKE HAR GYLDIG VERDI.                                           */00000400
+ /*                                                                   */00000410
+ /* 'INNTEKT IKKE FUNNET' SKRIVES HVIS ØNSKET INNTEKT IKKE LIGGER PÅ  */00000420
+ /*  STRYK-REG.                                                       */00000430
+ /*                                                                   */00000440
+ /*ENDRET: 13.04.88 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */00000450
+ /* ******                                                            */00000460
+ /*    INITIERER BRUKERID I FNR_REG MED CICS_IND FØR KONTROLL PÅ      */00000470
+ /*    OM FNR ER ENDRET (R0019906).                                   */00000480
+ /*                                                                   */00000490
+ /* ***************************************************************** */00000500
+                                                                        00000510
+ %PAGE;                                                                 00000520
+      %INCLUDE S001I1;     /*  INNTEKTMAPSET1    (BASED)  */            00000530
+ %PAGE;                                                                 00000540
+      %INCLUDE P0019906;   /*  TRANS_OPPL_OMRÅDE (BASED)  */            00000550
+ %PAGE;                                                                 00000560
+      %INCLUDE P0019908;   /*  KOM_OMRÅDE        (BASED)  */            00000570
+ %PAGE;                                                                 00000580
+      %INCLUDE P0019910;   /*  STYRINGS_OMRÅDE   (BASED)  */            00000590
+ %PAGE;                                                                 00000600
+      %INCLUDE P0019912;   /*  DIV_PARAM_OMRÅDE  (BASED)  */            00000610
+ %PAGE;                                                                 00000620
+                                                                        00000630
+                                                                        00000640
+   DCL                                                                  00000650
+       MAP_MELDING              CHAR      (78)      INIT((78)' '),      00000660
+                                                                        00000670
+       1  FEIL_STRUC,                                                   00000680
+          2  FEIL_NR            FIXED DEC ( 5),                         00000690
+          2  FEIL_MELDING       CHAR      (78),                         00000700
+          2  KOM_OMR_PEKER      POINTER;                                00000710
+                                                                        00000720
+    /* ************************************************************** */00000730
+    /*   INNEBYGDE PLI-FUNKSJONER                                     */00000740
+    /* ************************************************************** */00000750
+                                                                        00000760
+       DCL                                                              00000770
+         ( ADDR , CSTG , LOW , STG , SUBSTR , ONCODE , NULL )  BUILTIN; 00000780
+                                                                        00000790
+       DCL                                                              00000800
+           BMSMAPBR     PTR  ;                                          00000810
+                                                                        00000820
+       DCL                                                              00000830
+         ( COMMAREA_PEKER , W01_HJELPE_PEKER , TRANS_SEGM_PEKER )       00000840
+                                               POINTER;                 00000850
+                                                                        00000860
+       DCL MAP_OMR               CHAR(1500) BASED (BMSMAPBR);           00000870
+                                                                        00000880
+       DCL FATAL_FEIL            CHAR (1) INIT ('S');                   00000890
+                                                                        00000900
+       DCL 1 FNR_REG,                                                   00000910
+             2 FNR1              FIXED DEC (11),                        00000920
+             2 FNR2              FIXED DEC (11),                        00000930
+             2 BRUKERID          CHAR      ( 4);                        00000940
+                                                                        00000950
+       DCL   INTERN_KOM_PTR         POINTER;                            00000960
+                                                                        00000970
+       DCL PIC_AAR  PIC'99999' INIT (0);    /* TRUDE 091298*/           00000980
+                                                                        00000990
+       DCL 1 INTERN_KOM_OMR  BASED (INTERN_KOM_PTR),                    00001000
+             2 HOVED_KOM_PTR        POINTER,                            00001010
+             2 FRA_FNR              PIC '(11)9',                        00001020
+             2 TIL_FNR              PIC '(11)9';                        00001030
+                                                                        00001040
+    /* ************************************************************** */00001050
+    /*   OPPTELLINGS- OG LOOP-PARAMETRE M.M                           */00001060
+    /* ************************************************************** */00001070
+                                                                        00001080
+       DCL 1  W01                       UNALIGNED,                      00001090
+              2   MER_DATA                    BIT  (1)   INIT ('1'B),   00001100
+              2   FEILMELDING_SATT            BIT  (1)   INIT ('0'B),   00001110
+              2   STYRINGSKODE_IKKE_SATT      BIT  (1)   INIT ('0'B),   00001120
+              2   AKSJONSKODE                 CHAR (2),                 00001130
+              2   PERSON_IKKE_FUNNET          BIT  (1)   INIT ('1'B),   00001140
+              2   AKSJON_IKKE_SATT            BIT  (1)   INIT ('1'B),   00001150
+  /*Y2K*/     2   VIRK_DATO_ÅMD        PIC '99999999'    INIT ( 0  ),   00001160
+              2   PAKKET_FNR           FIXED  DEC  (11)  INIT ( 0  ),   00001170
+  /*Y2K*/     2   PAKKET_AAR           FIXED  DEC  ( 5)  INIT ( 0  ),   00001180
+              2   I                    FIXED  BIN  (15)  INIT ( 1  ),   00001190
+              2   J                    FIXED  BIN  (15)  INIT ( 1  );   00001200
+                                                                        00001210
+                                                                        00001220
+       DCL  ONKODE      PIC '9999',                                     00001230
+            ONK DEF ONKODE  CHAR(4);                                    00001240
+  /* ************************************************************** */  00001250
+  /*                                                                */  00001260
+  /*      SLUTT PÅ DEKLARASJONENE , EKSEKVERINGEN STARTER .         */  00001270
+  /*     ---------------------------------------------------        */  00001280
+  /*                                                                */  00001290
+  /*                                                                */  00001300
+  /*      INITIERING AV PARAMETRE TIL DIV OMR.     .                */  00001310
+  /*                                                                */  00001320
+  /*                                                                */  00001330
+  /* ************************************************************** */  00001340
+                                                                        00001350
+                                                                        00001360
+  COMMAREA_PEKER          =     HOVED_KOM_PTR;                          00001370
+                                                                        00001380
+  ON ERROR SNAP                                                         00001390
+     BEGIN;                                                             00001400
+        ON ERROR SYSTEM;                                                00001410
+        ONKODE            =     ONCODE;                                 00001420
+        EXEC CICS ABEND ABCODE (ONK);                                   00001430
+     END;                                                               00001440
+                                                                        00001450
+  EXEC CICS HANDLE CONDITION ERROR (ERRBEH);                            00001460
+  EXEC CICS HANDLE AID       PF1   (PF2);                               00001470
+  EXEC CICS HANDLE AID       PF2   (PF2);                               00001480
+                                                                        00001490
+                                                                        00001500
+  PROGRAM_ID              =   'R001I801'                            ;   00001510
+  FEIL_MELD_NR            =    0                                    ;   00001520
+  FNR_REG.BRUKERID        =    DIV_PARAM_OMR.CICS_IND               ;   00001530
+                                                                        00001540
+  /*----------------------------------------------------------------*/  00001550
+  /* INITIERER MAP-OMRÅDET OG SENDER UT BILDET.                     */  00001560
+  /* LESER INN FRA STRYK-BILDET OG SJEKKER :                        */  00001570
+  /*   1.  OM FUNKSJONSKODE ER SATT.                                */  00001580
+  /*   2.  OM FNR OG ÅR ER GYLDIGE.                                 */  00001590
+  /*----------------------------------------------------------------*/  00001600
+                                                                        00001610
+  FEILMELDING_SATT        =   '1'B                                  ;   00001620
+                                                                        00001630
+  IF TRANSKODE           ^=   'R0I8'                             THEN   00001640
+     DO;                                                                00001650
+        ALLOCATE S001I08I                                           ;   00001660
+        ALLOCATE S001I08O                                           ;   00001670
+                                                                        00001680
+        EXEC CICS LOAD PROGRAM ('S001I13')                          ;   00001690
+                                                                        00001700
+        S001I08O.FNRO     =  FRA_FNR                                ;   00001710
+        S001I08I.AARI     =  LOW(2)                                 ;   00001720
+        S001I08O.AARA     =  'I'                                    ;   00001730
+        S001I08I.AARL     =  -1;                     /* CURSOR POS */   00001740
+        S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN               ;   00001750
+                                                                        00001760
+        EXEC CICS SEND MAP('S001I08') MAPSET('S001I13') ERASE CURSOR;   00001770
+     END;                                                               00001780
+                                                                        00001790
+                                                                        00001800
+  TRANSKODE               =   'R0I8'                                ;   00001810
+                                                                        00001820
+  EXEC CICS RECEIVE MAP('S001I08') MAPSET ('S001I13')                   00001830
+                                   SET    ( BMSMAPBR)               ;   00001840
+                                                                        00001850
+  DO WHILE (FEILMELDING_SATT);                                          00001860
+     FEILMELDING_SATT            =  '0'B                            ;   00001870
+                                                                        00001880
+     IF S001I08I.FUNKSJONSKODEL  >   0                         THEN     00001890
+        DO;                                                             00001900
+           FUNKSJONSKODE         =   S001I08I.FUNKSJONSKODEI;           00001910
+                                                                        00001920
+           IF FUNKSJONSKODE      =  'I' THEN                            00001930
+              GO TO L999;                                               00001940
+           ELSE                                                         00001950
+              EXEC CICS RETURN;                                         00001960
+        END;                                                            00001970
+                                                                        00001980
+     CALL P010_SJEKK_FNR                                            ;   00001990
+                                                                        00002000
+     IF S001I08I.FUNKSJONSKODEL  >   0                         THEN     00002010
+        DO;                                                             00002020
+           FUNKSJONSKODE         =   S001I08I.FUNKSJONSKODEI;           00002030
+                                                                        00002040
+           IF FUNKSJONSKODE      =  'I' THEN                            00002050
+              GO TO L999;                                               00002060
+           ELSE                                                         00002070
+              EXEC CICS RETURN;                                         00002080
+        END;                                                            00002090
+                                                                        00002100
+     PAKKET_FNR       =   S001I08I.FNRI  ;                              00002110
+     PAKKET_AAR               =   KONV_ÅR_HÅ(S001I08I.AARI) ;           00002120
+     EXEC CICS ENTER TRACEID(33) FROM (PAKKET_AAR);                     00002130
+                                                                        00002140
+     IF ^FEILMELDING_SATT                                      THEN     00002150
+        CALL P015_SJEKK_AAR                                         ;   00002160
+  END;                                                                  00002170
+                                                                        00002180
+                                                                        00002190
+                                                                        00002200
+  CALL P9958_BEH_STRYK_REG ('FJERN', PAKKET_FNR, PAKKET_AAR)        ;   00002210
+                                                                        00002220
+                                                                        00002230
+  SELECT  (FEIL_MELD_NR);                                               00002240
+                                                                        00002250
+     WHEN (   0)                                                        00002260
+        DO;                                                             00002270
+           MAP_MELDING         =  'FJERNING UTFØRT FOR ÅR : ' !!        00002280
+                                  S001I08I.AARI                     ;   00002290
+           S001I08I.AARI       =  LOW ( 2)                          ;   00002300
+           S001I08O.FNRA       =  'I'                               ;   00002310
+           S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN            ;   00002320
+           S001I08O.MELDINGO   =  MAP_MELDING                       ;   00002330
+        END;                                                            00002340
+                                                                        00002350
+     WHEN (9999)                                                        00002360
+        DO;                                                             00002370
+           MAP_MELDING         =  'RECORD SOM SKULLE FJERNES ' !!       00002380
+                                  'FINNES IKKE I STRYK-REG. !'      ;   00002390
+           FEIL_MELD_NR        =   0                                ;   00002400
+           FEILMELDING_SATT    =  '1'B                              ;   00002410
+           S001I08O.FNRA       =  'I'                               ;   00002420
+           S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN            ;   00002430
+           S001I08O.MELDINGO   =  MAP_MELDING                       ;   00002440
+        END;                                                            00002450
+                                                                        00002460
+     OTHERWISE                                                          00002470
+        DO;                                                             00002480
+           EXEC CICS SYNCPOINT    ROLLBACK                          ;   00002490
+           MAP_MELDING         =  'FEIL VED DELETE AV RECORD ' !!       00002500
+                                  'PÅ VSAM-FILE : STRYK ! KON' !!       00002510
+                                  'TAKT SYSTEMAVD.!'                ;   00002520
+           FEIL_MELD_NR        =   0                                ;   00002530
+           FEILMELDING_SATT    =  '1'B                              ;   00002540
+           S001I08O.FNRA       =  'I'                               ;   00002550
+           S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN            ;   00002560
+           S001I08O.MELDINGO   =  MAP_MELDING                       ;   00002570
+        END;                                                            00002580
+  END;  /*         SELECT                                         */    00002590
+                                                                        00002600
+                                                                        00002610
+  S001I08I.AARL                =  -1;       /* CURSOR POS         */    00002620
+                                                                        00002630
+  EXEC CICS SEND MAP('S001I08') MAPSET ('S001I13') CURSOR ERASE;        00002640
+  EXEC CICS XCTL PROGRAM   ('R001I801') COMMAREA (INTERN_KOM_OMR);      00002650
+                                                                        00002660
+                                                                        00002670
+                                                                        00002680
+                                                                        00002690
+  /* **************************************************************** */00002700
+  /* ***************       INTERNE   PROSEDURER       *************** */00002710
+  /* **************************************************************** */00002720
+                                                                        00002730
+                                                                        00002740
+  /* **************************************************************** */00002750
+  /*HENSIKT:                                                          */00002760
+  /*    SJEKKER OM FNR GYLDIG.                                        */00002770
+  /*                                                                  */00002780
+  /*BRUK:                                                             */00002790
+  /*    CALL P010_SJEKK_FNR;                                          */00002800
+  /*                                                                  */00002810
+  /* **************************************************************** */00002820
+                                                                        00002830
+    P010_SJEKK_FNR:                                                     00002840
+      PROC;                                                             00002850
+                                                                        00002860
+                                                                        00002870
+         IF ^(S001I08I.FNRL > 0)                         THEN           00002880
+            DO;                                                         00002890
+               MAP_MELDING        =  'FNR MÅ OPPGIS  !!  ';             00002900
+               FEILMELDING_SATT   =  '1'B;                              00002910
+               S001I08I.FNRL      =  -1  ;   /* CURSOR POS       */     00002920
+               S001I08O.FNRA      =  'I' ;                              00002930
+               S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN        ;   00002940
+               S001I08O.MELDINGO  =  MAP_MELDING;                       00002950
+                                                                        00002960
+               EXEC CICS SEND MAP    ('S001I08')                        00002970
+                              MAPSET ('S001I13')  ERASE CURSOR;         00002980
+                                                                        00002990
+               /*----------------------------------------------------*/ 00003000
+               /*    LESER INN FNR FRA INNTEKTSBILDET.               */ 00003010
+               /*----------------------------------------------------*/ 00003020
+                                                                        00003030
+               EXEC CICS RECEIVE MAP('S001I08') MAPSET ('S001I13')      00003040
+                                                SET    ( BMSMAPBR)   ;  00003050
+               GO TO RETUR;                                             00003060
+            END;                                                        00003070
+         ELSE                                                           00003080
+            IF ^F_NUMERISK(S001I08I.FNRI)                THEN           00003090
+               DO;                                                      00003100
+                  MAP_MELDING        = 'TEGN SOM IKKE ER NUMERISK ' !!  00003110
+                                       'I FØDSELSNR. ! '             ;  00003120
+                  FEILMELDING_SATT   = '1'B;                            00003130
+                  S001I08I.FNRL      = -1; /* CURSOR POS       */       00003140
+                  S001I08O.FNRA      = 'I';                             00003150
+                  S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN     ;   00003160
+                  S001I08O.MELDINGO  =  MAP_MELDING;                    00003170
+                                                                        00003180
+                  EXEC CICS SEND MAP    ('S001I08')                     00003190
+                                 MAPSET ('S001I13')    ERASE CURSOR;    00003200
+                                                                        00003210
+                  /*-------------------------------------------------*/ 00003220
+                  /*    LESER INN FNR FRA VENTEMENYBILDET.           */ 00003230
+                  /*-------------------------------------------------*/ 00003240
+                                                                        00003250
+                  EXEC CICS RECEIVE MAP ('S001I08') MAPSET ('S001I13')  00003260
+                                                    SET    ( BMSMAPBR); 00003270
+                  GO TO RETUR;                                          00003280
+               END;                                                     00003290
+            ELSE                                                        00003300
+               IF ^F_GYLDIG_FNR(S001I08O.FNRO) THEN                     00003310
+                  DO;                                                   00003320
+                     MAP_MELDING = 'UGYLDIG FØDSELSNUMMER';             00003330
+                     FEILMELDING_SATT   = '1'B;                         00003340
+                     S001I08I.FNRL      = -1; /* CURSOR POS   */        00003350
+                     S001I08O.FNRA      = 'I';                          00003360
+                     S001I08O.FNRO      = S001I08I.FNRI;                00003370
+                     S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN  ;   00003380
+                     S001I08O.MELDINGO  = MAP_MELDING;                  00003390
+                                                                        00003400
+                     EXEC CICS SEND MAP    ('S001I08')                  00003410
+                                    MAPSET ('S001I13') ERASE CURSOR;    00003420
+                                                                        00003430
+                     /*---------------------------------------------*/  00003440
+                     /*    LESER INN FNR FRA INNTEKTSBILDET.        */  00003450
+                     /*---------------------------------------------*/  00003460
+                                                                        00003470
+                     EXEC CICS RECEIVE MAP('S001I08') MAPSET ('S001I13')00003480
+                                                      SET    (BMSMAPBR);00003490
+                     GO TO RETUR;                                       00003500
+                  END;                                                  00003510
+                                                                        00003520
+                                                                        00003530
+         FNR_REG.FNR1             =   S001I08O.FNRO;                    00003540
+         EXEC CICS LINK PROGRAM     ('R0019906') COMMAREA(FNR_REG);     00003550
+                                                                        00003560
+                                                                        00003570
+         IF FNR_REG.FNR2          >   0                   THEN          00003580
+            DO;                                                         00003590
+               FRA_FNR            =   FNR_REG.FNR2;                     00003600
+               MAP_MELDING        =  'FNR ENDRET TIL ' !! FRA_FNR;      00003610
+               S001I08I.FNRL      =  -1;                                00003620
+               S001I08O.FNRO      =   FRA_FNR;                          00003630
+               S001I08O.FNRA      =  'I';                               00003640
+               FEILMELDING_SATT   =  '1'B;                              00003650
+               S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN        ;   00003660
+               S001I08O.MELDINGO  =  MAP_MELDING;                       00003670
+                                                                        00003680
+               EXEC CICS SEND    MAP    ('S001I08')                     00003690
+                                 MAPSET ('S001I13')  CURSOR ERASE    ;  00003700
+                                                                        00003710
+               EXEC CICS RECEIVE MAP    ('S001I08')                     00003720
+                                 MAPSET ('S001I13')  SET (BMSMAPBR)  ;  00003730
+               GO TO RETUR;                                             00003740
+            END;                                                        00003750
+                                                                        00003760
+ RETUR:                                                                 00003770
+                                                                        00003780
+ END P010_SJEKK_FNR;                                                    00003790
+                                                                        00003800
+                                                                        00003810
+                                                                        00003820
+  /* **************************************************************** */00003830
+  /*HENSIKT:                                                          */00003840
+  /*    SJEKKER OM AAR ER GYLDIG.                                     */00003850
+  /*                                                                  */00003860
+  /*BRUK:                                                             */00003870
+  /*    CALL P010_SJEKK_AAR;                                          */00003880
+  /*                                                                  */00003890
+  /* **************************************************************** */00003900
+                                                                        00003910
+    P015_SJEKK_AAR:                                                     00003920
+      PROC;                                                             00003930
+                                                                        00003940
+                                                                        00003950
+         IF ^(S001I08I.AARL > 0)                         THEN           00003960
+            DO;                                                         00003970
+               MAP_MELDING        =  'ÅR MÅ OPPGIS';                    00003980
+               FEILMELDING_SATT   =  '1'B;                              00003990
+               S001I08I.AARL      =  -1  ;   /* CURSOR POS       */     00004000
+               S001I08O.AARA      =  'I' ;                              00004010
+               S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN        ;   00004020
+               S001I08O.MELDINGO  =  MAP_MELDING;                       00004030
+                                                                        00004040
+               EXEC CICS SEND MAP    ('S001I08')                        00004050
+                              MAPSET ('S001I13')  ERASE CURSOR;         00004060
+                                                                        00004070
+               /*----------------------------------------------------*/ 00004080
+               /*    LESER INN FNR FRA INNTEKTSBILDET.               */ 00004090
+               /*----------------------------------------------------*/ 00004100
+                                                                        00004110
+               EXEC CICS RECEIVE MAP('S001I08') MAPSET ('S001I13')      00004120
+                                                SET    ( BMSMAPBR)   ;  00004130
+               GO TO RETUR;                                             00004140
+            END;                                                        00004150
+         ELSE                                                           00004160
+ /*         IF ^F_NUMERISK(S001I08I.AARI)                THEN */        00004170
+                                                                        00004180
+        /*  IF ^F_NUMERISK(PAKKET_AAR   )                THEN */        00004190
+                                 /*F_NUMERISK FUNG.IKKE MED PAKKET */   00004200
+            PIC_AAR =PAKKET_AAR; /*FELT.   TRUDE 09.12.98          */   00004210
+            IF ^F_NUMERISK(PIC_AAR   )                THEN              00004220
+               DO;                                                      00004230
+                  MAP_MELDING        = 'TEGN SOM IKKE ER NUMERISK ' !!  00004240
+                                       'I ÅR        !! '             ;  00004250
+                  FEILMELDING_SATT   = '1'B;                            00004260
+                  S001I08I.AARL      = -1; /* CURSOR POS       */       00004270
+                  S001I08O.AARA      = 'I';                             00004280
+                  S001I08I.AARI      =  LOW ( 2)                     ;  00004290
+                  S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN     ;   00004300
+                  S001I08O.MELDINGO  =  MAP_MELDING;                    00004310
+                                                                        00004320
+                  EXEC CICS SEND MAP    ('S001I08')                     00004330
+                                 MAPSET ('S001I13')    ERASE CURSOR;    00004340
+                                                                        00004350
+                  /*-------------------------------------------------*/ 00004360
+                  /*    LESER INN FNR FRA VENTEMENYBILDET.           */ 00004370
+                  /*-------------------------------------------------*/ 00004380
+                                                                        00004390
+                  EXEC CICS RECEIVE MAP ('S001I08') MAPSET ('S001I13')  00004400
+                                                      SET   ( BMSMAPBR);00004410
+                  GO TO RETUR;                                          00004420
+               END;                                                     00004430
+            ELSE                                                        00004440
+      /*       IF S001I08I.AARI         <  67     THEN */               00004450
+               IF PAKKET_AAR            <  1967      THEN               00004460
+                  DO;                                                   00004470
+                     MAP_MELDING        = 'ÅR < 1967 '              ;   00004480
+                     FEILMELDING_SATT   = '1'B;                         00004490
+                     S001I08I.AARL      = -1;       /* CURSOR POS  */   00004500
+                     S001I08O.AARA      = 'I';                          00004510
+                     S001I08O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN  ;   00004520
+                     S001I08O.MELDINGO  =  MAP_MELDING;                 00004530
+                                                                        00004540
+                     EXEC CICS SEND MAP    ('S001I08')                  00004550
+                                    MAPSET ('S001I13')    ERASE CURSOR; 00004560
+                                                                        00004570
+                     /*----------------------------------------------*/ 00004580
+                     /*    LESER INN FNR FRA VENTEMENYBILDET.        */ 00004590
+                     /*----------------------------------------------*/ 00004600
+                                                                        00004610
+                     EXEC CICS RECEIVE MAP('S001I08') MAPSET('S001I13') 00004620
+                                                      SET   ( BMSMAPBR);00004630
+                     GO TO RETUR;                                       00004640
+                  END;                                                  00004650
+                                                                        00004660
+ RETUR:                                                                 00004670
+                                                                        00004680
+ END P015_SJEKK_AAR;                                                    00004690
+                                                                        00004700
+                                                                        00004710
+  /* **************************************************************** */00004720
+  /*  UTGANGER VED FEIL.                                              */00004730
+  /* **************************************************************** */00004740
+                                                                        00004750
+                                                                        00004760
+  PF2:                                                                  00004770
+     MAP_MELDING              = 'TRANSAKSJONEN ER FORKASTET';           00004780
+     FEILMELDING_SATT         = '1'B                        ;           00004790
+     S001I01O.STYREKODEO      = 'FS'                        ;           00004800
+     S001I01O.FRAFNRA         = 'I'                         ;           00004810
+     S001I01I.FRAFNRL         = -1;          /* CURSOR POS */           00004820
+     S001I01I.FRAFNRI         = LOW (11)                    ;           00004830
+     S001I01I.TILFNRI         = LOW (11)                    ;           00004840
+     S001I01O.CICS_INFOO      = DIV_PARAM_OMR.CICS_NAVN     ;           00004850
+     S001I01O.MELDINGO        = MAP_MELDING                 ;           00004860
+                                                                        00004870
+     EXEC CICS SEND MAP('S001I01') MAPSET('S001I13') CURSOR ERASE;      00004880
+                                                                        00004890
+     TRANSKODE                = 'R0I1';                                 00004900
+     EXEC CICS XCTL PROGRAM('R001I101') COMMAREA(KOM_OMR);              00004910
+                                                                        00004920
+                                                                        00004930
+                                                                        00004940
+  ERRBEH:                                                               00004950
+     EXEC CICS HANDLE CONDITION ERROR;                                  00004960
+     EXEC CICS PURGE MESSAGE;                                           00004970
+     EXEC CICS ABEND ABCODE('FEIL');                                    00004980
+                                                                        00004990
+                                                                        00005000
+  L999:                                                                 00005010
+     ALLOCATE S001I01O;                                                 00005020
+     ALLOCATE S001I01I;                                                 00005030
+                                                                        00005040
+     EXEC CICS LOAD PROGRAM('S001I13');                                 00005050
+                                                                        00005060
+     S001I01I.STYREKODEL   = -1;                                        00005070
+     S001I01O.CICS_INFOO   = DIV_PARAM_OMR.CICS_NAVN;                   00005080
+                                                                        00005090
+     EXEC CICS SEND MAP('S001I01') MAPSET('S001I13') CURSOR ERASE;      00005100
+                                                                        00005110
+     EXEC CICS RETURN;                                                  00005120
+                                                                        00005130
+                                                                        00005140
+  %INCLUDE R0019904;          /*  F_GYLDIG_FNR                    */    00005150
+  %INCLUDE R0019910;          /*  F_NUMERISK                      */    00005160
+  %INCLUDE R0019958;          /*  P9958_BEH_STRYK_REG (BEH,FNR,ÅR)*/    00005170
+  %INCLUDE R0019981;          /*  KONV_ÅR_HÅ                      */    00005180
+                                                                        00005190
+                                                                        00005200
+ END R001I80;                                                           00005210

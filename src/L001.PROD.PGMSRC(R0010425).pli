@@ -1,0 +1,335 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.28 11.55.55 AV   SPA2970          */        
+ /*       SIST ENDRET 28/08-98 14.33.08 AV   SPA7339                  */        
+ /*       SIST ENDRET 14/01-98 15.27.16 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0010425 - PROGRAM SOM FORETAR  OPPDATERING AV FEILMELDINGS - */        
+ /*                TABELLEN UNDER ADMINISTRASJONSDELEN AV SYSTEMET.   */        
+ /*                HOVEDPROGRAM I CICS/PLI.                           */        
+ /*     PROGRAMMERER: JAN - H. KRISTENSEN SEPTEMBER 1983.             */        
+ /* HENSIKT                                                           */        
+ /*     PROGRAMMET SKAL SENDE UT EN MAP FØRST FOR AT EN SKAL KUNNE    */        
+ /*     VELGE KODE FOR DET EN ØNSKER UTFØRT.                          */        
+ /*     DERETTER SKAL DENNE MAPPEN RECEIVES SLIK AT DETTE PROGRAMMET  */        
+ /*     KAN GI KONTROLL TIL DEN AKTUELLE PROGRAMDELEN SOM UTFØRER     */        
+ /*     AKSJONEN.                                                     */        
+ /* PROGRAMTILKNYTNING                                                */        
+ /*     BLIR GITT KONTROLL FRA PROGRAM R0010420 SOM ER STYREPROGRAM   */        
+ /*     UNDER ADMINISTRASJONSDELEN.                                   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ R001B1: PROC(COMMAREA_PEKER)                  OPTIONS (MAIN);                  
+                                                                                
+    %INCLUDE P0019908;            /* KOM_OMR                          */        
+    %INCLUDE P0019912;            /* DIV_PARAM_OMR                    */        
+    %INCLUDE P0019910;            /* STYRINGS_OMR                     */        
+    %INCLUDE P0019906;            /* TRANS_OPPL_OMR                   */        
+    %INCLUDE S001A5;              /* MAP TIL FEILMELDINGER FOR        */        
+                                  /* ADMINISTRASJONSDELEN.            */        
+    %INCLUDE DFHBMSCA;            /* HJELPE STRUKTUR FOR ATTRIBUTTER  */        
+                                                                                
+     DCL    W01_IO                 CHAR (81);                                   
+                                                                                
+    DCL                                                                         
+      1 ADM_OMR                  BASED(B01_PEKER), /* DETTE SIDEN B01 */        
+        2 FORRIGE_AKSJON         CHAR(2),          /* IKKE BRUKES HER */        
+                                                                                
+      1 FEIL_REC                 BASED(FEIL_PEKER),                             
+        2 FEILNR                 CHAR(4),                                       
+        2 BLANK                  CHAR(1),                                       
+        2 TEKST                  CHAR(78);                                      
+  DCL W01_NR                     PIC '9999',                                    
+      CSTG                       BUILTIN,                                       
+      ADDR                       BUILTIN,                                       
+      UNSPEC                     BUILTIN,                                       
+      VERIFY                     BUILTIN,                                       
+      LENGTH                     BUILTIN,                                       
+      W01_IO_PEKER               POINTER,                                       
+      BMSMAPBR                   POINTER,                                       
+      COMMAREA_PEKER             POINTER,                                       
+      FEIL_PEKER                 POINTER;                                       
+                                                                                
+                                                                                
+    KOM_OMR.STYRINGS_PEKER  = ADDR(KOM_OMR.STYRINGS_OMR);                       
+    KOM_OMR.TRANS_OPPL_PEKER= ADDR(KOM_OMR.TRANS_OPPL_OMR);                     
+    KOM_OMR.DIV_PARAM_PEKER = ADDR(KOM_OMR.DIV_PARAM_OMR);                      
+    W01_IO_PEKER            = ADDR(W01_IO);                                     
+    TRANSKODE               = 'RA25';        /* DETTE PROGRAM  */               
+                                                                                
+                                                                                
+    IF PROGRAM_ID = 'R0010420' THEN         /* KOMMER IN FØRSTE GANG */         
+                                                                                
+       DO;                                                                      
+          EXEC CICS SEND MAP('S001A5') MAPSET('S001A53') MAPONLY ERASE;         
+      /*  ALLOCATE  S001A5O;                                                    
+          S001A5O.CICS_INFOO     = DIV_PARAM_OMR.CICS_NAVN ;                    
+       */                                                                       
+       END;                                                                     
+                                                                                
+                                                                                
+    ELSE IF PROGRAM_ID = 'R0010425' THEN       /*   DETTE PROGRAM   */          
+                                                                                
+       DO;                                                                      
+          EXEC CICS RECEIVE MAP('S001A5')MAPSET('S001A53')                      
+                                         SET  (BMSMAPBR);                       
+          S001A5O.MELDINGO  = ' ';                                              
+          W01_NR       =  S001A5O.FEILMELD_NRO;                                 
+                                                                                
+                                                                                
+                                                                                
+          IF S001A5I.FUNKSJONSKODEL > 0 &                                       
+             VERIFY(S001A5I.FUNKSJONSKODEI,'RVEFIAX') = 0 THEN                  
+             DO;                                                                
+                FUNKSJONSKODE = S001A5I.FUNKSJONSKODEI;                         
+                EXEC CICS XCTL PROGRAM ('R0010301') COMMAREA (KOM_OMR);         
+             END;                                                               
+                                                                                
+          IF S001A5I.STYRE_KODEL > 0 &                                          
+             S001A5I.STYRE_KODEI ^= 'FB' THEN                                   
+             DO;                                                                
+                STYREKODE  = S001A5I.STYRE_KODEI;                               
+                EXEC CICS XCTL PROGRAM ('R0010420') COMMAREA (KOM_OMR);         
+             END;                                                               
+                                                                                
+          SELECT(S001A5I.AKSJONI);                                              
+             WHEN('VM')                                                         
+                DO;                                                             
+                   CALL BLANK_TEKST;                                            
+                   CALL TEKST_PROT;                                             
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VM);                
+                   EXEC CICS READ DATASET ('FEILTAB') RIDFLD(W01_NR)            
+                                                    SET(FEIL_PEKER);            
+                   CALL OVERFØR_TIL_MAP;                                        
+                   FORRIGE_AKSJON = 'VM';                                       
+                                                                                
+                END;                                                            
+             WHEN('VN')                                                         
+                DO;                                                             
+                   CALL BLANK_TEKST;                                            
+                   CALL TEKST_PROT;                                             
+                   S001A5O.FEILMELD_NRO = S001A5O.FEILMELD_NRO + 1;             
+                   W01_NR               = S001A5O.FEILMELD_NRO;                 
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VN);                
+                   EXEC CICS READ DATASET ('FEILTAB') RIDFLD(W01_NR)            
+                                            GTEQ    SET(FEIL_PEKER);            
+                                                                                
+                   CALL OVERFØR_TIL_MAP;                                        
+                                                                                
+                   FORRIGE_AKSJON = 'VN';                                       
+                                                                                
+                END;                                                            
+             WHEN('VF')                                                         
+                DO;                                                             
+                   CALL BLANK_TEKST;                                            
+                   CALL TEKST_PROT;                                             
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VM);                
+                   EXEC CICS STARTBR DATASET ('FEILTAB') EQUAL                  
+                                        RIDFLD(W01_NR);                         
+                   EXEC CICS HANDLE CONDITION ENDFILE(NOTFND_VN);               
+                   EXEC CICS READPREV DATASET ('FEILTAB')RIDFLD(W01_NR)         
+                                                    SET(FEIL_PEKER);            
+                   EXEC CICS READPREV DATASET ('FEILTAB')RIDFLD(W01_NR)         
+                                                    SET(FEIL_PEKER);            
+                                                                                
+                   CALL OVERFØR_TIL_MAP;                                        
+                                                                                
+                   FORRIGE_AKSJON = 'VF';                                       
+                                                                                
+                END;                                                            
+           /*WHEN('RF')                                                         
+                DO;                                                             
+                   CALL BLANK_TEKST;                                            
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_RT);                
+                   EXEC CICS READ DATASET ('FEILTAB') RIDFLD(W01_NR)            
+                                                    SET(FEIL_PEKER);            
+                   CALL TEKST_PROT;                                             
+                                                                                
+                   S001A5O.MELDINGO =                                           
+                       'DETTE FEILMELDINGSNUMMER FINNES FRA FØR';               
+                                                                                
+                   FORRIGE_AKSJON = 'RF';                                       
+                   CALL TEKST_UNP;                                              
+                                                                                
+                                                                                
+                END; */                                                         
+         /*  WHEN('EF')                                                         
+                DO;                                                             
+                   CALL BLANK_TEKST;                                            
+                   CALL TEKST_PROT;                                             
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VT);                
+                   EXEC CICS READ DATASET ('FEILTAB') RIDFLD(W01_NR)            
+                                                    SET(FEIL_PEKER);            
+                   CALL TEKST_UNP;                                              
+                   CALL OVERFØR_TIL_MAP;                                        
+                   FORRIGE_AKSJON = 'ET';                                       
+                                                                                
+                END;                                                            
+             WHEN('SF')                                                         
+                DO;                                                             
+                                                                                
+                   SELECT (FORRIGE_AKSJON);                                     
+                      WHEN('RF')                                                
+                         DO;                                                    
+                            CALL OVERFØR_FRA_MAP;                               
+                            CALL KONTROLL_AV_INPUT;                             
+                            EXEC CICS WRITE DATASET ('FEILTAB')                 
+                                FROM (FEIL_REC)  RIDFLD(W01_NR);                
+                            S001A2O.MELDINGO =                                  
+                            'TEKSTEN TIL DETTE TRYGDEKONTOR ER NÅ'              
+                            !! ' SKREVET TIL SYSTEMET';                         
+                         END;                                                   
+                      WHEN('EF')                                                
+                         DO;                                                    
+                            EXEC CICS READ DATASET ('FEILTAB') UPDATE           
+                                 RIDFLD(W01_NR) SET(FEIL_PEKER);                
+                            CALL OVERFØR_FRA_MAP;                               
+                            CALL KONTROLL_AV_INPUT;                             
+                            EXEC CICS REWRITE DATASET ('FEILTAB')               
+                                                  FROM (FEIL_REC);              
+                            S001A5O.MELDINGO =                                  
+                            'TEKSTEN TIL DENNE FEILMELDING ER'                  
+                            !! ' NÅ ENDRET';                                    
+                         END;                                                   
+                      OTHERWISE                                                 
+                         DO;                                                    
+                            S001A5O.MELDINGO =                                  
+                            'GAL KODE FØR SF, BARE RT ELLER EF TILLATT';        
+                         END;                                                   
+                                                                                
+                   END;                                                         
+                                                                                
+                   CALL TEKST_PROT;                                             
+                   FORRIGE_AKSJON = 'SF';                                       
+                END;                                                            
+             WHEN('FF')                                                         
+                DO;                                                             
+                   CALL BLANK_TEKST;                                            
+                   CALL TEKST_PROT;                                             
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VF);                
+                   EXEC CICS READ DATASET ('FEILTAB') RIDFLD(W01_NR)            
+                                                      SET(FEIL_PEKER);          
+                   EXEC CICS DELETE DATASET ('FEILTAB') RIDFLD(W01_NR);         
+                   S001A5O.MELDINGO = 'DENNE FEILMELDINGEN ER FJERNET';         
+                   CALL OVERFØR_TIL_MAP;                                        
+                   FORRIGE_AKSJON = 'FF';                                       
+                                                                                
+                END; */                                                         
+             WHEN('XX')                                                         
+                DO;                                                             
+                   PROGRAM_ID = 'R0010301';    /* LITT JUKS !!!!     */         
+                   EXEC CICS XCTL PROGRAM ('R0010420')                          
+                                  COMMAREA (KOM_OMR);                           
+                END;                                                            
+             OTHERWISE                                                          
+                DO;                                                             
+                   S001A5O.MELDINGO = 'UGYLDIG KODE';                           
+                   CALL TEKST_PROT;                                             
+                   S001A5I.AKSJONL      = -1;     /* CURSOR */                  
+                   S001A5I.FEILMELD_NRL = 0;                                    
+                END;                                                            
+                                                                                
+                                                                                
+          END;      /* SELECT  */                                               
+                                                                                
+          CALL SEND_MAP;                                                        
+                                                                                
+                                                                                
+       END;                                                                     
+                                                                                
+                                                                                
+  UT:                                                                           
+    PROGRAM_ID = 'R0010425';                                                    
+    EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);                      
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  NOTFND_VM:                                                                    
+    S001A5O.MELDINGO =                                                          
+           'FEILMELDINGSNUMMERET FINNES IKKE I SYSTEMET';                       
+    CALL SEND_MAP;                                                              
+    GOTO UT;                                                                    
+                                                                                
+  NOTFND_VN:                                                                    
+    S001A5O.MELDINGO =                                                          
+           'INGEN FLERE FEILMELDINGER I DENNE RETNING';                         
+    CALL SEND_MAP;                                                              
+    GOTO UT;                                                                    
+                                                                                
+                                                                                
+  NOTFND_RS:                                                                    
+    CALL TEKST_UNP;                                                             
+    FORRIGE_AKSJON = 'RS';                                                      
+    CALL SEND_MAP;                                                              
+    GOTO UT;                                                                    
+                                                                                
+                                                                                
+  SEND_MAP: PROC;                                                               
+     EXEC CICS SEND MAP ('S001A5') MAPSET ('S001A53')                           
+                                 CURSOR     DATAONLY ;                          
+  END SEND_MAP;                                                                 
+                                                                                
+                                                                                
+  BLANK_TEKST: PROC;                                                            
+     S001A5O.FEILTEKSTO     = (78)' ';                                          
+  END BLANK_TEKST;                                                              
+                                                                                
+                                                                                
+  TEKST_UNP: PROC;                                                              
+     S001A5I.FEILTEKSTL     = -1;   /* CURSOR   */                              
+     S001A5I.FEILMELD_NRL   = 0;                                                
+     S001A5O.FEILMELD_NRA   = '9';  /* ASKIP + BRIGHT + MDT */                  
+     S001A5O.FEILTEKSTA     = 'I';  /* UNP + BRI + MDT      */                  
+  END TEKST_UNP;                                                                
+                                                                                
+                                                                                
+  TEKST_PROT: PROC;                                                             
+     S001A5I.FEILTEKSTL     = 0;                                                
+     S001A5I.FEILMELD_NRL   = -1;  /* CURSOR   */                               
+     S001A5O.FEILMELD_NRA   = 'P'; /* BRIGHT + NUM + UNP + MDT */               
+     S001A5O.FEILTEKSTA     = DFHBMASB;                                         
+  END TEKST_PROT;                                                               
+                                                                                
+                                                                                
+  OVERFØR_TIL_MAP: PROC;                                                        
+     S001A5O.CICS_INFOO     = DIV_PARAM_OMR.CICS_NAVN ;                         
+     S001A5O.FEILMELD_NRO   = FEIL_REC.FEILNR;                                  
+     S001A5O.FEILTEKSTO     = FEIL_REC.TEKST;                                   
+  END OVERFØR_TIL_MAP;                                                          
+                                                                                
+                                                                                
+  OVERFØR_FRA_MAP: PROC;                                                        
+                                                                                
+     FEIL_REC.FEILNR     = S001A5O.FEILMELD_NRO;                                
+     FEIL_REC.TEKST = (78)' ';                                                  
+     IF S001A5I.FEILTEKSTL    > 0 THEN                                          
+        FEIL_REC.TEKST   = S001A5I.FEILTEKSTI;                                  
+                                                                                
+  END OVERFØR_FRA_MAP;                                                          
+                                                                                
+  KONTROLL_AV_INPUT:  PROC;                                                     
+                                                                                
+     IF W01_IO  = ' ' THEN                                                      
+        DO;                                                                     
+           S001A5O.MELDINGO   = 'FEILMELDING ER IKKE UTFYLLT';                  
+           S001A5I.FEILTEKSTL = -1;      /* CURSOR      */                      
+        END;                                                                    
+                                                                                
+     ELSE                                                                       
+        RETURN;            /*  RETURNERER UTEN Å HA FUNNET FEIL  */             
+                                                                                
+                                                                                
+    /* HIT KOMMER EN BARE DERSOM DET ER FEIL, DA BLIR DET EN    */              
+    /* ANNEN UTGANG                                             */              
+                                                                                
+    CALL SEND_MAP;                                                              
+    GOTO UT;                                                                    
+                                                                                
+                                                                                
+  END KONTROLL_AV_INPUT;                                                        
+                                                                                
+ END R001B1;                                                                    
+                                                                                
+                                                                                
+                                                                                

@@ -1,0 +1,1253 @@
+ /*   SIST ENDRET PÅ PROD   2004.07.16 12.54.50 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.11.07 15.21.08 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.19 12.45.40 AV   JDA2970          */        
+ /*       SIST ENDRET 09/06-98 08.49.27 AV   SPA7339                  */        
+  /* **************************************************************** */        
+  /*IDENTIFIKASJON:                                                   */        
+  /*    R0018021 - HOVEDPROGRAM I PLI   (KOPI 5201).                  */        
+  /*                                                                  */        
+  /*    PROGRAMMERER: SATISH PATHAK                                   */        
+  /*                                                                  */        
+  /*HENSIKT:                                                          */        
+  /*    LESER     T R A N S    FRA    REVSJON DBD                     */        
+  /*                                                                  */        
+  /*PROGRAMTILKNYTNING:                                               */        
+  /*                                                                  */        
+  /*BRUKER                                                            */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+                                                                                
+  R001802:                                                                      
+    PROC            (COMMAREA_PEKER)                                            
+           OPTIONS  (MAIN);                                                     
+                                                                                
+    %PAGE;                                                                      
+    %INCLUDE P0018201;                         /* TRANS_SEGM_OMR  (B) */        
+                                                                                
+    %PAGE;                                                                      
+    %INCLUDE P0019906;                         /* TRANS_OPPL_OMR  (B) */        
+                                                                                
+    %PAGE;                                                                      
+    %INCLUDE P0019908;                         /* KOM_OMR         (B) */        
+                                                                                
+    %PAGE;                                                                      
+    %INCLUDE P0019910;                         /* STYRINGS_OMR    (B) */        
+                                                                                
+    %PAGE;                                                                      
+    %INCLUDE P0019912;                         /* DIV_PARAM_OMR   (B) */        
+                                                                                
+    %PAGE;                                                                      
+    /* ************************************************************** */        
+    /*   INNEBYGDE PLI-FUNKSJONER                                     */        
+    /* ************************************************************** */        
+                                                                                
+       DCL                                                                      
+         ( ADDR , CSTG , LOW , STG , SUBSTR, VERIFY )  BUILTIN;                 
+       DCL                                                                      
+         PLITDLI ENTRY;                                                         
+                                                                                
+    /* ************************************************************** */        
+    /*   ARBEIDSFELTER SOM BRUKES AV UIB (USER INTERFACE BLOCK)       */        
+    /* ************************************************************** */        
+                                                                                
+    %INCLUDE DLIUIB;                                                            
+                                                                                
+       DCL                                                                      
+           UIB_RC_OK                 BIT  (8)             INIT ( 0 );           
+                                                                                
+       DCL                                                                      
+         ( COMMAREA_PEKER , W01_HJELPE_PEKER , TRANS_SEGM_PEKER ,               
+           W01_TRANS_OPPL_PEKER )    POINTER;                                   
+                                                                                
+    /* ************************************************************** */        
+    /*   OPPTELINGS- OG LOOP-PARAMETRE M.M                            */        
+    /* ************************************************************** */        
+                                                                                
+       DCL 1  W01                       UNALIGNED,                              
+              2   MER_DATA                    BIT  (1)   INIT ('1'B),           
+              2   BARN_IKKE_LEST              BIT  (1)   INIT ('1'B),           
+              2   PERSON_IKKE_FUNNET          BIT  (1)   INIT ('1'B),           
+              2   TO_GRUNNBYP_LEST            BIT  (1)   INIT ('0'B),           
+              2   GRUNNBYP_IKKE_LEST          BIT  (1)   INIT ('1'B),           
+              2   TO_GRUNNEES_LEST            BIT  (1)   INIT ('0'B),           
+              2   GRUNNEES_IKKE_LEST          BIT  (1)   INIT ('1'B),           
+              2   NAVN                        CHAR (25)  INIT ((25)' '),        
+              2   VIRK_DATO_ÅMD               PIC '99999999' INIT (0),          
+              2   VTP_ÅM_SISTE                PIC '99999999' INIT (0),          
+              2   I                    FIXED  BIN  (15)  INIT (1),              
+              2   J                    FIXED  BIN  (15)  INIT (1);              
+                                                                                
+    /* ************************************************************** */        
+    /*   DLI CALL-PARAMETRE + ANDRE KODER .                           */        
+    /* ************************************************************** */        
+                                                                                
+ /*    DCL 1  W01_DLI_PARAM,    OMRÅDET MÅ VÆRE UNALIGNED      */               
+ /*                             NY VERSJON AV IMS  120788 BF   */               
+                                                                                
+       DCL 1  W01_DLI_PARAM      UNALIGNED,                                     
+              2   W02_GU                  CHAR (4)   INIT ('GU  '),             
+              2   W02_GHU                 CHAR (4)   INIT ('GHU '),             
+              2   W02_GN                  CHAR (4)   INIT ('GN  '),             
+              2   W02_GNP                 CHAR (4)   INIT ('GNP '),             
+              2   W02_PARM_CT_3     FIXED BIN  (31)  INIT (3),                  
+              2   W02_PARM_CT_4     FIXED BIN  (31)  INIT (4),                  
+              2   W02_PARM_CT_5     FIXED BIN  (31)  INIT (5),                  
+              2   W02_OUT2                CHAR (20)  INIT ( (20) ' ');          
+                                                                                
+       DCL    W01_IO                CHAR (350)       INIT ( (350) ' ' ),        
+              W01_HJELPE_IO         CHAR (350) BASED (W01_HJELPE_PEKER);        
+                                                                                
+       DCL 01 DR0PERSN   ,                                                      
+        %INCLUDE P0018011;                                                      
+                                                                                
+    /* ************************************************************** */        
+    /*   DL1 SSA-OMRÅDER FOR ROT OG STATUS-SEGMENTER.                 */        
+    /* ************************************************************** */        
+                                                                                
+       DCL    SSA_UQUAL                       CHAR (9) INIT ((9)' ');           
+                                                                                
+       DCL 1  SSA1_TRANHIST_CMD               ,                                 
+              2    HDEL                       CHAR (19)  INIT                   
+                                                ('TRANHIST*P(GRBLKODE'),        
+              2    REL_OP_1                   CHAR (2)   INIT ('^='),           
+              2    GRBLKODE                   CHAR (2)   INIT ('US'),           
+              2    HP                         CHAR (1)   INIT (')');            
+                                                                                
+    DCL 1  SSA1_TRANHIST_XXX      UNALIGNED,                                    
+           2    HDEL                       CHAR (19)  INIT                      
+                                             ('TRANHIST*P(VIRKDATO'),           
+           2    REL_OP_1                   CHAR (1)   INIT (' '),               
+           2    REL_OP_2                   CHAR (1)   INIT ('='),               
+           2    VTP               FIXED    DEC  (15)   INIT ( 0 ),              
+           2    KONKAT                     CHAR (1)   INIT ('&'),               
+           2    MDEL                       CHAR (8)   INIT                      
+                                                     ('GRBLKODE'),              
+           2    REL_OP_3                   CHAR (2)   INIT (' ='),              
+           2    GRBLKODE                   CHAR (2)   INIT ('  '),              
+           2    HP                         CHAR (1)   INIT (')');               
+                                                                                
+   DCL 1  SSA1_TRAN_QUA      ,                                                  
+          2    HDEL                          CHAR (19)  INIT                    
+                           ('TRANHIST*P(REGDTKEY'),                             
+          2    REL_OP                CHAR (2)     INIT (' =')     ,             
+          2    TTP_KEY            FIXED        DEC (15)  INIT ( 0 ),            
+          2    TVP_KEY            FIXED        DEC  (9)  INIT ( 0 ),            
+          2    TGBK                          CHAR (2)  INIT ('  '),             
+          2    HP                            CHAR (1)   INIT (')' );            
+                                                                                
+       DCL 1  SSA1_DR0PERSN          UNALIGNED,                                 
+              2    HDEL                       CHAR (17)  INIT                   
+                                                  ('DR0PERSN(FNR     '),        
+              2    REL_OP                     CHAR (2)   INIT (' ='),           
+              2    PKEY              FIXED    DEC  (11),                        
+              2    HP                         CHAR (1)   INIT (')' );           
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*   PCB-PEKER-OMR    OG    PCB-OMR                               */        
+    /* ************************************************************** */        
+                                                                                
+    %PAGE;                                                                      
+    %INCLUDE P0012002;                         /* PCB_UIB_PEKER_OMR   */        
+                                                                                
+    %PAGE;                                                                      
+       DCL 1  DR2              BASED (DR2_PCB_PEKER),                           
+    %INCLUDE P0012003;                         /* PCB                 */        
+                                                                                
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*      SLUTT PÅ DEKLARASJONENE , EKSEKVERINGEN STARTER .         */        
+    /*     ---------------------------------------------------        */        
+    /*                                                                */        
+    /*                                                                */        
+    /*      INITIERING AV PARAMETRE TIL DIV_PARAM_OMR.                */        
+    /*                                                                */        
+    /*      SETTER UIBPTR = UIB_PEKER   SOM OVERFØRES ETTER           */        
+    /*      INITIERINGS-KALL   I     R0012001 .                       */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+    ALLOCATE  TRANS_SEGM_OMR;                                                   
+    TRANS_SEGM_OMR                          =   ''                     ;        
+ /* TRANS_OPPL_OMR                          =   ''  ;  */                       
+    DB_STATUS_KODE     =   '  '       ;                                         
+    IF FEIL_MELD_NR    =   0  THEN                                              
+       PROGRAM_ID         =   'R0018021' ;                                      
+    UIBPTR                =    UIB_PEKER ;                                      
+                                                                                
+                                                                                
+    IF   SEARCH_FNR                         =    0                 THEN         
+      DO;                                                                       
+         /* ********************************************** */                   
+         /* NULL I FNR . KJØRING AVBRYTES                  */                   
+         /* ********************************************** */                   
+  L100:                                                                         
+         FEIL_MELD_NR                 =   498;                                  
+         FEIL_VED_LABEL               =  '100';                                 
+         GO TO L999;                                                            
+      END;                                                                      
+                                                                                
+    /* ********************************************************** */            
+    /* SETTER INN VERDIENE I SSA'ENE.                             */            
+    /* ********************************************************** */            
+                                                                                
+    SSA1_DR0PERSN.PKEY              =   SEARCH_FNR                 ;            
+                                                                                
+                                                                                
+    /* ********************************************************** */            
+    /*  LES ROT QUALIFY                                           */            
+    /* ********************************************************** */            
+      CALL P005_LES_ROT_GU;                                                     
+                                                                                
+      SUBSTR (ADDR (DR0PERSN)                                                   
+                ->  W01_HJELPE_IO,1,STG (DR0PERSN)) =  W01_IO;                  
+   /* DR0PERSN_DEF  =   W01_IO; */                                              
+      W01.NAVN   = DR0PERSN.NAVN;                                               
+                                                                                
+      IF DR0PERSN.FNR    > 0  THEN                                              
+         W01.PERSON_IKKE_FUNNET  =    '0'B;                                     
+      ELSE                                                                      
+         MER_DATA                =    '0'B;                                     
+                                                                                
+      IF FEIL_MELD_NR                    >    0                THEN             
+         DO;                                                                    
+           /* ********************************************** */                 
+           /*  FEIL VED LES                                  */                 
+           /* ********************************************** */                 
+                                                                                
+           GO TO L999;                                                          
+         END;                                                                   
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+    /* ********************************************************** */            
+    /*  LES TRANS  OG BLANKETT                                    */            
+    /* ********************************************************** */            
+     TRANS_OPPL_OMR.FØDSNUMMER      =   SEARCH_FNR;                             
+     IF  W01.PERSON_IKKE_FUNNET  =    '0'B  THEN                                
+            CALL P020_LES_NESTE_TRANHIST;                                       
+     ELSE                                                                       
+         GO TO L999;                                                            
+                                                                                
+        TO_GRUNNBYP_LEST   = '0'B;                                              
+        GRUNNBYP_IKKE_LEST = '1'B;                                              
+                                                                                
+        TO_GRUNNEES_LEST   = '0'B;                                              
+        GRUNNEES_IKKE_LEST = '1'B;                                              
+                                                                                
+    DO   WHILE  (W01.MER_DATA  &  W01.BARN_IKKE_LEST &                          
+                     ^TO_GRUNNBYP_LEST & ^TO_GRUNNEES_LEST );                   
+                                                                                
+      IF FEIL_MELD_NR                    >    0                THEN             
+         DO;                                                                    
+           /* ********************************************** */                 
+           /*  FEIL VED LES                                  */                 
+           /* ********************************************** */                 
+                                                                                
+           GO TO L999;                                                          
+         END;                                                                   
+                                                                                
+                                                                                
+      SELECT ( DR2.SEGM_NAVN );                                                 
+                                                                                
+                                                                                
+        WHEN ( 'TRANHIST' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    T R A N H I S T                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+                                                                                
+            SUBSTR (ADDR                (TRANHIST)                              
+                ->  W01_HJELPE_IO,1,STG (TRANHIST)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBAP' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B A P                       */            
+          /*  GRUNNBAP KAN VÆRE AVTALEFESTET PENSJON, DA SKAL     */            
+          /*  LESTE DATA LEGGES I OMRÅDET GRUNNBAF.               */            
+          /* **************************************************** */            
+          DO;                                                                   
+               SUBSTR (ADDR             (GRUNNBAP)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBAP)) =  W01_IO;                  
+                                                                                
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBAF' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B A P                       */            
+          /*  GRUNNBAF KAN VÆRE AVTALEFESTET PENSJON, DA SKAL     */            
+          /*  LESTE DATA LEGGES I OMRÅDET GRUNNBAF.               */            
+          /* **************************************************** */            
+          DO;                                                                   
+                                                                                
+               SUBSTR (ADDR             (GRUNNBAF)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBAF)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+                                                                                
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBKF' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B A P                       */            
+          /*  GRUNNBAF KAN VÆRE AVTALEFESTET PENSJON, DA SKAL     */            
+          /*  LESTE DATA LEGGES I OMRÅDET GRUNNBAF.               */            
+          /* **************************************************** */            
+          DO;                                                                   
+                                                                                
+               SUBSTR (ADDR             (GRUNNBKF)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBKF)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+                                                                                
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBA1' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B A 1                       */            
+          /*  GRUNNBAP KAN VÆRE AVTALEFESTET PENSJON, DA SKAL     */            
+          /*  LESTE DATA LEGGES I OMRÅDET GRUNNBAF.               */            
+          /* **************************************************** */            
+          DO;                                                                   
+                                                                                
+               SUBSTR (ADDR             (GRUNNBA1)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBA1)) =  W01_IO;                  
+                                                                                
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBUP' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B U P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+               SUBSTR (ADDR             (GRUNNBUP)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBUP)) =  W01_IO;                  
+                                                                                
+           CALL    P010_LES_SEGM;                                               
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBUF' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B U F                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+               SUBSTR (ADDR             (GRUNNBUF)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBUF)) =  W01_IO;                  
+           CALL    P010_LES_SEGM;                                               
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBU2' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B U 2                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+               SUBSTR (ADDR             (GRUNNBU2)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBU2)) =  W01_IO;                  
+                                                                                
+           CALL    P010_LES_SEGM;                                               
+          END;                                                                  
+                                                                                
+                                                                                
+        WHEN ( 'GRUNNBU3' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B U 3                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+               SUBSTR (ADDR             (GRUNNBU3)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBU3)) =  W01_IO;                  
+                                                                                
+           CALL    P010_LES_SEGM;                                               
+          END;                                                                  
+                                                                                
+                                                                                
+        WHEN ( 'GRBLFORS' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L F O R S                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLFORS)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLFORS)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+                                                                                
+        WHEN ( 'GRUNNBIF' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L F O R S                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRUNNBIF)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBIF)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBFO' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L  FO                           */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRUNNBFO)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBFO)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBEP' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B E P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRUNNBEP)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBEP)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBE3' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B E P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRUNNBE3)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBE3)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBEE' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B E P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRUNNBEE)                              
+                ->  W01_HJELPE_IO,1,STG (GRUNNBEE)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRBLFAMP' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L F A M P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLFAMP)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLFAMP)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRBLFAE4' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L F A M P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLFAE4)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLFAE4)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRBLEBEN' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L E B E N                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLEBEN)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLEBEN)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRBLEBB6' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L E B B 6                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLEBB6)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLEBB6)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRBLEBBE' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L E B B E                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLEBBE)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLEBBE)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+                                                                                
+        WHEN ( 'GRBLF5BE' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L F 5 B E                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLF5BE)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLF5BE)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'ENDRBLAN' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    E N D R B L A N                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (ENDRBLAN)                              
+                ->  W01_HJELPE_IO,1,STG (ENDRBLAN)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'ENBLAN1 ' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    E N _ B L A N                       */              
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (EN_BLAN)                               
+                ->  W01_HJELPE_IO,1,STG (EN_BLAN)) =  W01_IO;                   
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'OPPHBL1 ' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    O P P H B L 1                         */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (OPPHBL1)                               
+                ->  W01_HJELPE_IO,1,STG (OPPHBL1)) =  W01_IO;                   
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'OPPHBL2 ' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    O P P H B L 2                         */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (OPPHBL2)                               
+                ->  W01_HJELPE_IO,1,STG (OPPHBL2)) =  W01_IO;                   
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+        WHEN ( 'BARN    ' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    B A R N                               */            
+          /* **************************************************** */            
+          DO;                                                                   
+            W01.BARN_IKKE_LEST                  =  '0'B;                        
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNBYP' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B Y P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            IF GRUNNBYP_IKKE_LEST THEN                                          
+               DO;                                                              
+                  SUBSTR (ADDR                (GRUNNBYP)                        
+                          ->  W01_HJELPE_IO,1,STG (GRUNNBYP)) =  W01_IO;        
+                  CALL    P010_LES_SEGM;                                        
+                  GRUNNBYP_IKKE_LEST = '0'B;                                    
+               END;                                                             
+            ELSE                                                                
+               TO_GRUNNBYP_LEST = '1'B;                                         
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRUNNEES' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R U N N B Y P                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+            IF GRUNNEES_IKKE_LEST THEN                                          
+               DO;                                                              
+                  SUBSTR (ADDR                (GRUNNEES)                        
+                          ->  W01_HJELPE_IO,1,STG (GRUNNEES)) =  W01_IO;        
+                  CALL    P010_LES_SEGM;                                        
+                  GRUNNEES_IKKE_LEST = '0'B;                                    
+               END;                                                             
+            ELSE                                                                
+               TO_GRUNNEES_LEST = '1'B;                                         
+          END;                                                                  
+                                                                                
+        WHEN ( 'GRBLUFST' )                                                     
+          /* **************************************************** */            
+          /*  FÅTT INN :    G R B L  FO                           */            
+          /* **************************************************** */            
+          DO;                                                                   
+            SUBSTR (ADDR                (GRBLUFST)                              
+                ->  W01_HJELPE_IO,1,STG (GRBLUFST)) =  W01_IO;                  
+            CALL    P010_LES_SEGM;                                              
+          END;                                                                  
+                                                                                
+                                                                                
+        OTHERWISE                                                               
+          /* **************************************************** */            
+          /*  FÅTT INN : ET UKJENT SEGMENT                        */            
+          /* **************************************************** */            
+          DO;                                                                   
+  L105:                                                                         
+            FEIL_MELD_NR                        =  500;                         
+            FEIL_VED_LABEL                      = '105';                        
+            GO TO L999;                                                         
+          END;                                                                  
+                                                                                
+      END;/*   SELECT    :  DR2.SEGM_NAVN                       */              
+                                                                                
+    END;  /*   DO WHILE  (  W01.MER_DATA & W01.BARN_IKKE_LEST ) */              
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /* SJEKKER OM ET TRANHIST-SEGM. ER LEST INN .                     */        
+    /* ER DET DET OVEDRØRES OPPLYSNINGENE TIL BLANKETTEN .            */        
+    /*                                                                */        
+    /* HVIS IKKE SJEKKES OM DET LEST INN NOEN I POS 1,2,3 I B02       */        
+    /* ER DET IKKE DET BLANKES DEN OPPDATERTE POS 14 I B01 .          */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+                                                                                
+    IF TRANHIST.VTP_KEY        >        0     THEN                              
+       CALL    P040_OVERFØR_TIL_BLANKETT;                                       
+                                                                                
+    %PAGE;                                                                      
+    /* ************************************************************** */        
+    /*                                                                */        
+    /* PROCEDURE FOR LESE ROT-SEGM              ( GHU   )             */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+    P005_LES_ROT_GU:                                                            
+      PROC;                                                                     
+                                                                                
+      CALL PLITDLI                              (W02_PARM_CT_4,                 
+                                                 W02_GU,                        
+                                                 DR2,                           
+                                                 W01_IO,                        
+                                                 SSA1_DR0PERSN);                
+                                                                                
+      IF   UIBFCTR                         =     UIB_RC_OK    THEN              
+        DO;                                                                     
+          SELECT  ( DR2.STATUS_KODE );                                          
+                                                                                
+            WHEN  ( '  ' )                                                      
+              W01.MER_DATA                 =    '1'B;                           
+                                                                                
+            WHEN  ( 'GE' )                                                      
+              W01.MER_DATA                 =    '0'B;                           
+                                                                                
+            OTHERWISE                                                           
+              DO;                                                               
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+  L110:                                                                         
+                FEIL_MELD_NR               =     500;                           
+                FEIL_VED_LABEL             =    '110';                          
+                DB_STATUS_KODE             =     DR2.STATUS_KODE;               
+              END;                                                              
+          END;                                                                  
+        END;                                                                    
+      ELSE                                                                      
+        DO;                                                                     
+          /* ************************************************** */              
+          /*   UIB'S RETUR-CODE ER UAKSEPTABEL                  */              
+          /* ************************************************** */              
+  L120:                                                                         
+          FEIL_MELD_NR               =     500;                                 
+          FEIL_VED_LABEL             =    '120';                                
+        END;                                                                    
+    END P005_LES_ROT_GU;                                                        
+                                                                                
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /* PROCEDURE FOR LESE NESTE SEGMENT UNDER TRANHIST                */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+    P010_LES_SEGM:                                                              
+      PROC;                                                                     
+                                                                                
+      CALL PLITDLI                              (W02_PARM_CT_3,                 
+                                                 W02_GNP,                       
+                                                 DR2,                           
+                                                 W01_IO);                       
+                                                                                
+      IF   UIBFCTR                         =     UIB_RC_OK    THEN              
+        DO;                                                                     
+          SELECT ( DR2.STATUS_KODE );                                           
+            WHEN ( '  ' , 'GA' , 'GK' )                                         
+              W01.MER_DATA                 =    '1'B;                           
+            WHEN ( 'GE' , 'GB' )                                                
+              W01.MER_DATA                 =    '0'B;                           
+            OTHERWISE                                                           
+              DO;                                                               
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+  L130:                                                                         
+                FEIL_MELD_NR               =     500;                           
+                FEIL_VED_LABEL             =    '130';                          
+                DB_STATUS_KODE             =     DR2.STATUS_KODE;               
+              END;                                                              
+          END;                                                                  
+        END;                                                                    
+      ELSE                                                                      
+        DO;                                                                     
+          /* ************************************************** */              
+          /*   UIB'S RETUR-CODE ER UAKSEPTABEL                  */              
+          /* ************************************************** */              
+  L140:                                                                         
+          FEIL_MELD_NR               =     500;                                 
+          FEIL_VED_LABEL             =    '140';                                
+        END;                                                                    
+    END P010_LES_SEGM;                                                          
+                                                                                
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /* PROCEDURE FOR LESE NESTE TRANHIST (GN    UKVALIFISERT  )       */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+    P020_LES_NESTE_TRANHIST:                                                    
+      PROC;                                                                     
+      SSA1_TRAN_QUA.TTP_KEY  = TRANS_OPPL_OMR.DATOTID;                          
+      SSA1_TRAN_QUA.TVP_KEY  = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;                
+      SSA1_TRAN_QUA.TGBK     = TRANS_OPPL_OMR.BLANKETTYPE;                      
+                                                                                
+      CALL PLITDLI                              (W02_PARM_CT_5,                 
+                                                 W02_GHU,                       
+                                                 DR2,                           
+                                                 W01_IO,                        
+                                                 SSA1_DR0PERSN,                 
+                                                 SSA1_TRAN_QUA   );             
+                                                                                
+      IF   UIBFCTR                         =     UIB_RC_OK    THEN              
+        DO;                                                                     
+          SELECT ( DR2.STATUS_KODE );                                           
+                                                                                
+            WHEN ( '  ' , 'GA' , 'GK' )                                         
+              W01.MER_DATA                 =    '1'B;                           
+                                                                                
+            WHEN ( 'GE' , 'GB' )                                                
+              W01.MER_DATA                 =    '0'B;                           
+                                                                                
+            OTHERWISE                                                           
+              DO;                                                               
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+  L150:                                                                         
+                FEIL_MELD_NR               =     500;                           
+                FEIL_VED_LABEL             =    '150';                          
+                DB_STATUS_KODE             =     DR2.STATUS_KODE;               
+              END;                                                              
+          END;                                                                  
+        END;                                                                    
+      ELSE                                                                      
+        DO;                                                                     
+          /* ************************************************** */              
+          /*   UIB'S RETUR-CODE ER UAKSEPTABEL                  */              
+          /* ************************************************** */              
+  L160:                                                                         
+          FEIL_MELD_NR               =     500;                                 
+          FEIL_VED_LABEL             =    '160';                                
+        END;                                                                    
+    END P020_LES_NESTE_TRANHIST;                                                
+                                                                                
+                                                                                
+    /* ********************************************************* */             
+    /*                                                           */             
+    /* *****  PROC SOM KALLER RIKTIG BLANKETT-OMRÅDET  *******   */             
+    /*                                                           */             
+    /* ********************************************************* */             
+                                                                                
+    P040_OVERFØR_TIL_BLANKETT:                                                  
+      PROC;                                                                     
+                                                                                
+                                                                                
+      W01.VIRK_DATO_ÅMD                 =  TRANHIST.VIRK_DATO_ÅMD   ;           
+      TRANS_OPPL_OMR.FØDSNUMMER         =  SEARCH_FNR               ;           
+      TRANS_OPPL_OMR.BLANKETTYPE        =  TRANHIST.GRBLKODE        ;           
+      TRANS_OPPL_OMR.TRANS_RETURKODE    =  TRANHIST.TRANS_RETURKODE ;           
+      TRANS_OPPL_OMR.REG_DATO_ÅMD       =  TRANHIST.REGDATO_ÅMD     ;           
+      TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD  =    W01.VIRK_DATO_ÅMD       ;          
+                                                                                
+      SELECT ( TRANHIST.GRBLKODE );                                             
+                                                                                
+        WHEN ( 'AP' )                                                           
+          /* **************************************************** */            
+          /*  ALDERSPENSJON                                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P050_LES_AP_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV :  TRANS                   */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'A1' )                                                           
+          /* **************************************************** */            
+          /*  ALDERSPENSJON                                       */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P050_LES_A1_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV :  TRANS                   */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'AF' )                                                           
+          /* **************************************************** */            
+          /*  AVTALEFESTET PENSJON   - AFP                        */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P190_LES_AF_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED LES AV :  TRANS                     */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+                                                                                
+        WHEN ( 'KF' )                                                           
+                                                                                
+          /* **************************************************** */            
+          /*  AVTALEFESTET PENSJON   - AFP                        */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P190_LES_KF_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                                                                                
+                  /* ******************************************** */            
+                  /* FEIL VED LES AV :  TRANS                     */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'UP' )                                                           
+          /* **************************************************** */            
+          /*  UFØREPENSJON                                        */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P060_LES_UP_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+        WHEN ( 'U2' )                                                           
+          /* **************************************************** */            
+          /*  UFØREPENSJON                                        */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P060_LES_U2_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'U3' )                                                           
+          /* **************************************************** */            
+          /*  UFØREPENSJON                                        */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P060_LES_U3_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'UF' )                                                           
+          /* **************************************************** */            
+          /*  UNGE UFØRE FØR 1967                                 */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P183_LES_UF_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'EP' )                                                           
+          /* **************************************************** */            
+          /*  ETTERLATT-PENSJON                                   */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P080_LES_EP_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'E3' )                                                           
+          /* **************************************************** */            
+          /*  ETTERLATT-PENSJON                                   */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P080_LES_E3_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'EE' )                                                           
+          /* **************************************************** */            
+          /*  ETTERLATT-PENSJON                                   */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P080_LES_EE_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'EF' )                                                           
+          /* **************************************************** */            
+          /*  ETTERLATT FAMILIEPLEIER                             */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P090_LES_EF_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'E4' )                                                           
+          /* **************************************************** */            
+          /*  ETTERLATT FAMILIEPLEIER                             */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P090_LES_E4_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'FB' )                                                           
+          /* **************************************************** */            
+          /*  FORELDRELØSE BARN                                   */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P100_LES_FB_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'BP' )                                                           
+          /* **************************************************** */            
+          /*  BANEPENSJONIST                                      */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P110_LES_BP_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'B6' )                                                           
+          /* **************************************************** */            
+          /*  BANEPENSJONIST                                      */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P110_LES_B6_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'FT' )                                                           
+          /* **************************************************** */            
+          /*  SJEKKER OM BEHANDLING AV ROT-SEGM. GIKK OK          */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P120_LES_FT_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'F7' )                                                           
+          /* **************************************************** */            
+          /*  SJEKKER OM BEHANDLING AV ROT-SEGM. GIKK OK          */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P120_LES_F7_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'FO' )                                                           
+          /* **************************************************** */            
+          /*  SJEKKER OM BEHANDLING AV ROT-SEGM. GIKK OK          */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P120_LES_FO_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'E1' )                                                           
+          /* **************************************************** */            
+          /*  ENDRINGSBLANKETT                                    */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P140_LES_E1_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'EN' )                                                           
+          /* **************************************************** */            
+          /*  ENDRINGSBLANKETT - EN                               */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P140_LES_EN_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'O1' )                                                           
+          /* **************************************************** */            
+          /*  OPPHØRSBLANKETT .   DØD                             */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P160_LES_O1_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+                                                                                
+        WHEN ( 'O2' )                                                           
+          /* **************************************************** */            
+          /*  ANDRE OPPHØRSÅRSAKER                                */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P170_LES_O2_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+        WHEN ( 'US' )                                                           
+          /* **************************************************** */            
+          /*  ANDRE OPPHØRSÅRSAKER                                */            
+          /* **************************************************** */            
+          DO;                                                                   
+             CALL P070_LES_US_TRANS;                                            
+                                                                                
+             IF   FEIL_MELD_NR              >      0       THEN                 
+               DO;                                                              
+                  /* ******************************************** */            
+                  /* FEIL VED SKRIV AV TRANS                      */            
+                  /* ******************************************** */            
+                                                                                
+                  GO TO RETUR;                                                  
+               END;                                                             
+          END;                                                                  
+        OTHERWISE                                                               
+          /* **************************************************** */            
+          /*  FÅTT EN UKJENT TRANS-TYPE . KJØRING AVBRYTES        */            
+          /* **************************************************** */            
+          DO;                                                                   
+   L190:                                                                        
+             FEIL_MELD_NR           =   497;                                    
+             FEIL_VED_LABEL         =  '190';                                   
+          END;                                                                  
+                                                                                
+      END;   /* *****      SELECT ( TRANSTYPE )            ****** */            
+                                                                                
+  RETUR:                                                                        
+                                                                                
+    END P040_OVERFØR_TIL_BLANKETT;                                              
+                                                                                
+                                                                                
+  %INCLUDE R0015205;             /*  P050_LES_AP_TRANS            */            
+                                                                                
+  %INCLUDE R00152N5;             /*  P050_LES_A1_TRANS            */            
+                                                                                
+  %INCLUDE R0015206;             /*  P060_LES_UP_TRANS            */            
+  %INCLUDE R00152N6;             /*  P060_LES_U2_TRANS            */            
+  %INCLUDE R00152U6;             /*  P060_LES_U3_TRANS            */            
+                                                                                
+  %INCLUDE R0015207;             /*  P070_LES_US_TRANS            */            
+                                                                                
+  %INCLUDE R0015208;             /*  P080_LES_EP_TRANS            */            
+  %INCLUDE R00152N8;             /*  P080_LES_E3_TRANS            */            
+  %INCLUDE R00152U8;             /*  P080_LES_EE_TRANS            */            
+                                                                                
+  %INCLUDE R0015209;             /*  P090_LES_EF_TRANS            */            
+  %INCLUDE R00152N9;             /*  P090_LES_E4_TRANS            */            
+                                                                                
+  %INCLUDE R0015210;             /*  P090_LES_FB_TRANS            */            
+                                                                                
+  %INCLUDE R0015211;             /*  P110_LES_BP_TRANS            */            
+  %INCLUDE R00152NB;             /*  P110_LES_B6_TRANS            */            
+                                                                                
+  %INCLUDE R0015212;             /*  P120_LES_FT_TRANS            */            
+  %INCLUDE R00152NC;             /*  P120_LES_F7_TRANS            */            
+  %INCLUDE R00152UC;             /*  P120_LES_FO_TRANS            */            
+                                                                                
+  %INCLUDE R0015214;             /*  P140_LES_E1_TRANS            */            
+  %INCLUDE R00152UE;             /*  P140_LES_EN_TRANS            */            
+                                                                                
+  %INCLUDE R0015216;             /*  P160_LES_O1_TRANS            */            
+                                                                                
+  %INCLUDE R0015217;             /*  P170_LES_O2_TRANS            */            
+                                                                                
+  %INCLUDE R0015219;             /*  P190_LES_AF_TRANS   */                     
+  %INCLUDE R00152UJ;             /*   P190_LES_KF_TRANS   */                    
+                                                                                
+                                                                                
+  %INCLUDE R0015220;             /*  P183_LES_UF_TRANS         UF*/             
+                                                                                
+                                                                                
+    /* %INCLUDE R0019913;     F_SNU_DATO                   */                   
+                                                                                
+  L999:                                                                         
+                                                                                
+    EXEC CICS RETURN;                                                           
+  END R001802;                                                                  

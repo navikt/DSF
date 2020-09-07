@@ -1,0 +1,214 @@
+ /*   SIST ENDRET PÅ PROD   2004.07.16 12.37.37 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 14.34.04 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2002.01.08 11.37.17 AV   JDA2970          */        
+ /*       SIST ENDRET 16/01-98 13.10.59 AV   SPA7339                  */        
+                                                                                
+ /* ************************************************************ */             
+ /*                                                              */             
+ /*  PROCDURE FOR Å STYRE LESINGEN AV TRANSENE .                 */             
+ /*                                                              */             
+ /* ************************************************************ */             
+                                                                                
+ P910_LES_FORRIGE_TRANS :                                                       
+    PROC;                                                                       
+                                                                                
+    DCL                                                                         
+        START                     FIXED BIN  (15)   INIT ( 0 ) ,                
+        STOPP                     FIXED BIN  (15)   INIT ( 0 ) ,                
+        HJ_VIRKNINGSDATO_ÅMD      PIC       '(8)9'  INIT ( 0 ) ,                
+        W_TRANS_PEKER             POINTER                      ,                
+        W_TRANS_OPPL_PEKER        POINTER                      ;                
+                                                                                
+                                                                                
+                                                                                
+ /* ************************************************************ */             
+ /* *************                                  ************* */             
+ /* ******          EKSEKVERING   STARTER                 ****** */             
+ /* *************                                  ************* */             
+ /* ************************************************************ */             
+                                                                                
+                                                                                
+    DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS = '1'B                         ;        
+    HJ_VIRKNINGSDATO_ÅMD        =  TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;            
+    W_TRANS_PEKER                       =  TRANS_PEKER                 ;        
+    W_TRANS_OPPL_PEKER                  =  TRANS_OPPL_PEKER            ;        
+                                                                                
+    IF TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =  0              THEN                  
+       TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =  1  ;                                 
+                                                                                
+                                                                                
+    SELECT  ( DIV_PARAM_OMR.STATUS_TYPE );                                      
+                                                                                
+       WHEN ('C')                                                               
+          /* ******************************************************* */         
+          /*                                                         */         
+          /* VDATO I TRANS LIGGER FORAN VDATO I SISTE STATUS, INGEN  */         
+          /* NEST SISTE STATUS. SØKER ER IKKE DØD .                  */         
+          /* KUN EN TRANS HAR SKAPT SISTE STATUS.                    */         
+          /*                                                         */         
+          /* ******************************************************* */         
+          DO;                                                                   
+             CALL P915_LES_TRANS;                                               
+                                                                                
+             IF   FEIL_MELD_NR        >   0             THEN                    
+                  GO TO L999;                                                   
+             ELSE                                                               
+                  PROGRAM_ID          =   'R0019952' ;                          
+                                                                                
+          END;    /* WHEN C */                                                  
+                                                                                
+       WHEN ( 'D' , 'G' , 'K' , 'F','Z' )                                       
+          /* ******************************************************* */         
+          /*                                                         */         
+          /* STATUS_TYPE :                                           */         
+          /*                                                         */         
+          /* F     :  BARE VED FJERNING AV TRANSER . B01 = INGENTING */         
+          /* D/G/K :  B01 = NEST SISTE STATUS.                       */         
+          /*                                                         */         
+          /* ******************************************************* */         
+          DO;                                                                   
+             IF   B01.PENSJONSTYPE1 (B01_IND)  =  'N'                           
+               !  B01.PENSJONSTYPE1 (B01_IND)  =  'B'  THEN                     
+               DO;                                                              
+                  START                        =   3;                           
+                  STOPP                        =   14;                          
+               END;                                                             
+             ELSE                                                               
+               DO;                                                              
+                  START                        =   1;                           
+                  STOPP                        =   2;                           
+               END;                                                             
+                                                                                
+             DO J = START TO STOPP   ;                                          
+                                                                                
+                IF  B01.RF0PERSN.FNR (J) > 0                    THEN            
+                  DO;                                                           
+                    DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS         = '1'B ;        
+                    DIV_PARAM_OMR.SEARCH_FNR     = B01.RF0PERSN.FNR (J);        
+                                                                                
+                    IF TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 0     THEN            
+                       TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 1            ;        
+                                                                                
+                    DO I=1 TO 5                                                 
+                       WHILE   (TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD > 0 ) ;        
+                                                                                
+                       CALL P915_LES_TRANS;                                     
+                                                                                
+                       IF   FEIL_MELD_NR                   > 0  THEN            
+                            GO TO RETUR;                                        
+                       ELSE                                                     
+                            PROGRAM_ID                     = 'R0019952';        
+                                                                                
+                       /* ******************************************* */        
+                       /* SJEKKER OM TRANS ER FUNNET                  */        
+                       /* ******************************************* */        
+                                                                                
+                       IF TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD > 0   THEN           
+                          DO;                                                   
+                             W_TRANS_IKKE_FUNNET        =  '0'B ;               
+                             T_IND                      =   T_IND + 1;          
+                          END;                                                  
+                                                                                
+                       DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS = '0'B;              
+                                                                                
+                    END;  /*   DO WHILE VIRKNINGSDATO_ÅMD > 0     */            
+                                                                                
+                    KOM_OMR.TRANS_OPPL_PEKER =                                  
+                                       ADDR ( KOM_OMR.TRANS_OPPL_OMR );         
+                  END;    /*   IF B01.FNR (J)         > 0         */            
+             END;         /*   DO J = START TO STOPP              */            
+                                                                                
+             /* ***************************************** */                    
+             /* T_IND ER SATT TIL 1 FLER ENN ANT. TRANSER */                    
+             /* ***************************************** */                    
+                                                                                
+             T_IND                               =  T_IND - 1 ;                 
+                                                                                
+          END;    /* WHEN  D  ELLER  G   */                                     
+                                                                                
+                                                                                
+                                                                                
+       WHEN ('Z')                                                               
+          /* ******************************************************* */         
+          /*                                                         */         
+          /* VDATO I TRANS LIGGER FORAN VDATO N_SISTE STATUS,        */         
+          /*                    SØKER ER IKKE DØD .                  */         
+          /*                                                         */         
+          /*                                                         */         
+          /* ******************************************************* */         
+          DO;                                                                   
+               CALL P915_LES_TRANS;                                             
+                                                                                
+               IF   FEIL_MELD_NR        >   0             THEN                  
+                    GO TO L999;                                                 
+               ELSE                                                             
+                    PROGRAM_ID          =   'R0019952' ;                        
+                                                                                
+          END;    /* WHEN Z */                                                  
+       OTHERWISE;                                                               
+                                                                                
+    END;  /*   SELECT FOR STATUS_TYPE     */                                    
+                                                                                
+                                                                                
+    /* ************************************************************ */          
+    /*                                                              */          
+    /* RESTILLER   TRANS_OPPL_PEKER  OG  TRANS_PEKER                */          
+    /*                                                              */          
+    /* ************************************************************ */          
+                                                                                
+    TRANS_PEKER                   =  W_TRANS_PEKER                   ;          
+    TRANS_OPPL_PEKER              =  W_TRANS_OPPL_PEKER              ;          
+    TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = HJ_VIRKNINGSDATO_ÅMD          ;          
+  /*                                                                            
+    KOM_OMR.TRANS_OPPL_PEKER  =  ADDR ( KOM_OMR.TRANS_OPPL_OMR ) ;              
+    KOM_OMR.TRANS_PEKER       =  ADDR ( KOM_OMR.TRANS_OMR      ) ;              
+  */                                                                            
+                                                                                
+  RETUR:                                                                        
+                                                                                
+   END P910_LES_FORRIGE_TRANS;                                                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+ /* ************************************************************ */             
+ /*                                                              */             
+ /*  PROCDURE FOR Å LESE EN TRANS OG INITIER VERDIER             */             
+ /*                                                              */             
+ /* ************************************************************ */             
+                                                                                
+ P915_LES_TRANS :                                                               
+    PROC;                                                                       
+                                                                                
+    /* ************************************************************ */          
+    /* LEGGER TRANS_OPPL_OMR  OG  TRANS_OMR OVER DEN POSISJON I     */          
+    /* TRANS_LISTE_OMR SOM TRANSEN SKAL LEGGES I .                  */          
+    /* ************************************************************ */          
+ /* TEST  */                                                                    
+ L10A:                                                                          
+   IF T_IND > 5 THEN                                                            
+      DO;                                                                       
+           FEIL_VED_LABEL  =  'L10A';                                           
+           FEIL_MELD_NR    =   502  ;                                           
+           GO   TO   RETUR;                                                     
+      END;                                                                      
+  /*   OPPTIL  HER      */                                                      
+    KOM_OMR.TRANS_OPPL_PEKER            = ADDR (                                
+            TRANS_LISTE_OMR.TRANS_LISTE_LINJE.FAST_DEL     (T_IND));            
+                                                                                
+    KOM_OMR.TRANS_PEKER                 = ADDR (                                
+            TRANS_LISTE_OMR.TRANS_LISTE_LINJE.VARIABEL_DEL (T_IND));            
+                                                                                
+                                                                                
+    EXEC CICS LINK PROGRAM ('R0015201') COMMAREA(KOM_OMR);                      
+                                                                                
+    IF   FEIL_MELD_NR                >   0 THEN                                 
+         GO TO RETUR;                                                           
+    ELSE                                                                        
+         PROGRAM_ID = 'R0019952';                                               
+  RETUR:                                                                        
+                                                                                
+ END P915_LES_TRANS;                                                            
+                                                                                
+                                                                                

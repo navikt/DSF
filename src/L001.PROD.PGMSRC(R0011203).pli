@@ -1,0 +1,285 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.35 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.15.14 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 12.35.12 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.50 AV   JDA7339          */        
+ /*       SIST ENDRET 23/06-98 08.32.48 AV   JDA7339                  */        
+ /*       SIST ENDRET 20/05-98 14.17.52 AV   HLA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0011203 - PROSEDYRE I PLI                                     */        
+ /*    PROGRAMMERER: JAN, AUGUST 1981                                 */        
+ /*HENSIKT:                                                           */        
+ /*    PROSEDYREN FORETAR KONTROLL AV DATA FOR FT_SØKER FRA           */        
+ /*       GRUNNBLANKETT FORSØRGINGSTILLEGG EKTEFELLE OG/ELLER BARN.   */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLING AV FORSØRGINGS-     */        
+ /*       TILLEG EKTEFELLE OG/ELLER BARN.                             */        
+ /*    INCLUDES I  R0011201.                                          */        
+ /*BRUK:                                                              */        
+ /* CALL KONRTOLL_FT_SØKER(FEIL_I_FT_SØKER);                          */        
+ /* ***************************************************************** */        
+ /*ENDRING:                                                           */        
+ /* NAVN EKTEFELLE ER FJERNET FRA MAPEN, OG KONTROLLENE I FORBINDELSE */        
+ /* MED FELTET ER FJERNET.                       161287 BRITT         */        
+ /*                                                                   */        
+ /*ENDRET: 13.04.88 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */        
+ /* ******                                                            */        
+ /*    INITIERER BRUKERID I FNR_REG MED CICS_IND FØR KONTROLL PÅ      */        
+ /*    OM FNR ER ENDRET (R0019906).                                   */        
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*   MODULEN KONTROLLERER FT_SØKER, OG RETURNERER                    */        
+ /*   MED FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RIKTIG              */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ KONTROLL_FT_SØKER:                                                             
+   PROC (FEIL_FUNNET);                                                          
+   DCL                                                                          
+      FEIL_FUNNET BIT (1);                                                      
+   DCL DAGENS_DATO_ÅMD   PIC '99999999';          /*2000*/                      
+ %SKIP;                                                                         
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+   DCL                                                                          
+      ALDER FIXED DEC (5),                                                      
+      TYPE CHAR(1);                                                             
+   DCL                                                                          
+      1 FNR_REG,                                                                
+        2 FNR1        FIXED DEC(11),                                            
+        2 FNR2        FIXED DEC(11),                                            
+        2 BRUKERID    CHAR     ( 4);                                            
+                                                                                
+ /*------------------------------------------------------------*/               
+ /*  HJELPE DCL FOR Å SNU DATO                                 */               
+ /*------------------------------------------------------------*/               
+                                                                                
+   DCL                        /*2000 : */                                       
+      HJ_VIRK_DATO_ÅMD PIC '99999999',                                          
+      VIRK_DATO_Å DEF HJ_VIRK_DATO_ÅMD POS(1) PIC '9999',                       
+      VIRK_DATO_ÅM DEF HJ_VIRK_DATO_ÅMD POS(1) PIC '999999',                    
+      VIRK_DATO_M DEF HJ_VIRK_DATO_ÅMD POS(5) PIC '99';                         
+ %SKIP;                                                                         
+      ANT_FEIL_SKREVET = 0;                                                     
+      FEIL_FUNNET      = '0'B;                                                  
+      KEY_PEKER        = ADDR(FTS.TKNR);                                        
+                                                                                
+  FNR_REG.BRUKERID   = DIV_PARAM_OMR.CICS_IND;                                  
+  DAGENS_DATO_ÅMD    = DATO_2000 ;                 /*2000*/                     
+                                                                                
+                                                                                
+ /* BLANKETTER MED VIRK FRAM I TID AVVISES FRA 01.92  SP 8.91 */                
+    HJ_VIRK_DATO_ÅMD  = FTS.VIRK_DATO_ÅMD;    /*2000*/                          
+                                                                                
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(FTS.FNR)) THEN                          
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.FNRNR =200;                                                     
+         END;                                                                   
+      ELSE                                                                      
+      IF ^F_GYLDIG_FNR(FTS.FNR) THEN                                            
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.FNRNR = 1;                                                      
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+            FNR_REG.FNR1 = FTS.FNR;                                             
+            EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);               
+            IF FNR_REG.FNR2 > 0 THEN                                            
+               DO;                                                              
+                 FTS.FNRNR = 203;                                               
+                 FTS.FNR_GML = FTS.FNR;                                         
+                 FTS.FNR = FNR_REG.FNR2;                                        
+               END;                                                             
+         END;                                                                   
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR4(FTS.TKNR)) THEN                          
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.TKNRNR = 200;                                                   
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+                  EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                    
+                  EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)            
+                                                     INTO(TK_RECL);             
+                  LEAVE;                                                        
+              NOTFND:                                                           
+                  FEIL_FUNNET = '1'B;                                           
+                  FTS.TKNRNR  = 3;                                              
+         END;                                                                   
+                                                                                
+    /* KONTROLL AV ACF2 FOR TILLGANGE TIL TKNR            */                    
+    /*                                                    */                    
+          /* ************************************************** */              
+    BO_TKNR  = TKNR;                                                            
+     CALL ATK_TILGANG_KONTROLL;                                                 
+                                                                                
+                                                                                
+      IF ^(FTS.TILL_EK = 'J' ! FTS.TILL_EK = ' ') THEN                          
+         DO;                                                                    
+            FEIL_FUNNET ='1'B;                                                  
+            FTS.TILL_EKNR = 4;                                                  
+         END;                                                                   
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR2(FTS.BT_ANT)) THEN                        
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.BT_ANTNR = 200;                                                 
+         END;                                                                   
+      ELSE                                                                      
+      IF FTS.BT_ANT > 8 THEN                                                    
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.BT_ANTNR = 282;                                                 
+         END;                                                                   
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR8(FTS.VIRK_DATO_ÅMD)) THEN /**/            
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.VIRK_DATO_ÅMDNR = 200;          /*2000*/                        
+         END;                                                                   
+      ELSE                                                                      
+      IF ^F_GYLDIG_DATO(FTS.VIRK_DATO_ÅMD) THEN             /*2000*/            
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.VIRK_DATO_ÅMDNR = 9;                  /*2000*/                  
+         END;                                                                   
+  /* HER SETTES VERDIER INN I MENY_OMR */                                       
+      FØDSNUMMER = FTS.FNR;                                                     
+      VIRKNINGSDATO_ÅMD = FTS.VIRK_DATO_ÅMD;            /*2000*/                
+      IF ^(FTS.BOSATT_UTL = 'J'! FTS.BOSATT_UTL = ' ') THEN                     
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.BOSATT_UTLNR = 25;                                              
+         END;                                                                   
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(FTS.FNR_EK)) THEN                       
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FTS.FNR_EKNR = 200;                                                 
+         END;                                                                   
+      ELSE                                                                      
+      IF FTS.FNR_EK > 0 THEN                                                    
+         DO;                                                                    
+            IF ^F_GYLDIG_FNR(FTS.FNR_EK) THEN                                   
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  FTS.FNR_EKNR = 15;                                            
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  FNR_REG.FNR1 = FTS.FNR_EK;;                                   
+                  EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);         
+                  IF FNR_REG.FNR2 > 0 THEN                                      
+                     DO;                                                        
+                        FTS.FNR_EKNR = 203;                                     
+                        FTS.FNR_GML_EK = FTS.FNR_EK;                            
+                        FTS.FNR_EK = FNR_REG.FNR2;                              
+                     END;                                                       
+               END;                                                             
+            IF FTS.EK_INNT = 'J' THEN                                           
+               DO;                                                              
+                  IF VIRK_DATO_ÅM  < 198407 THEN         /*2000*/               
+                     DO;                                                        
+                        FEIL_FUNNET = '1'B;                                     
+                        FTS.VIRK_DATO_ÅMDNR = 273;      /*2000*/                
+                     END;                                                       
+               END;                                                             
+            ELSE                                                                
+               IF FTS.EK_INNT  ^= 'N' THEN                                      
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     FTS.EK_INNTNR = 272;                                       
+                  END;                                                          
+         END;                                                                   
+ %SKIP(3);                             /*  */                                   
+ /*   KRYSS KONTROLLER       */                                                 
+ %SKIP;                                                                         
+      IF ^FEIL_FUNNET THEN                                                      
+         DO;                                                                    
+            ALDER = F_ALDER(FTS.FNR,FTS.VIRK_DATO_ÅMD);  /*2000*/               
+ /*MIDLERTIDIG STOPP AV ALLE FORSØRGINGSTILLEGG - HL 26.3.91 */                 
+                                                                                
+   IF VIRK_DATO_ÅM > 199104 & (FTS.BT_ANT > 0)    THEN  /*2000*/                
+      DO;                                                                       
+         FEIL_FUNNET = '1'B;                                                    
+         FTS.BT_ANTNR  = 999;                                                   
+      END;                                                                      
+   IF VIRK_DATO_ÅM > 199104 & (FTS.TILL_EK = 'J') THEN  /*2000*/                
+      DO;                                                                       
+         FEIL_FUNNET = '1'B;                                                    
+         FTS.TILL_EKNR = 999;                                                   
+      END;                                                                      
+                                                                                
+            IF ^ F_2MDR(FTS.VIRK_DATO_ÅMD)      THEN   /*2000*/                 
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  FTS.VIRK_DATO_ÅMDNR = 207;          /*2000*/                  
+               END;                                                             
+                                                                                
+               IF ALDER < 1800 & VIRK_DATO_ÅM < 197601 THEN /**/                
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     FTS.FNRNR = 49;                                            
+                     FTS.VIRK_DATO_ÅMDNR = 999;         /*2000*/                
+                  END;                                                          
+               IF ALDER < 1600 & VIRK_DATO_ÅM > 197600 THEN /**/                
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     FTS.FNRNR = 50;                                            
+                     FTS.VIRK_DATO_ÅMDNR = 999;        /*2000*/                 
+                  END;                                                          
+               IF FTS.TILL_EK ^= 'J' & FTS.BT_ANT = 0 THEN                      
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     FTS.TILL_EKNR = 163;                                       
+                     FTS.BT_ANTNR = 999;                                        
+                  END;                                                          
+            IF FTS.TILL_EK = 'J' THEN                                           
+               DO;                                                              
+               IF FTS.FNR_EK = 0  THEN               /* 141287 BF */            
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     FTS.TILL_EKNR = 19;                                        
+                     FTS.FNR_EKNR = 999;                                        
+                  END;                                                          
+               IF FTS.FNR_EK > 0  THEN                                          
+                 DO;                  /*2000 :*/                                
+                  IF ^F_EK_ALDER_GYLDIG(FTS.FNR_EK,FTS.VIRK_DATO_ÅMD)           
+                  THEN                                                          
+                     DO;      /*NY0191 ET KAN GIS TIL EK ELDRE ENN 67*/         
+                       IF VIRK_DATO_ÅM  < 199101 THEN /*2000*/                  
+                          DO;                                                   
+                            FEIL_FUNNET = '1'B;                                 
+                            FTS.FNR_EKNR = 17;                                  
+                            FTS.VIRK_DATO_ÅMDNR = 999;    /*2000*/              
+                            FTS.TILL_EKNR = 999;                                
+                          END;                                                  
+                     END;                                                       
+                 END;                                                           
+               END;   /* TIIL_EK = 'J' */                                       
+            IF FTS.BOSATT_UTL = 'J' THEN                                        
+              DO;                                                               
+                 IF ^ (FTS.TT_F67_EK = '00' !                                   
+                 FTS.TT_E66_Å_EK = '00' ! FTS.TT_E66_M_EK = '00')               
+                 THEN                                                           
+                   DO;                                                          
+                      TYPE = 'F';                                               
+                      IF                                                        
+                      F_KONTROLL_TT(FTS.TT_F67_EK,FTS.TT_E66_Å_EK ,             
+           FTS.TT_E66_M_EK,FTS.FNR_EK,DAGENS_DATO_ÅMD,TYPE) THEN                
+                        DO;                                                     
+                           FEIL_FUNNET = '1'B;                                  
+                           FTS.TT_F67_EKNR = 32;                                
+                           FTS.TT_E66_Å_EKNR = 999;                             
+                           FTS.TT_E66_M_EKNR = 999;                             
+                        END;                                                    
+                      IF FTS.TILL_EK ^= 'J' THEN                                
+                        DO;                                                     
+                           FEIL_FUNNET = '1'B;                                  
+                           FTS.TILL_EKNR = 33;                                  
+                        END;                                                    
+                   END;                                                         
+              END;                                                              
+         END;                                                                   
+   END KONTROLL_FT_SØKER;                                                       

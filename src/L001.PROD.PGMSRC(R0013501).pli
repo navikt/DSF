@@ -1,0 +1,110 @@
+ /*   SIST ENDRET PÅ PROD   2005.08.19 10.45.05 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.07.18 14.36.46 AV   HLA2970          */        
+ /*       SIST ENDRET 04/05-98 14.27.59 AV   JDA7339                  */        
+ /*       SIST ENDRET 16/01-98 13.20.09 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0013501 - HOVEDPROGRAM I PLI                                  */        
+ /*    PROGRAMMERER: KRISTENSEN, JAN 1982                             */        
+ /*HENSIKT:                                                           */        
+ /*    PROGRAMMET AJOURFØRER FAM-STATUS-MED-DIALOG OG LINKER INN      */        
+ /*    DE AKTUELLE PROGRAM , KONTROLLER-TRANS-MOT-STATUS, SAKS-       */        
+ /*    BEHANDLERDIALOG, OPPBEVAR-JUSTERTE-TRANS SAMT FLETT-WORK-      */        
+ /*    TRANS-TIL-TRANS-LISTE.                                         */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROGRAMMET BLIR LINKET FRA R0013001.                           */        
+ /*BRUK:                                                              */        
+ /*    EXEC CICS LINK PROGRAM('R0013501') COMMAREA(KOM_OMR);          */        
+ /* ***************************************************************** */        
+                                                                                
+ R001351: PROC(COMMAREA_PEKER) OPTIONS (MAIN);                                  
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0019906;  /* TRANS-OPPL-OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019908;  /* KOM-OMRÅDE (BASED)        */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019910;  /* STYRINGS-OMRÅDE (BASED)   */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019912;  /* DIV-PARAM-OMRÅDE (BASED)  */                            
+                                                                                
+ DCL                                                                            
+   (ADDR,CSTG)         BUILTIN;                                                 
+ DCL                                                                            
+   COMMAREA_PEKER      PTR;                                                     
+ DCL                                                                            
+   1 B01     BASED(B01_PEKER),                                                  
+   %INCLUDE P0019921;                                                           
+ DCL                                                                            
+   1 B01_WORK,                                                                  
+   %INCLUDE P0019921;                                                           
+ DCL                                                                            
+   FERDIG_AJOURFØRT_IND     CHAR(1),                                            
+   VIRKDATO_FØR             PIC'(8)9',                                          
+   FNR_FØR                  PIC'(11)9';                                         
+                                                                                
+                                                                                
+     FERDIG_AJOURFØRT_IND = 'N';                                                
+     TERMINERINGS_IND     = 'A';   /** ENTER  **/                               
+     NY_FNR_IND           = '0'B;  /** NEI    **/                               
+                                                                                
+     DO UNTIL(FERDIG_AJOURFØRT_IND = 'J' !                                      
+              NY_FNR_IND = '1'B          !    /** JA         **/                
+              TERMINERINGS_IND = 'O'     !    /** OPPBEVAR   **/                
+              TERMINERINGS_IND = 'S'     !    /** FATAL FEIL **/                
+              TERMINERINGS_IND = 'F');        /** FORKASTE   **/                
+        FEIL_MELD_NR = 0;                                                       
+                                                                                
+        B01_WORK = B01;                                                         
+                                                                                
+                                                                                
+        /*  KONTROLLERER TRANS MOT STATUS FAM FORHOLD   */                      
+                                                                                
+        EXEC CICS LINK PROGRAM('R0013520') COMMAREA(KOM_OMR);                   
+                                                                                
+        IF FEIL_MELD_NR > 0 THEN                                                
+                                                                                
+           DO;                                                                  
+                                                                                
+                                                                                
+              IF FEIL_MELD_NR < 600 & FEIL_MELD_NR > 499     !                  
+                 KJØRINGS_TYPE = 'N'                          THEN              
+                                                                                
+                 DO;                                                            
+                    TERMINERINGS_IND = 'S';                                     
+                    EXEC CICS RETURN;                                           
+                 END;                                                           
+                                                                                
+              /* STYREPARAMETRE I DIV_PARAM_OMR BLIR HER SATT    */             
+              DIV_PARAM_OMR.FRA_CICS        = '0'B;                             
+              DIV_PARAM_OMR.HENT_FRAM_MAP   = '1'B;                             
+              DIV_PARAM_OMR.FRA_MED_DIALOG  = '1'B;                             
+              DIV_PARAM_OMR.FRA_UTEN_DIALOG = '0'B;                             
+                                                                                
+              FNR_FØR      = TRANS_OPPL_OMR.FØDSNUMMER;                         
+              VIRKDATO_FØR = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;                  
+                                                                                
+              /* GÅR TIL SAKSBEHANDLER-DIALOG  */                               
+                                                                                
+              EXEC CICS LINK PROGRAM('R0013301') COMMAREA (KOM_OMR);            
+                                                                                
+              IF FNR_FØR = TRANS_OPPL_OMR.FØDSNUMMER &                          
+                    VIRKDATO_FØR =                                              
+                            TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD  THEN              
+                 NY_FNR_IND = '0'B;   /** NEI **/                               
+              ELSE                                                              
+                 NY_FNR_IND = '1'B;   /** JA  **/                               
+                                                                                
+              B01 = B01_WORK;                                                   
+                                                                                
+           END;  /* 2 */                                                        
+                                                                                
+        ELSE                                                                    
+                                                                                
+           FERDIG_AJOURFØRT_IND = 'J';                                          
+                                                                                
+     END; /* 1 */                                                               
+                                                                                
+  EXEC CICS RETURN;                                                             
+                                                                                
+ END R001351;                                                                   

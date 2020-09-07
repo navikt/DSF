@@ -1,0 +1,480 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.25 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.15.07 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 12.34.08 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.39 AV   JDA7339          */        
+ /*       SIST ENDRET 16/11-98 09.50.30 AV   JDA7339                  */        
+ /*       SIST ENDRET 16/11-98 09.22.55 AV   JDA7339                  */        
+ /*       SIST ENDRET 04/05-98 12.24.07 AV   JDA7339                  */        
+ /*       SIST ENDRET 27/01-98 11.47.16 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ %SKIP;                                /*  */                                   
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R0010503  KONTROLL_AP_SØKER   SUBPROGRAM         */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : INGER SLOTTE                                     */        
+ /*  PROGRAMMET BLE LAGET : MARS 1981                                 */        
+ /*  ENDRINGERSDATO_ÅMD:                                              */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  FORETAR KONTROLL AV GRUNNBLANKETT AP - SØKERDELEN.               */        
+ /*  RETURNERER FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RETT          */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMET INCLUDES AV R0010501 - KONTROLL_GRUNNBLANKETT_AP      */        
+ /*  ARBEIDSOMRÅDET P0010501 ER INCLUDET I HOVEDPROG                  */        
+ /*  BRUK :                                                           */        
+ /*  CALL KONTROLL_AP_SØKER(FEIL_I_AP_SØKER);                         */        
+ /*  EXEC CICS LINK TIL R0019906 - ER FNR ENDRET ?                    */        
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN ER INCLUDET I HOVEDPROG :    */        
+ /*          R0019901 - F_GYLDIG_DATO_ÅMD                             */        
+ /*          R0019902 - F_KJØNN                                       */        
+ /*          R0019903 - F_EK_ALDER                                    */        
+ /*          R0019904 - F_GYLDIG_FNR                                  */        
+ /*          R0019905 - F_ALDER                                       */        
+ /*          R0019907 - F_TABSØKC_FUNNET                              */        
+ /*          R0019910 - F_NUMERISK                                    */        
+ /*          R0019912 - F_FELT_PIC_CHAR11                             */        
+ /*          R0019959 - F_2MDR                                        */        
+ /*          VERIFY   - BUILTIN-FUNCTION                              */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*   FØDSELSNR-ENDRINGSREG. LESES VED EXEC LINK TIL R0019906.        */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */        
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */        
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDING PÅ SKJERMBILDET      */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*ENDRET: 06.04.88 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */        
+ /* ******                                                            */        
+ /*    INITIERER BRUKERID I FNR_REG MED CICS_IND FØR KONTROLL PÅ      */        
+ /*    OM FNR ER ENDRET (R0019906).                                   */        
+ /* ***************************************************************** */        
+ %PAGE;                                /*   */                                  
+ %SKIP(2);                                                                      
+ KONTROLL_AP_SØKER:                                                             
+   PROC (FEIL_FUNNET) ;                                                         
+   DCL                                                                          
+      FEIL_FUNNET                               BIT (1);                        
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+ %SKIP;                                                                         
+   DCL                                                                          
+      1 FNR_REG,                                                                
+        2 FNR1                                  FIXED DEC(11),                  
+        2 FNR2                                  FIXED DEC(11),                  
+        2 BRUKERID                              CHAR     ( 4),                  
+                                                                                
+      ALDER                                     FIXED DEC (5);                  
+ %SKIP;                                                                         
+   DCL                                                                          
+      W_FNR                                     PIC'(11)9';                     
+   DCL                                                                          
+      1 FNR DEF W_FNR,                                                          
+        2 DAG                                   PIC'(2)9',                      
+        2 MND                                   PIC'(2)9',                      
+        2 AAR                                   PIC'(2)9',                      
+        2 ÅRHUNDRE                              PIC'9',                         
+        2 REST                                  PIC'(4)9';                      
+                                                                                
+ %PAGE;                                /*   */                                  
+ /*  HJELPE DCL FOR Å SNU DATO_ÅMD       */                                     
+ %SKIP(1);                                                                      
+ %SKIP;                                                                         
+   DCL                                                                          
+      TT_FRAM_TIL                               PIC'99';                        
+ %SKIP;                                                                         
+                                                                                
+   KEY_PEKER = ADDR(APS.TKNR);                                                  
+   FEIL_FUNNET             = '0'B;                                              
+ %PAGE;                                                                         
+                                                                                
+   IF APS.VIRK_DATO_ÅMD < 19930800 & (APS.SIVILSTAND = 'P') THEN                
+      DO;                                                                       
+         FEIL_FUNNET = '1'B;                                                    
+         APS.SIVILSTANDNR = 388;                                                
+      END;                                                                      
+   IF APS.VIRK_DATO_ÅMD < 19940100 & (APS.SIVILSTAND = 'W') THEN                
+      DO;                                                                       
+         FEIL_FUNNET = '1'B;                                                    
+         APS.SIVILSTANDNR = 389;                                                
+      END;                                                                      
+                                                                                
+                                                                                
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR11(APS.FNR)) THEN                             
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          APS.FNRNR   = 200;                                                    
+       END;                                                                     
+    ELSE                                                                        
+       IF ^F_GYLDIG_FNR(APS.FNR) THEN                                           
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             APS.FNRNR   = 1;                                                   
+          END;                                                                  
+       ELSE                                                                     
+          DO;                                                                   
+             FNR_REG.BRUKERID =   DIV_PARAM_OMR.CICS_IND;                       
+             FNR_REG.FNR1     =   APS.FNR;                                      
+                                                                                
+             EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);              
+                                                                                
+             IF FNR_REG.FNR2 > 0 THEN                                           
+                DO;                                                             
+                   APS.FNRNR   = 203;                                           
+                   APS.FNR_GML = APS.FNR;                                       
+                   APS.FNR     = FNR_REG.FNR2;                                  
+                END;                                                            
+          END;                                                                  
+                                                                                
+    W_FNR = APS.FNR;    /*2000*/                                                
+                                                                                
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR4(APS.TKNR)) THEN                             
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          APS.TKNRNR  = 200;                                                    
+       END;                                                                     
+    ELSE                                                                        
+       DO;                                                                      
+            EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                          
+            EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)                  
+                                               INTO(TK_RECL);                   
+            LEAVE;                                                              
+        NOTFND:                                                                 
+            FEIL_FUNNET = '1'B;                                                 
+            APS.TKNRNR  = 3;                                                    
+                                                                                
+       END;                                                                     
+                                                                                
+    /* ************************************************** */                    
+    /* KONTROLL AV ACF2 FOR TILLGANGE TIL TKNR            */                    
+    /*                                                    */                    
+          /* ************************************************** */              
+    BO_TKNR  = TKNR;                                                            
+     CALL ATK_TILGANG_KONTROLL;                                                 
+                                                                                
+                                                                                
+      IF APS.NAVN       = (25)' ' THEN                                          
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            APS.NAVNNR  = 2;                                                    
+         END;                                                                   
+      IF VERIFY(APS.SPRÅK,'NBE ') ^= 0 THEN                                     
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            APS.SPRÅKNR = 6;                                                    
+         END;                                                                   
+      IF VERIFY(APS.SIVILSTAND,'GASUEPW') ^= 0 THEN                             
+         DO;                                                                    
+            FEIL_FUNNET      = '1'B;                                            
+            APS.SIVILSTANDNR = 5;                                               
+         END;                                                                   
+      IF ^(APS.TILL_EK = 'J' ! APS.TILL_EK = ' ') THEN                          
+         DO;                                                                    
+            FEIL_FUNNET   ='1'B;                                                
+            APS.TILL_EKNR = 4;                                                  
+         END;                                                                   
+      IF APS.NORSK_BOSATT = 'J' THEN                                            
+         DO;                                                                    
+   /*       IF FNR.ÅRHUNDRE < 5       THEN          */                          
+            IF (FNR.ÅRHUNDRE < 5  )    !                                        
+               (FNR.ÅRHUNDRE = 9    &  FNR.AAR > 39 )  THEN                     
+               DO;                                                              
+                  APSP.TT_F67  = 67 - (FNR.AAR + 16);                           
+                  TT_FRAM_TIL  = AAR + 67;                                      
+                  IF FNR.AAR < 4       THEN                                     
+                     TT_FRAM_TIL  = TT_FRAM_TIL + 3;                            
+                  ELSE                                                          
+                     IF FNR.AAR = 4       THEN                                  
+                        TT_FRAM_TIL  = TT_FRAM_TIL + 2;                         
+                     ELSE                                                       
+                        IF FNR.AAR = 5       THEN                               
+                           TT_FRAM_TIL  = TT_FRAM_TIL + 1;                      
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  APSP.TT_F67  = 67 - (FNR.AAR + 16 - 100);                     
+                  TT_FRAM_TIL  = FNR.AAR + 70 - 100;                            
+               END;                                                             
+            IF TT_FRAM_TIL < 67 THEN                                            
+               DO;                                                              
+                  APSP.TT_E66_Å = 0;                                            
+                  APSP.TT_E66_M = 0;                                            
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  APSP.TT_E66_Å = TT_FRAM_TIL - 67;                             
+                  APSP.TT_E66_M = FNR.MND;                                      
+               END;                                                             
+         END;                                                                   
+      ELSE                                                                      
+         IF APS.NORSK_BOSATT ^= 'N' THEN                                        
+            DO;                                                                 
+               FEIL_FUNNET        = '1'B;                                       
+               APS.NORSK_BOSATTNR = 8;                                          
+            END;                                                                
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR2(APS.BT_ANT)) THEN                        
+         DO;                                                                    
+            FEIL_FUNNET  = '1'B;                                                
+            APS.BT_ANTNR = 200;                                                 
+         END;                                                                   
+      ELSE                                                                      
+      IF APS.BT_ANT > 12 THEN                                                   
+         DO;                                                                    
+            FEIL_FUNNET  = '1'B;                                                
+            APS.BT_ANTNR = 7;                                                   
+         END;                                                                   
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR7(APS.FAI)) THEN                           
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            APS.FAINR   = 200;                                                  
+         END;                                                                   
+      IF ^F_NUMERISK(F_FELT_PIC_CHAR3(APS.APD)) THEN                            
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            APS.APDNR   = 200;                                                  
+         END;                                                                   
+      ELSE                                                                      
+         IF ^(APS.APD = 0 ! APS.APD = 25 ! APS.APD = 50 !                       
+                                   APS.APD = 999 ! APS.APD = 75) THEN           
+            DO;                                                                 
+               FEIL_FUNNET = '1'B;                                              
+               APS.APDNR   = 12;                                                
+            END;                                                                
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR8(APS.VIRK_DATO_ÅMD)) THEN                 
+         DO;                                                                    
+            FEIL_FUNNET        = '1'B;                                          
+            APS.VIRK_DATO_ÅMDNR = 200;                                          
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+            IF ^F_GYLDIG_DATO(APS.VIRK_DATO_ÅMD) THEN                           
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  APS.VIRK_DATO_ÅMDNR = 9;                                      
+               END;                                                             
+            ELSE                                                                
+               IF APS.VIRK_DATO_ÅMD < 19670100 THEN                             
+                  DO;                                                           
+                     FEIL_FUNNET        = '1'B;                                 
+                     APS.VIRK_DATO_ÅMDNR = 9;                                   
+                  END;                                                          
+         END;                                                                   
+      IF F_FELT_PIC_CHAR11(APS.FNR_EK) ^= (11)'0' THEN                          
+         DO;                                                                    
+            IF ^F_NUMERISK(F_FELT_PIC_CHAR11(APS.FNR_EK)) THEN                  
+               DO;                                                              
+                  FEIL_FUNNET  = '1'B;                                          
+                  APS.FNR_EKNR = 200;                                           
+               END;                                                             
+            ELSE                                                                
+               IF ^F_GYLDIG_FNR(APS.FNR_EK) THEN                                
+                  DO;                                                           
+                     FEIL_FUNNET  = '1'B;                                       
+                     APS.FNR_EKNR = 1;                                          
+                  END;                                                          
+               ELSE                                                             
+                  DO;                                                           
+                     FNR_REG.FNR1     = APS.FNR_EK;                             
+                                                                                
+                     EXEC CICS LINK PROGRAM('R0019906')                         
+                                                      COMMAREA(FNR_REG);        
+                     IF FNR_REG.FNR2 > 0 THEN                                   
+                        DO;                                                     
+                           APS.FNR_EKNR   = 203;                                
+                           APS.FNR_GML_EK = APS.FNR_EK;                         
+                           APS.FNR_EK     = FNR_REG.FNR2;                       
+                        END;                                                    
+                  END;                                                          
+            IF APS.EK_INNT = 'J' THEN                                           
+               DO;                                                              
+                  IF APS.VIRK_DATO_ÅMD < 19840700 THEN                          
+                     DO;                                                        
+                        FEIL_FUNNET = '1'B;                                     
+                        APS.VIRK_DATO_ÅMDNR = 273;                              
+                     END;                                                       
+                  ELSE                                                          
+                     IF  APS.SIVILSTAND ^= 'G' THEN                             
+                      DO;                                                       
+                         IF  APS.SIVILSTAND = 'P' !                             
+                             APS.SIVILSTAND = 'W' !                             
+                             APS.SIVILSTAND = 'V' THEN                          
+                             DO;                         /*2000-2*/             
+                                FEIL_FUNNET = '1'B;                             
+                                APS.SIVILSTANDNR = 363;                         
+                             END;                                               
+                         ELSE                                                   
+                             DO;                                                
+                                FEIL_FUNNET = '1'B;                             
+                                APS.SIVILSTANDNR = 274;                         
+                             END;                                               
+                      END;                                                      
+               END;                                                             
+            ELSE                                                                
+               IF APS.EK_INNT  ^= 'N' THEN                                      
+                  IF APS.VIRK_DATO_ÅMD  < 19910500 THEN                         
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     APS.EK_INNTNR = 272;                                       
+                  END;                                                          
+         END;                                                                   
+ /* HER SETTES VERDIER INN I   M E N Y - O M R                        */        
+      FØDSNUMMER    = APS.FNR;                                                  
+      VIRKNINGSDATO_ÅMD= APS.VIRK_DATO_ÅMD;                                     
+ %SKIP(3);                             /*  */                                   
+ /*   K R Y S S - K O N T R O L L E R                               */          
+ %SKIP;                                                                         
+      IF ^FEIL_FUNNET THEN                                                      
+         DO;                                                                    
+            ALDER           = F_ALDER(APS.FNR,APS.VIRK_DATO_ÅMD);               
+            IF APS.FNR_EK > 0 THEN                                              
+               DO;                                                              
+                  IF F_KJØNN(APS.FNR) = F_KJØNN(APS.FNR_EK) &                   
+                     APS.SIVILSTAND ^= 'P' THEN                                 
+                     DO;                                                        
+                        FEIL_FUNNET  = '1'B;                                    
+                        APS.FNRNR    = 999;                                     
+                        APS.FNR_EKNR = 16;                                      
+                     END;                                                       
+                  IF F_KJØNN(APS.FNR) ^= F_KJØNN(APS.FNR_EK) &                  
+                     APS.SIVILSTAND  = 'P' THEN                                 
+                     DO;                                                        
+                        FEIL_FUNNET  = '1'B;                                    
+                        APS.FNRNR    = 999;                                     
+                        APS.FNR_EKNR = 392;                                     
+                     END;                                                       
+               END;                                                             
+            IF ALDER < 6700 THEN                                                
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  APS.FNRNR          = 11;                                      
+                  APS.VIRK_DATO_ÅMDNR = 999;                                    
+               END;                                                             
+                                                                                
+ /*LOVENDRING FOR DEN SOM FYLLER 67 ETTER 1990 HL : */                          
+                                                                                
+            ELSE                                                                
+            IF FNR.AAR > 23             &                                       
+               ALDER < 6701 THEN                                                
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  APS.FNRNR          = 11;                                      
+                  APS.VIRK_DATO_ÅMDNR = 999;                                    
+               END;                                                             
+            IF ^F_2MDR(APS.VIRK_DATO_ÅMD)           THEN                        
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  APS.VIRK_DATO_ÅMDNR = 207;                                    
+               END;                                                             
+            IF (APS.VIRK_DATO_ÅMD > 19721200) & (ALDER > 7000) &                
+               ((APS.FAI > 0  & APS.FAI < 9999999) !                            
+                (APS.APD > 0  & APS.APD < 999)) THEN                            
+                                                                                
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  APS.FNRNR   = 62;                                             
+                  APS.FAINR   = 999;                                            
+                  APS.APDNR   = 999;                                            
+               END;                                                             
+            ELSE                                                                
+               IF ALDER < 7000 & APS.VIRK_DATO_ÅMD <19730000 THEN               
+                  DO;                                                           
+                     FEIL_FUNNET        = '1'B;                                 
+                     APS.FNRNR          = 14;                                   
+                     APS.VIRK_DATO_ÅMDNR = 999;                                 
+                  END;                                                          
+               ELSE                                                             
+                  IF ^((APS.FNR_EK = 0 & APS.NAVN_EK = (25)' ') !               
+                        (APS.FNR_EK > 0 & APS.NAVN_EK ^= (25)' ')) THEN         
+                     DO;                                                        
+                        FEIL_FUNNET   = '1'B;                                   
+                        APS.NAVN_EKNR = 204;                                    
+                        APS.FNR_EKNR  = 999;                                    
+                     END;                                                       
+                  ELSE                                                          
+                     IF APS.FNR_EK > 0  & (APS.SIVILSTAND = 'S' !               
+                       APS.SIVILSTAND = 'U' ! APS.SIVILSTAND = 'E') THEN        
+                        DO;                                                     
+                           FEIL_FUNNET      = '1'B;                             
+                           APS.SIVILSTANDNR = 123;                              
+                           APS.FNR_EKNR     = 999;                              
+                           APS.NAVN_EKNR    = 999;                              
+                        END;                                                    
+            IF APS.TILL_EK = 'J' THEN                                           
+               DO;                                                              
+                  IF APS.NAVN_EK = (25)' ' THEN                                 
+                     DO;                                                        
+                        FEIL_FUNNET   = '1'B;                                   
+                        APS.NAVN_EKNR = 19;                                     
+                        APS.TILL_EKNR = 999;                                    
+                     END;                                                       
+                  ELSE                                                          
+                     IF APS.FNR_EK = 0 THEN                                     
+                        DO;                                                     
+                           FEIL_FUNNET   = '1'B;                                
+                           APS.FNR_EKNR  = 15;                                  
+                           APS.TILL_EKNR = 999;                                 
+                        END;                                                    
+                     ELSE                                                       
+                   IF ^F_EK_ALDER_GYLDIG(APS.FNR_EK,APS.VIRK_DATO_ÅMD)          
+                                                                    THEN        
+                         DO;                                                    
+                            FEIL_FUNNET        = '1'B;                          
+                            APS.FNR_EKNR       = 17;                            
+                            APS.VIRK_DATO_ÅMDNR = 999;                          
+                            APS.TILL_EKNR      = 999;                           
+                         END;                                                   
+                      ELSE                                                      
+                       IF ^(APS.SIVILSTAND = 'G' ! APS.SIVILSTAND = 'A')        
+                                                                    THEN        
+                          DO;                                                   
+                             FEIL_FUNNET      = '1'B;                           
+                             APS.SIVILSTANDNR = 54;                             
+                             APS.TILL_EKNR    = 999;                            
+                          END;                                                  
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+               IF (APS.FNR_EK ^> 0 ! APS.NAVN_EK = (25)' ') &                   
+               (APS.SIVILSTAND = 'G' ! APS.SIVILSTAND = 'A') THEN               
+                  DO;                                                           
+                     FEIL_FUNNET      = '1'B;                                   
+                     APS.FNR_EKNR     = 18;                                     
+                     APS.NAVN_EKNR    = 999;                                    
+                     APS.SIVILSTANDNR = 999;                                    
+                  END;                                                          
+               IF (APS.FNR_EK ^> 0 ! APS.NAVN_EK = (25)' ') &                   
+               (APS.SIVILSTAND = 'W') THEN                                      
+                  DO;                                                           
+                     FEIL_FUNNET      = '1'B;                                   
+                     APS.FNR_EKNR     = 390;                                    
+                     APS.NAVN_EKNR    = 999;                                    
+                     APS.SIVILSTANDNR = 999;                                    
+                  END;                                                          
+               IF (APS.FNR_EK ^> 0 ! APS.NAVN_EK = (25)' ') &                   
+               (APS.SIVILSTAND = 'P') THEN                                      
+                  DO;                                                           
+                     FEIL_FUNNET      = '1'B;                                   
+                     APS.FNR_EKNR     = 391;                                    
+                     APS.NAVN_EKNR    = 999;                                    
+                     APS.SIVILSTANDNR = 999;                                    
+                  END;                                                          
+               END;                                                             
+         END;                                                                   
+   END KONTROLL_AP_SØKER;                                                       

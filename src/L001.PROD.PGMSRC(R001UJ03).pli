@@ -1,0 +1,878 @@
+ /*   SIST ENDRET PÅ PROD   2004.12.17 14.34.44 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.10.26 11.38.07 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2004.10.22 13.03.50 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.10.22 13.01.47 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.03.19  7.47.28 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.19  7.44.59 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.19 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.14.59 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.10.30  8.55.52 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.19 12.14.50 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.07.14  9.27.09 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.07.07 12.59.47 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.05.24 10.15.28 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.05.22 15.04.05 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.05.18 14.26.15 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.05.18 14.12.29 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.05.18 12.53.17 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.03.20  8.04.53 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.21 15.01.59 AV   SPA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.29 AV   JDA7339          */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R001UJ03  KONTROLL_KFP_SØKER   SUBPROGRAM        */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : SATISH - TRUDE                                   */        
+ /*  PROGRAMMET BLE LAGET : 0895                                      */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  FORETAR KONTROLL AV GRUNNBLANKETT  KFP - SØKERDELEN.             */        
+ /*  RETURNERER FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RETT          */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMET INCLUDES AV R001UJ01 - KONTROLL_GRUNNBLANKETT_KFP     */        
+ /*  ARBEIDSOMRÅDET P001UJ01 ER INCLUDET I HOVEDPROG                  */        
+ /*  BRUK :                                                           */        
+ /*  CALL KONTROLL_KFP_SØKER(FEIL_I_AP_SØKER)                         */        
+ /*  EXEC CICS LINK TIL R0019906 - ER FNR ENDRET ?                    */        
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN ER INCLUDET I HOVEDPROG :    */        
+ /*          R0019901 - F_GYLDIG_DATO                                 */        
+ /*          R0019902 - F_KJØNN                                       */        
+ /*          R0019903 - F_EK_ALDER                                    */        
+ /*          R0019904 - F_GYLDIG_FNR                                  */        
+ /*          R0019905 - F_ALDER                                       */        
+ /*          R0019907 - F_TABSØKC_FUNNET                              */        
+ /*          R0019910 - F_NUMERISK                                    */        
+ /*          R0019912 - F_FELT_PIC_CHAR11                             */        
+ /*          R0019964 - F_6MDR                                        */        
+ /*          VERIFY   - BUILTIN-FUNCTION                              */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*   FØDSELSNR-ENDRINGSREG. LESES VED EXEC LINK TIL R0019906.        */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */        
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */        
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDING PÅ SKJERMBILDET      */        
+ /*                                                                   */        
+ /*   FEILMELDINGSNUMMER SOM GJELDER SPESIELT FOR KFP, SKAL VÆRE      */        
+ /*   FRA OG MED 400 TIL 494.  ERIK 31.10.88                          */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ KONTROLL_KFP_SØKER: PROC (FEIL_FUNNET);                                        
+    /* PARAMETER */                                                             
+    DCL                                                                         
+       FEIL_FUNNET                               BIT (1);                       
+    /* INTERNE VARIABLER */                                                     
+      %INCLUDE P0019980; /* FNR & FNR_EK - MÅ LIGGE HER (NO10) */               
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+   DCL                                                                          
+      1 FNR_REG,                                                                
+        2 FNR1                                  FIXED DEC(11),                  
+        2 FNR2                                  FIXED DEC(11),                  
+        2 BRUKERID                              CHAR     ( 4),                  
+                                                                                
+      ALDER                                     FIXED DEC (5);                  
+                                                                                
+  DCL ALDER_EK                                  FIXED DEC (5);                  
+   DCL                                                                          
+      HJ_VIRK_DATO_ÅMD                          PIC '99999999'; /*2000*/        
+   DCL                                                                          
+      HJ_VIRK_DATO_Å DEF HJ_VIRK_DATO_ÅMD POS(1) PIC '9999'; /*2000*/           
+   DCL                                                                          
+      HJ_VIRK_DATO_M DEF HJ_VIRK_DATO_ÅMD POS(5)    PIC '99'; /*2000*/          
+   DCL                                                                          
+      TT_FRA_37_M                               PIC'9999',                      
+      TT_FRA_37_Å                               PIC'99',                        
+      TT_HJELP_M                                PIC'9999';                      
+                                                                                
+    /* START PGM UJ03 =============================================== */        
+    FEIL_FUNNET             = '0'B;                                             
+    HJ_VIRK_DATO_ÅMD = KFP.VIRK_DATO_ÅMD;     /*2000*/                          
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /* KONTROLL AV OPPLYSNINGENE OM SØKEREN (IKKE KRYSS!)             */        
+    /* ************************************************************** */        
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV NAVN                                               */        
+    /* -------------------------------------------------------------- */        
+    IF (KFP.NAVN = (25)' ') THEN                                                
+       DO;  /* KAN IKKE VÆRE BLANKT */                                          
+           FEIL_FUNNET = '1'B;                                                  
+           KFP.NAVNNR  = 2;                                                     
+       END; /* KAN IKKE VÆRE BLANKT */                                          
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV FØDSELSNUMMER SØKER                                */        
+    /* -------------------------------------------------------------- */        
+    IF ^F_GYLDIG_FNR(KFP.FNR) THEN                                              
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          KFP.FNRNR   = 1;                                                      
+       END;                                                                     
+    ELSE                                                                        
+       DO;                                                                      
+          FNR_REG.BRUKERID =   DIV_PARAM_OMR.CICS_IND;                          
+          FNR_REG.FNR1     =   KFP.FNR;                                         
+          EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);                 
+          IF FNR_REG.FNR2 > 0 THEN                                              
+             DO;                                                                
+                KFP.FNRNR   = 203;                                              
+                KFP.FNR_GML = KFP.FNR;                                          
+                KFP.FNR     = FNR_REG.FNR2;                                     
+             END;                                                               
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV TRYGDEKONTORNUMMER                                 */        
+    /* -------------------------------------------------------------- */        
+    IF ^ F_NUMERISK(F_FELT_PIC_CHAR4(KFP.TKNR)) THEN                            
+       DO;  /* TKNR IKKE NUMMERISK */                                           
+          FEIL_FUNNET = '1'B;                                                   
+          KFP.TKNRNR = 200;                                                     
+       END; /* TKNR IKKE NUMMERISK */                                           
+    ELSE                                                                        
+       DO;  /* TKNR ER NUMMERISK */                                             
+          KEY_PEKER = ADDR(KFP.TKNR);                                           
+          EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                            
+          EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)                    
+                                             INTO(TK_RECL);                     
+          LEAVE;                                                                
+                                                                                
+          NOTFND:                                                               
+             FEIL_FUNNET = '1'B;                                                
+             KFP.TKNRNR  = 3;                                                   
+       END; /* TKNR ER NUMMERISK */                                             
+                                                                                
+    /*                                                                          
+    +------------------------------------------------------+                    
+    ! KONTROLL AV ACF2 FOR TILLGANGE TIL TKNR              !                    
+    !                                                      !                    
+    +------------------------------------------------------+  */                
+                                                                                
+    BO_TKNR  = TKNR;                                                            
+     CALL ATK_TILGANG_KONTROLL;                                                 
+                                                                                
+                                                                                
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV SIVILSTAND                                         */        
+    /* -------------------------------------------------------------- */        
+    IF VERIFY(KFP.SIVILSTAND,'GASUEPWV') ^= 0 THEN   /*2000-2*/                 
+       DO;                                                                      
+          FEIL_FUNNET      = '1'B;                                              
+          KFP.SIVILSTANDNR = 5;                                                 
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV SPRÅK                                              */        
+    /* -------------------------------------------------------------- */        
+    IF VERIFY(KFP.SPRÅK,'NBE ') ^= 0 THEN                                       
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          KFP.SPRÅKNR = 6;                                                      
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV OM SØKER HAR VÆRT SAMMENHENGENDE NORSK BOSATT      */        
+    /* -------------------------------------------------------------- */        
+    IF VERIFY(KFP.NORSK_BOSATT,'JN') ^= 0 THEN                                  
+       DO;  /* KRAV TIL UTFYLLING */                                            
+          FEIL_FUNNET        = '1'B;                                            
+          KFP.NORSK_BOSATTNR = 8;                                               
+       END; /* KRAV TIL UTFYLLING */                                            
+    ELSE                                                                        
+       IF (KFP.NORSK_BOSATT = 'J') THEN                                         
+          DO;  /* FYLL UT FAKTISK TRYGDETID - MEN HVORFOR */                    
+             /* NÅR NORSK BOSATT IKKE ER 'J' - EGEN PROC UNDER */               
+             W_FNR = KFP.FNR;                                                   
+             W_FNR_13 = KONV_FNR11_FNR13(W_FNR);                                
+             TT_FRA_37_M  =                                                     
+                (HJ_VIRK_DATO_Å - (W_FNR_R13.ÅR + 16)) * 12                     
+                + HJ_VIRK_DATO_M - W_FNR_R13.MND;                               
+             TT_FRA_37_Å  = TT_FRA_37_M / 12;                                   
+             TT_HJELP_M   = TT_FRA_37_Å * 12;                                   
+             KFP.TT_16_66_Å    = TT_FRA_37_Å;                                   
+             KFP.TT_16_66_M    = TT_FRA_37_M - TT_HJELP_M;                      
+          END;  /* FYLL UT FAKTISK TRYGDETID - MEN HVORFOR */                   
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV PENSJONSGIVENDE INNETEKT SISTE ÅR FØR UTTAK        */        
+    /* -------------------------------------------------------------- */        
+    IF ^F_NUMERISK(KFP.PI_SISTE_ÅR) THEN                                        
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          KFP.PI_SISTE_ÅRNR   = 200;                                            
+       END;                                                                     
+    ELSE                                                                        
+    IF (KFP.PI_SISTE_ÅR = 9999999) THEN                                         
+       KFP.PI_SISTE_ÅR  = 0;                                                    
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV FRAMTIDIG ARBEIDSINNTEKT                           */        
+    /* -------------------------------------------------------------- */        
+    IF ^ F_NUMERISK(KFP.FAI) THEN                                               
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          KFP.FAINR   = 200;                                                    
+       END;                                                                     
+    ELSE                                                                        
+       IF (KFP.FAI = 9999999) THEN                                              
+          KFP.FAI = 0;                                                          
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV EKTEFELLES INNETEKT OVER 2G                        */        
+    /* -------------------------------------------------------------- */        
+    IF (VERIFY(KFP.EK_INNT_OVER_2G,'JN ') ^= 0) THEN                            
+       DO;                                                                      
+          FEIL_FUNNET   ='1'B;                                                  
+          KFP.EK_INNT_OVER_2GNR = 1541;                                         
+       END;                                                                     
+                                                                                
+ /* NYTT FELT 200107 : */                                                       
+                                                                                
+    IF (KFP.VIRK_DATO_ÅMD > 19980100) THEN                                      
+       DO;                                                                      
+          IF (VERIFY(KFP.RED_GP_3_2_5   ,'JN ') ^= 0) THEN                      
+             DO;                                                                
+                FEIL_FUNNET   ='1'B;                                            
+                KFP.RED_GP_3_2_5NR    = 1541;                                   
+             END;                                                               
+          IF KFP.RED_GP_3_2_5 ='J'          THEN                                
+             DO;                                                                
+                IF (KFP.SIVILSTAND = 'G' !                                      
+                    KFP.SIVILSTAND = 'P' !                                      
+                    KFP.SIVILSTAND = 'W'  )       THEN                          
+                    DO;                                                         
+                       FEIL_FUNNET        = '1'B;                               
+                       KFP.RED_GP_3_2_5NR = 616 ;                               
+                    END;                                                        
+             END;                                                               
+          ELSE                                                                  
+          IF KFP.RED_GP_3_2_5 =' '          THEN                                
+             DO;                                                                
+                IF (KFP.SIVILSTAND = 'U' !                                      
+                    KFP.SIVILSTAND = 'S' !                                      
+                    KFP.SIVILSTAND = 'A' !                                      
+                    KFP.SIVILSTAND = 'V' !                                      
+                    KFP.SIVILSTAND = 'E'  )       THEN                          
+                    DO;                                                         
+                       FEIL_FUNNET        = '1'B;                               
+                       KFP.RED_GP_3_2_5NR = 618 ;                               
+                    END;                                                        
+             END;                                                               
+       END;                                                                     
+    ELSE                                                                        
+       KFP.RED_GP_3_2_5 =' ';                                                   
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV OM EKTEFELLTILLEGG ER OK UTFYLT                    */        
+    /* -------------------------------------------------------------- */        
+    IF (VERIFY(KFP.TILL_EK,'J ') ^= 0) THEN                                     
+       DO;                                                                      
+          FEIL_FUNNET   ='1'B;                                                  
+          KFP.TILL_EKNR = 4;                                                    
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV OM PENSJONSINNTEKT ER OK UTFYLT                    */        
+    /* -------------------------------------------------------------- */        
+    IF ^ F_NUMERISK(F_FELT_PIC_CHAR7(KFP.PEN_INNT)) THEN                        
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          KFP.FAINR   = 200;                                                    
+       END;                                                                     
+    ELSE                                                                        
+    IF KFP.PEN_INNT = 9999999 THEN                                              
+       KFP.PEN_INNT = 0;                                                        
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV OM AFP-TILLEGGET HAR OK VERDI                      */        
+    /* -------------------------------------------------------------- */        
+    IF (VERIFY(KFP.AFP_TILLEGGKODE,' N') ^= 0) THEN                             
+       DO;                                                                      
+          FEIL_FUNNET    ='1'B;                                                 
+          KFP.AFP_TILLEGGKODENR = 421;                                          
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL OM VIRKNINGSDATO ER OK                                */        
+    /* -------------------------------------------------------------- */        
+    IF (KFP.VIRK_DATO_ÅMD < 19910000) THEN                                      
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          KFP.VIRK_DATO_ÅMDNR = 364;                                            
+       END;                                                                     
+    ELSE                                                                        
+       IF ^F_GYLDIG_DATO(KFP.VIRK_DATO_ÅMD) THEN   /*2000*/                     
+          DO;                                                                   
+             FEIL_FUNNET        = '1'B;                                         
+             KFP.VIRK_DATO_ÅMDNR = 9;                                           
+          END;                                                                  
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL OM AFP ORDING ER OK                                   */        
+    /* -------------------------------------------------------------- */        
+    IF VERIFY(KFP.AFP_ORDNING,'BJKLNS') ^= 0 THEN  /*9712 HL*/                  
+       DO;                                          /*2000-2*/                  
+          FEIL_FUNNET    ='1'B;                                                 
+          KFP.AFP_ORDNINGNR = 400;                                              
+       END;                                                                     
+                                                                                
+    /* ************************************************************** */        
+    /* KONTROLL AV OPPLYSNINGENE OM EKTEFELLE/SAMBOER/PARTNER (IK)    */        
+    /* ************************************************************** */        
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV FØDSELSNUMMER                                      */        
+    /* -------------------------------------------------------------- */        
+    IF (KFP.FNR_EK ^= 0) THEN                                                   
+       DO;  /* FØDSELSNUMMER EKTEFELLE UTFYLT */                                
+          IF ^F_GYLDIG_FNR(KFP.FNR_EK) THEN                                     
+             DO;  /* UGYLDIG FØDSELSNUMMER */                                   
+                FEIL_FUNNET  = '1'B;                                            
+                KFP.FNR_EKNR = 15;                                              
+             END; /* UGYLDIG FØDSELSNUMMER */                                   
+          ELSE                                                                  
+             DO;  /* GYLDIG FØDSELSNUMMER */                                    
+                FNR_REG.FNR1     = KFP.FNR_EK;                                  
+                EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);           
+                IF FNR_REG.FNR2 > 0 THEN                                        
+                   DO;  /* HAR SKIFTET FØDSELSNUMMER */                         
+                      KFP.FNR_EKNR   = 203;                                     
+                      KFP.FNR_GML_EK = KFP.FNR_EK;                              
+                      KFP.FNR_EK     = FNR_REG.FNR2;                            
+                   END;  /* HAR SKIFTET FØDSELSNUMMER */                        
+             END; /* GYLDIG FØDSELSNUMMER */                                    
+       END; /* FØDSELSNUMMER EKTEFELLE UTFYLT */                                
+                                                                                
+  /* -------------------------------------------------------------- /           
+     KAN IKKE VÆRE SAME PERSON NR FOR FNR_EK OG FNR.                            
+     HVIS MAN REGISTRERER SLIK TILFELLE GI FEIL MELDING                         
+ / -----------------------------------------------------(AB)--------- /         
+                                                                                
+                         */                                                     
+    /* ************************************************************** */        
+    /*                                                                */        
+    /* START DIVERSE KRYSSKONTROLLER                                  */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+    FØDSNUMMER        = KFP.FNR;                                                
+    VIRKNINGSDATO_ÅMD = KFP.VIRK_DATO_ÅMD;                                      
+    /* -------------------------------------------------------------- */        
+    /* KONTROLLERER AT VIRKNINGSTIDSPUNKT IKKE ER MER ENN 6MND FRAM   */        
+    /* -------------------------------------------------------------- */        
+    HJ_VIRK_DATO_ÅMD = KFP.VIRK_DATO_ÅMD;                                       
+ /* IF ^F_6MDR(HJ_VIRK_DATO_ÅMD) THEN                                           
+       DO;                                                                      
+          FEIL_FUNNET        = '1'B;                                            
+          KFP.VIRK_DATO_ÅMDNR = 205;                                            
+       END;              ***************** */                                   
+ /*200410 HL  REMEDY 252 */                                                     
+    IF ^F_2MDR(HJ_VIRK_DATO_ÅMD) THEN                                           
+       DO;                                                                      
+          FEIL_FUNNET        = '1'B;                                            
+          KFP.VIRK_DATO_ÅMDNR = 207;                                            
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL OM ALDER ER OK SAMMEN MED VIRKNINGSTIDSPUNKT          */        
+    /* -------------------------------------------------------------- */        
+    ALDER = F_ALDER(KFP.FNR,KFP.VIRK_DATO_ÅMD);                                 
+    IF (ALDER > 6700) THEN                                                      
+       DO;  /* ØVRE ALDERSGRENSE FOR AFP ER 67 ÅR */                            
+          FEIL_FUNNET        = '1'B;                                            
+          KFP.VIRK_DATO_ÅMDNR = 408;                                            
+       END; /* ØVRE ALDERSGRENSE FOR AFP ER 67 ÅR */                            
+    ELSE                                                                        
+    IF (ALDER < 6201) THEN                                                      
+       DO;  /* NEDRE ALDERSGRENSE FOR AFP ER 62 ÅR - UTTAK MND ETTER */         
+          FEIL_FUNNET        = '1'B;                                            
+          KFP.VIRK_DATO_ÅMDNR = 613;                                            
+       END; /* NEDRE ALDERSGRENSE FOR AFP ER 62 ÅR - UTTAK MND ETTER */         
+    ELSE                                                                        
+       DO;  /* DIVERSE ALDERSGRENSER ETTER ORDNING OG VIRKDATO */               
+          IF (ALDER < 6501) THEN                                                
+             DO;  /* ALDERSGRENSE 65 ÅR T.O.M 09.1993 */                        
+                IF (KFP.VIRK_DATO_ÅMD < 19931000) THEN                          
+                   DO;  /* ALDERSGRENSE 65 ÅR */                                
+                       FEIL_FUNNET        = '1'B;                               
+                       KFP.VIRK_DATO_ÅMDNR = 409;                               
+                   END; /* ALDERSGRENSE 65 ÅR */                                
+             END; /* ALDERSGRENSE 65 ÅR T.O.M 09.1993 */                        
+          ELSE                                                                  
+          IF (ALDER < 6401) THEN                                                
+             DO;                                                                
+                IF (KFP.VIRK_DATO_ÅMD < 19971000) THEN                          
+                   DO;  /* ALDERSGRENSE 64 ÅR */                                
+                       FEIL_FUNNET        = '1'B;                               
+                       KFP.VIRK_DATO_ÅMDNR = 410;                               
+                   END; /* ALDERSGRENSE 64 ÅR */                                
+             END;                                                               
+          ELSE                                                                  
+          IF (ALDER < 6301) THEN                                                
+             DO;                                                                
+                IF (KFP.VIRK_DATO_ÅMD < 19980100 &                              
+                    AFP_ORDNING = 'B'       ) THEN                              
+                   DO;  /* ALDERSGRENSE 63 ÅR */                                
+                       FEIL_FUNNET        = '1'B;                               
+                       KFP.VIRK_DATO_ÅMDNR = 611;                               
+                   END; /* ALDERSGRENSE 63 ÅR */                                
+             END;                                                               
+          ELSE                                                                  
+          IF (ALDER < 6201) THEN                                                
+             DO;                                                                
+                IF (KFP.VIRK_DATO_ÅMD < 19980300 &                              
+                    AFP_ORDNING ^= 'B'      ) !                                 
+                   (KFP.VIRK_DATO_ÅMD > 19980200 ) THEN                         
+                   DO;  /* ALDERSGRENSE 62 ÅR */                                
+                       FEIL_FUNNET        = '1'B;                               
+                       KFP.VIRK_DATO_ÅMDNR = 612;                               
+                   END; /* ALDERSGRENSE 62 ÅR */                                
+             END;                                                               
+       END; /* DIVERSE ALDERSGRENSER ETTER ORDNING OG VIRKDATO */               
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL OM SIVILSTAND ER GYLDIG PÅ VIRKNINGSTIDSPUNKT         */        
+    /* -------------------------------------------------------------- */        
+    SELECT (KFP.SIVILSTAND);                                                    
+       WHEN('P')                                                                
+          IF (HJ_VIRK_DATO_ÅMD < 19930800) THEN                                 
+             DO;                                                                
+                FEIL_FUNNET = '1'B;                                             
+                KFP.SIVILSTANDNR = 388;                                         
+             END;                                                               
+       WHEN('W')                                                                
+          IF (HJ_VIRK_DATO_ÅMD < 19940100) THEN                                 
+             DO;                                                                
+                FEIL_FUNNET = '1'B;                                             
+                KFP.SIVILSTANDNR = 389;                                         
+             END;                                                               
+       OTHER;                                                                   
+    END; /* SELECT SIVILSTAND */                                                
+                                                                                
+    IF (KFP.VIRK_DATO_ÅMD > 19980100) THEN                                      
+       IF (KFP.EK_INNT_OVER_2G = ' ') THEN                                      
+          /* EK INNTEKT 2G     ER BLANK */                                      
+          IF (VERIFY(KFP.SIVILSTAND,'GPW') = 0)   THEN                          
+             DO;  /* KRAV TIL UTFYLLING */                                      
+                FEIL_FUNNET   ='1'B;                                            
+                KFP.EK_INNT_OVER_2GNR = 272;                                    
+             END; /* KRAV TIL BLANK */                                          
+          ELSE;                                                                 
+       ELSE /* EK INNTEKT 2G    IKKE BLANK */                                   
+          IF (VERIFY(KFP.SIVILSTAND,'ASUVE') = 0)   THEN                        
+             DO;  /* SKAL IKKE FYLLES UT */                                     
+                FEIL_FUNNET   ='1'B;                                            
+                KFP.EK_INNT_OVER_2GNR = 1542;                                   
+             END; /* SKAL IKKE FYLLES UT */                                     
+          ELSE;                                                                 
+    ELSE  /* VIRK FØR 02.1998 SKAL IKKE FYLLES UT - "NULLES" */                 
+       KFP.EK_INNT_OVER_2G = ' ';                                               
+                                                                                
+                                                                                
+    SELECT(KFP.AFP_ORDNING);                                                    
+       WHEN('S','K')                                                            
+          DO;                                                                   
+             IF (KFP.VIRK_DATO_ÅMD < 19931000) THEN                             
+                DO;                                                             
+                   FEIL_FUNNET  = '1'B;                                         
+                   KFP.AFP_ORDNINGNR = 414;                                     
+                END;                                                            
+          END;                                                                  
+       WHEN('J')                                                                
+          DO;                                                                   
+             IF (KFP.VIRK_DATO_ÅMD < 19930900) THEN                             
+                DO;                                                             
+                   FEIL_FUNNET  = '1'B;                                         
+                   KFP.AFP_ORDNINGNR = 414;                                     
+                END;                                                            
+             ELSE                                                               
+                IF (ALDER < 6501) THEN                                          
+                   DO;                                                          
+                      FEIL_FUNNET  = '1'B;                                      
+                      KFP.AFP_ORDNINGNR = 420;                                  
+                   END;                                                         
+          END;                                                                  
+       WHEN('B')                                                                
+          DO;                                                                   
+             IF (KFP.VIRK_DATO_ÅMD < 19950000) THEN                             
+                DO;                                                             
+                   FEIL_FUNNET  = '1'B;                                         
+                   KFP.AFP_ORDNINGNR = 416;                                     
+                END;                                                            
+          END;                                                                  
+       WHEN('N')                                                                
+          DO;                                                                   
+             IF (KFP.VIRK_DATO_ÅMD < 19970000) THEN                             
+                DO;                                                             
+                   FEIL_FUNNET  = '1'B;                                         
+                   KFP.AFP_ORDNINGNR = 417;                                     
+                END;                                                            
+          END;                                                                  
+       OTHER;                                                                   
+    END; /* SELECT AFP_ORDNING */                                               
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLLERER EKTEFELLE/PARTNER/SAMBOER                         */        
+    /* -------------------------------------------------------------- */        
+    IF (VERIFY(KFP.SIVILSTAND,'ESU') ^= 0) THEN                                 
+       DO;  /* SKAL HA "EKTEFELLE" - SIVILSTAND 'A'!'G'!'P'!'V'!'W' */          
+                                                                                
+          IF (KFP.FNR_EK = 0) THEN                                              
+             DO;  /* FNR EKTEFELLE/SAMBOER/PARTNER MÅ OPPGIS */                 
+                 FEIL_FUNNET = '1'B;                                            
+                 KFP.FNR_EKNR  = 327;                                           
+             END; /* FNR EKTEFELLE/SAMBOER/PARTNER MÅ OPPGIS */                 
+                                                                                
+          IF (KFP.NAVN_EK = (25)' ') THEN                                       
+             DO;  /* KRAV TIL UTFYLLING */                                      
+                FEIL_FUNNET = '1'B;                                             
+                SELECT (KFP.SIVILSTAND);                                        
+                   WHEN ('A')                                                   
+                      DO;  /* LEVER ADSKILT */                                  
+                         IF (F_KJØNN(KFP.FNR) ^=                                
+                             F_KJØNN(KFP.FNR_EK)) THEN                          
+                            IF KFP.FNR_EKNR = 0 THEN                            
+                               /* EKTEFELLES FNR UTFYLT, IKKE NAVN */           
+                               KFP.NAVN_EKNR  = 118;                            
+                            ELSE                                                
+                               /* EKTEFELLES NAVN IKKE UTFYLT */                
+                               KFP.NAVN_EKNR  = 154;                            
+                         ELSE /* PARTNER */                                     
+                            /* PARTNERS FNR/NAVN IKKE UTFYLT */                 
+                            KFP.NAVN_EKNR  = 391;                               
+                      END; /* LEVER ADSKILT */                                  
+                   WHEN ('G')                                                   
+                      DO;  /* GIFT - NAVN MANGLER */                            
+                         IF KFP.FNR_EKNR = 0 THEN                               
+                            /* EKTEFELLES FNR UTFYLT, IKKE NAVN */              
+                            KFP.NAVN_EKNR  = 118;                               
+                         ELSE                                                   
+                            /* EKTEFELLES NAVN IKKE UTFYLT */                   
+                            KFP.NAVN_EKNR  = 154;                               
+                      END; /* GIFT - NAVN MANGLER */                            
+                   WHEN ('P')                                                   
+                      DO;  /* PARTNER - FNR/NAVN MANGLER */                     
+                         KFP.NAVN_EKNR  = 391;                                  
+                      END; /* PARTNER - FNR/NAVN MANGLER */                     
+                   WHEN ('V','W')                                               
+                      DO;                                                       
+                         KFP.NAVN_EKNR  = 390;                                  
+                      END;                                                      
+                   OTHER;                                                       
+                END; /* SELECT SIVILSTAND */                                    
+             END; /* KRAV TIL UTFYLLING */                                      
+                                                                                
+          ALDER_EK = F_ALDER(KFP.FNR_EK,KFP.VIRK_DATO_ÅMD);                     
+                                                                                
+          /*  SAMME KJøNN KONTROL  */                                           
+          IF (F_KJØNN(KFP.FNR) = F_KJØNN(KFP.FNR_EK)) THEN                      
+             IF (VERIFY(KFP.SIVILSTAND,'APV') ^= 0) THEN                        
+                IF KFP.FNR_EK > 0 THEN                                          
+                   DO; /* SAMME KJøNN ? MÅ VÆRE ADSKILT/PARTNER/SAMB*/          
+                      FEIL_FUNNET  = '1'B;             /*JFA 11.10.04*/         
+                      KFP.FNRNR    = 999;                                       
+                      KFP.FNR_EKNR = 16;                                        
+                   END; /* SAMME KJøNN ? - MÅ VÆRE ADSKILT / PARTNER */         
+                ELSE;                                                           
+             ELSE;                                                              
+          ELSE                                                                  
+             IF (KFP.SIVILSTAND = 'P') THEN                                     
+                DO;  /* SIVILSTAND 'P' KUN VED FORSKJELLIG KJØNN */             
+                   FEIL_FUNNET  = '1'B;                                         
+                   KFP.FNRNR    = 999;                                          
+                   KFP.FNR_EKNR = 392;                                          
+                END; /* SIVILSTAND 'P' KUN VED FORSKJELLIG KJØNN */             
+                                                                                
+ /*--------------------------------------AB------------*/                       
+          IF KFP.FNR           =   KFP.FNR_EK   THEN                            
+            DO;                                                                 
+                IF KFP.SIVILSTAND = 'G' !                                       
+                   KFP.SIVILSTAND = 'P' !                                       
+                   KFP.SIVILSTAND = 'A' !                                       
+                   KFP.SIVILSTAND = 'W' !                                       
+                   KFP.SIVILSTAND = 'V' THEN                                    
+                 DO;                                                            
+                     FEIL_FUNNET    =   '1'B;                                   
+                     KFP.FNR_EKNR   =   208 ;                                   
+                 END;                                                           
+            END;                                                                
+                                                                                
+          IF (KFP.TILL_EK = 'J') THEN                                           
+             DO; /* KONTROLL EKTEFELLETILLEGG */                                
+                IF (KFP.SIVILSTAND = 'V') THEN                                  
+                   DO;  /* IKKE RETT PÅ EKTEFELLETILLEGG */                     
+                      FEIL_FUNNET   = '1'B;                                     
+                      KFP.SIVILSTANDNR = 54;                                    
+                      KFP.TILL_EKNR    = 999;                                   
+                   END; /* IKKE RETT PÅ EKTEFELLETILLEGG */                     
+                ELSE                                                            
+                IF (ALDER_EK < 6001) THEN                                       
+                   DO;  /* EKTEFELLEN MÅ HA FYLT 60 ÅR */                       
+                      FEIL_FUNNET   = '1'B;                                     
+                      KFP.TILL_EKNR =  413;                                     
+                   END; /* EKTEFELLEN MÅ HA FYLT 60 ÅR */                       
+                IF (KFP.EK_INNT_OVER_2G = 'J') THEN                             
+                   DO;  /* EKTEFELLEN HAR FOR HØY INNTEKT */                    
+                      FEIL_FUNNET   = '1'B;                                     
+                      KFP.EK_INNT_OVER_2GNR = 385;                              
+                      KFP.TILL_EKNR =  999;                                     
+                   END; /* EKTEFELLEN HAR FOR HØY INNTEKT */                    
+                IF ^F_EK_ALDER_GYLDIG                                           
+                      (KFP.FNR_EK,KFP.VIRK_DATO_ÅMD) THEN                       
+                   DO;  /* EKTEFELLEN HAR FOR HØY ALDER */                      
+                      FEIL_FUNNET        = '1'B;                                
+                      KFP.FNR_EKNR       = 17;                                  
+                      KFP.VIRK_DATO_ÅMDNR =  999;                               
+                      KFP.TILL_EKNR      = 999;                                 
+                   END; /* EKTEFELLEN HAR FOR HØY ALDER */                      
+             END;/* KONTROLL EKTEFELLETILLEGG */                                
+                                                                                
+       END; /* SKAL HA "EKTEFELLE" - SIVILSTAND 'A'!'G'!'P'!'V'!'W' */          
+    ELSE                                                                        
+       DO;  /* SKAL IKKE EKTEFELLE - SIVILSTAND 'E'!'S'!'U' */                  
+          IF (KFP.FNR_EK > 0) THEN                                              
+             DO;                                                                
+                FEIL_FUNNET      = '1'B;                                        
+                KFP.SIVILSTANDNR = 123;                                         
+                KFP.FNR_EKNR     = 999;                                         
+             END;                                                               
+          IF (KFP.NAVN_EK ^= (25)' ') THEN                                      
+             DO;  /* SKAL HA NAVN NÅR FNR ER UTFYLT */                          
+                FEIL_FUNNET = '1'B;                                             
+                KFP.NAVN_EKNR  = 123;                                           
+             END; /* SKAL HA NAVN NÅR FNR ER UTFYLT */                          
+          IF (KFP.TILL_EK = 'J') THEN                                           
+             DO;  /* IKKE RETT PÅ EKTEFELLETILLEGG */                           
+                FEIL_FUNNET   = '1'B;                                           
+                KFP.SIVILSTANDNR = 54;                                          
+                KFP.TILL_EKNR    = 999;                                         
+             END; /* IKKE RETT PÅ EKTEFELLETILLEGG */                           
+       END; /* SKAL IKKE EKTEFELLE - SIVILSTAND 'E'!'S'!'U' */                  
+   END KONTROLL_KFP_SØKER;                                                      
+ /* ----------------------------------------------------------------- */        
+                                                                                
+ KONTROLL_KFP_SPES:                                                             
+   PROC(FEIL_FUNNET);                                                           
+      %INCLUDE P0019980; /* FNR & FNR_EK - MÅ LIGGE HER (NO10) */               
+   DCL                                                                          
+      FEIL_FUNNET                        BIT(1);                                
+   DCL                                                                          
+      KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),                    
+      KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),                    
+      KEY_PEKER1                 POINTER,                                       
+      KEY_PEKER2                 POINTER,                                       
+      ST_RECL                    CHAR (35);                                     
+   DCL                                                                          
+      T_FNR                              PIC'(11)9',                            
+      T_VIRK_DATO_ÅMD                    PIC'(8)9';                             
+   DCL                                                                          
+      FNR13                              PIC'(13)9';                            
+   DCL                                                                          
+      F_AAR DEF FNR13 POS(5)             PIC'(4)9';                             
+   DCL                                                                          
+      VIRK_DATO_Å DEF T_VIRK_DATO_ÅMD POS(1) PIC'(4)9',                         
+      VIRK_DATO_M DEF T_VIRK_DATO_ÅMD POS(5) PIC'(2)9';                         
+   DCL                                                                          
+      HJ_FELT_3                          CHAR(3);                               
+   DCL                                                                          
+      1 NR DEF T_FNR,                                                           
+        2 DG                             PIC'99',                               
+        2 MN                             PIC'99',                               
+        2 ÅR                             PIC'99',                               
+        2 PERSNR,                                                               
+          3 ÅRHUNDRE                     PIC'999',                              
+          3 REST                         PIC'99';                               
+   DCL                                                                          
+      FYLT_SEKSTISJU                     PIC'(5)9';                             
+   DCL                                                                          
+      FYLT_SEKSTISEKS                    PIC'(5)9'; /* ERIK 28.10.88 */         
+   DCL                                                                          
+      FYLT_SEKSTIFEM                     PIC'(5)9'; /* ERIK 28.10.88 */         
+   DCL                                                                          
+      TT_MAKS_TIL_DATO                   PIC'9999999',                          
+      W_TT_MND                           PIC'9999',                             
+      OVER_MND                           PIC'99',                               
+      TT                                 PIC'99';                               
+   DCL                                                                          
+      TT_TIL_TPK                         PIC'(4)9',                             
+      TT_16_66_ÅM                        PIC'(4)9';                             
+      T_FNR       = KFP.FNR;                                                    
+      T_VIRK_DATO_ÅMD = KFP.VIRK_DATO_ÅMD;                                      
+      TT_16_66_ÅM = (KFP.TT_16_66_Å * 100) + KFP.TT_16_66_M;                    
+      KEY_PEKER1  = ADDR(KFP.STATSBORGER);                                      
+      KEY_PEKER2  = ADDR(KFP.BOSATT);                                           
+      FNR13       = KONV_FNR11_FNR13(KFP.FNR);                                  
+ /* ***************************************************************** */        
+ /* TESTER OM FORUTSETNINGENE FOR Å KONTROLLERE FELTENE I SPES.INFO   */        
+ /* DELEN ER TILSTEDE.                                                */        
+ /* ***************************************************************** */        
+  FEIL_FUNNET = '0'B;                                                           
+  CALL SJEKK_TT_NUMERISK;                                                       
+                                                                                
+  IF ^FEIL_FUNNET THEN                                                          
+    DO;                                                                         
+      IF KFP.TT_16_66_Å            = 0     &                                    
+         KFP.TT_16_66_M            = 0     &                                    
+         KFP.STATSBORGER           = 0     &                                    
+         KFP.BOSATT                = 0     &                                    
+         KFP.OVERKOMP_UTL          = ' ' THEN                                   
+        DO;                                                                     
+          FEIL_FUNNET        = '1'B;                                            
+          KFP.NORSK_BOSATTNR = 61;                                              
+        END;                                                                    
+      ELSE                                                                      
+        DO;                                                                     
+ /* ***************************************************************** */        
+ /* FELTKONTROLLER.........                                           */        
+ /* ***************************************************************** */        
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)               
+                                               INTO(ST_RECL);                   
+              GOTO STAT_UT;                                                     
+          NOTFND1:                                                              
+              FEIL_FUNNET       = '1'B;                                         
+              KFP.STATSBORGERNR = 24;                                           
+              GOTO STAT_UT;                                                     
+          STAT_UT:                                                              
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT2)               
+                                               INTO(ST_RECL);                   
+              GOTO BO_UT;                                                       
+          NOTFND2:                                                              
+              FEIL_FUNNET   = '1'B;                                             
+              KFP.BOSATTNR = 25;                                                
+              GOTO BO_UT;                                                       
+          BO_UT:                                                                
+                                                                                
+          IF ^(KFP.FRAVIK_FLYKT    = ' ' !                                      
+               KFP.FRAVIK_FLYKT    = 'J') THEN                                  
+            DO;                                                                 
+              FEIL_FUNNET         = '1'B;                                       
+              KFP.FRAVIK_FLYKTNR = 403;                                         
+            END;                                                                
+                                                                                
+         IF KFP.FRAVIK_FLYKT = 'J' & KFP.TT_16_66_Å > 0 THEN                    
+              DO;                                                               
+                FEIL_FUNNET         = '1'B;                                     
+                KFP.FRAVIK_FLYKTNR = 403;                                       
+                KFP.TT_16_66_ÅNR    = 999;                                      
+              END;                                                              
+                                                                                
+          IF ^(KFP.OVERKOMP_UTL = 'J' !                                         
+               KFP.OVERKOMP_UTL = 'N') &                                        
+               KFP.NORSK_BOSATT = 'N'  &                                        
+               F_AAR < 1937            THEN                                     
+            DO;                                                                 
+              FEIL_FUNNET         = '1';                                        
+              KFP.OVERKOMP_UTLNR = 35;                                          
+            END;                                                                
+          IF ^(KFP.OVERKOMP_UTL = ' ' ) &                                       
+               KFP.NORSK_BOSATT = 'N'  &                                        
+               F_AAR > 1936            THEN                                     
+            DO;                                                                 
+              FEIL_FUNNET         = '1';                                        
+              KFP.OVERKOMP_UTLNR = 623;                                         
+            END;                                                                
+          IF  (KFP.OVERKOMP_UTL = 'J' !                                         
+               KFP.OVERKOMP_UTL = 'N') &                                        
+               KFP.NORSK_BOSATT = 'J'  THEN                                     
+            DO;                                                                 
+              FEIL_FUNNET         = '1';                                        
+              KFP.OVERKOMP_UTLNR = 34;                                          
+            END;                                                                
+          IF KFP.TT_16_66_M > 12 THEN                                           
+            DO;                                                                 
+              FEIL_FUNNET = '1'B;                                               
+              KFP.TT_16_66_MNR = 31;                                            
+            END;                                                                
+        END;                                                                    
+ /* ***************************************************************** */        
+ /* KRYSSKONTROLLER                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ /* ***************************************************************** */        
+ /* REGNER UT ÅR OG MND VEDKOMMENDE FYLLER 66 ÅR (ÅÅMM)               */        
+ /*(SIFFER 7-9 ANGIR ÅRHUNDRE:1800-TALLET 500-749,1900-TALLET 000-499)*/        
+ /* ***************************************************************** */        
+                                                                                
+ /*FRA 2003 KAN PERSONER FØDT PÅ 1900-TALLET OGSÅ HA 9 SOM 7.SIFFER*/           
+ /* FYLT_SEKSTISEKS BRUKES IKKE                                                 
+            IF (ÅRHUNDRE <  500)    !                                           
+               (ÅRHUNDRE > 899  &  ÅR > 39)        THEN                         
+               FYLT_SEKSTISEKS = ((ÅR + 66) * 12) + MN;                         
+           ELSE                                                                 
+               FYLT_SEKSTISEKS = (((ÅR + 66) - 100) * 12) + MN;                 
+                                                                                
+ /* ***************************************************************** */        
+ /* REGNER UT ÅR OG MND VEDKOMMENDE FYLLER 65 ÅR (ÅÅMM)               */        
+ /*(SIFFER 7-9 ANGIR ÅRHUNDRE:1800-TALLET 500-749,1900-TALLET 000-499)*/        
+ /* ***************************************************************** */        
+                                                                                
+ /*FRA 2003 KAN PERSONER FØDT PÅ 1900-TALLET OGSÅ HA 9 SOM 7.SIFFER*/           
+ /* FYLT_SEKSTIFEM BRUKES IKKE                                                  
+            IF (ÅRHUNDRE <  500)    !                                           
+               (ÅRHUNDRE > 899  &  ÅR > 39)        THEN                         
+              FYLT_SEKSTIFEM = ((ÅR + 65) * 12) + MN;                           
+           ELSE                                                                 
+              FYLT_SEKSTIFEM = (((ÅR + 65) - 100) * 12) + MN;                   
+  */                                                                            
+ /* ***************************************************************** */        
+ /* KONTROLL AV SØKERENS TRYGDETID:                                   */        
+ /* ***************************************************************** */        
+                                                                                
+                IF KFP.TT_16_66_Å = 0 &                                         
+                   KFP.TT_16_66_M = 0 THEN                                      
+                   DO;                                                          
+                     FEIL_FUNNET = '1'B;                                        
+                     KFP.TT_16_66_ÅNR = 999;                                    
+                     KFP.TT_16_66_MNR = 999;                                    
+                   END;                                                         
+                                                                                
+    W_FNR = KFP.FNR;                                                            
+    W_FNR_13 = KONV_FNR11_FNR13(W_FNR);                                         
+                                                                                
+    TT_MAKS_TIL_DATO = ((VIRK_DATO_Å * 12) + VIRK_DATO_M) -                     
+                       (((W_FNR_R13.ÅR + 16) * 12) + W_FNR_R13.MND);            
+                                                                                
+    W_TT_MND  = KFP.TT_16_66_Å * 12 + KFP.TT_16_66_M;                           
+                                                                                
+    IF W_TT_MND > TT_MAKS_TIL_DATO THEN                                         
+       DO;                                                                      
+          FEIL_FUNNET     = '1'B;                                               
+          KFP.TT_16_66_ÅNR    = 359;                                            
+       END;                                                                     
+                                                                                
+     END;                                                                       
+                                                                                
+                                                                                
+  SJEKK_TT_NUMERISK:                                                            
+      PROC;                                                                     
+                                                                                
+            IF ^F_NUMERISK(F_FELT_PIC_CHAR2(KFP.TT_16_66_Å)) THEN               
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  KFP.TT_16_66_ÅNR    = 200;                                    
+               END;                                                             
+            IF ^F_NUMERISK(F_FELT_PIC_CHAR2(KFP.TT_16_66_M)) THEN               
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  KFP.TT_16_66_MNR    = 200;                                    
+               END;                                                             
+      END SJEKK_TT_NUMERISK;                                                    
+ END KONTROLL_KFP_SPES;                                                         

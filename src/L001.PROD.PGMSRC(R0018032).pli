@@ -1,0 +1,208 @@
+ /*   SIST ENDRET PÅ PROD   2004.07.16 12.37.00 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 13.30.31 AV   JDA2970          */        
+ /*********************************************************************/        
+ /*                                                                   */        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0018032   ET PROGR. :                                         */        
+ /*    SPORBARHET               --------------------------            */        
+ /*    PROGRAMMER :  SATISH PATHAK                                    */        
+ /*    SKRIVET    :  26.11.2003                                       */        
+ /*    PROGRAM KONTROLL PROGRAM    FOR                                */        
+ /*       SKRIVING AV INTEKT INFORMAJON     REVS DATA BASE D001DR0    */        
+ /*          OVERFØRING AV INNTEKT   IE                               */        
+ /*          FJERNE     AV INNTEKT   IF                               */        
+ /*          OMSORGSPOENG            OO                               */        
+ /*                                                                   */        
+ /*********************************************************************/        
+                                                                                
+ OPPDATE_DR_INNTEKT: PROC(WFNR , IO_AREA) ;                                     
+                                                                                
+ DCL WFNR                    PIC '(11)9'   ;                                    
+ DCL IO_AREA                  CHAR( 150)     ;                                  
+                                                                                
+ DCL 1 RF0PERSN          BASED(PER_PEKER),                                      
+      %INCLUDE P0019927;                                                        
+                                                                                
+ DCL 1 W02_INNT     BASED (IO_PEKER),                                           
+     %INCLUDE P0019928;                                                         
+                                                                                
+ DCL 1 PERSN,                                                                   
+      %INCLUDE P0018011;                                                        
+    /* -------------------------------------------------------------- */        
+    /*   SøNADBREV INFO           P0018012                            */        
+    /* -------------------------------------------------------------- */        
+  DCL  1 IP_INFO  ,                                                             
+      %INCLUDE P0018012;                                                        
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*     SSA                                                           */        
+ /*-------------------------------------------------------------------*/        
+  DCL 1 SSA1_ROOT               STATIC,                                         
+        2    HDEL                   CHAR (17)    INIT                           
+                               ('DR0PERSN(FNR     '),                           
+        2    REL_OP                CHAR (2)     INIT (' =')     ,               
+        2    PKEY              FIXED     DEC  (11)    INIT ( 0  ),              
+        2    HP                    CHAR (1)     INIT (')' )     ;               
+                                                                                
+      DCL     SSA_UQUAL                        CHAR (9) INIT ((9)' ');          
+       DCL 1  SSA1_INNTEKT     ,                                                
+            2    HDEL                            CHAR (17) INIT                 
+                               ('PINNTEKT(REGIDATE'),                           
+            2    REL_OP                          CHAR (2)  INIT (' ='),         
+            2    TTP_KEY            FIXED        DEC (15)  INIT ( 0 ),          
+            2    HP                              CHAR (1)  INIT (')');          
+                                                                                
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /* PCB-OMRÅDER                                                       */        
+ /*-------------------------------------------------------------------*/        
+    DCL 1  DR1     BASED    (DR1_PCB_PEKER),                                    
+    %INCLUDE P0012003;                                 /* PCB-OMRÅDE  */        
+                                                                                
+    DCL PER_PEKER             POINTER;                                          
+    DCL IO_PEKER             POINTER;                                           
+                                                                                
+    DCL  DATE_TID              PIC '(15)9';                                     
+    DCL  DATO                  PIC '(15)9';                                     
+    DCL  DATO_REV              PIC '(15)9';                                     
+    DCL  01 DATE_CH               CHAR(15);                                     
+                                                                                
+     DCL WFNR_TIL                PIC '(11)9'   ;                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*      S T A R T   P R O G R A M   R0019X30                         */        
+ /*                                                                   */        
+ /*-------------------------------------------------------------------*/        
+       IO_PEKER = ADDR(IO_AREA);                                                
+                                                                                
+       IF WFNR = FRA_FNR THEN                                                   
+          DO;                                                                   
+              PER_PEKER  = FRA_PEKER;                                           
+              WFNR_TIL  = TIL_FNR;                                              
+          END;                                                                  
+       ELSE                                                                     
+       IF WFNR = TIL_FNR THEN                                                   
+          DO;                                                                   
+             PER_PEKER  = TIL_PEKER;                                            
+             WFNR_TIL   = 0      ;                                              
+          END;                                                                  
+       DATE_CH = DATETIME;                                                      
+       DATO      = SUBSTR(DATE_CH,1,15 );                                       
+       DATO_REV  = 999999999999999 - DATO    ;                                  
+                                                                                
+       CALL KONTROLL_ROT;                                                       
+       CALL KONTROLL_INNTEKT ;                                                  
+ /* ************************************************************ */             
+ /* FINNES ROT ELLER SKRIVE NY ROT                              */              
+ /* ************************************************************ */             
+                                                                                
+ KONTROLL_ROT: PROC;                                                            
+                                                                                
+  SSA1_ROOT.PKEY  = WFNR      ;                                                 
+  CALL LES_ROT;                                                                 
+  IF DR1.STATUS_KODE = '  '  THEN; /* ROT         FUNNET */                     
+  ELSE                                                                          
+  IF DR1.STATUS_KODE = 'GE'  THEN   /* ROT         IKKE FUNNET  */              
+     DO;                                                                        
+        PERSN.FNR   = RF0PERSN.FNR;                                             
+        PERSN.NAVN  = RF0PERSN.NAVN;                                            
+        PERSN.TKNR  = RF0PERSN.TKNR;                                            
+        PERSN.PERSN_KODE = RF0PERSN.PERSN_KODE;                                 
+                                                                                
+                                                                                
+        SSA_UQUAL     =  'DR0PERSN';                                            
+         CALL ISRT_ROT;                                                         
+     END;                                                                       
+  ELSE                                                                          
+      DO;                                                                       
+ L065:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L065';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+       GO TO L999;                                                              
+     END;                                                                       
+ END KONTROLL_ROT;                                                              
+ /* ********************************************************** */               
+ KONTROLL_INNTEKT: PROC;                                                        
+                                                                                
+ /* SSA1_ROOT.PKEY  = FNR  ; */                                                 
+  TTP_KEY  = DATO_REV;                                                          
+  IP_INFO.INN_DATOTID = DATO_REV;                                               
+                                                                                
+  IP_INFO.PI_ÅR       =  W02_INNT.W02_PI_ÅR     ;                               
+  IP_INFO.PI_KODE     =  W02_INNT.W02_PI_KODE   ;                               
+  IP_INFO.PI_TYPE     =  W02_INNT.W02_PI_TYPE  ;                                
+  IP_INFO.PI_MERKE    =  W02_INNT.W02_PI_MERKE ;                                
+  IP_INFO.PI          =  W02_INNT.W02_PI        ;                               
+  IP_INFO.PI_KOMMNR   =  W02_INNT.W02_PI_KOMMNR ;                               
+  IP_INFO.PI_RAPPDATO =  W02_INNT.W02_PI_RAPPDATO ;                             
+  IP_INFO.BRUKER_ID   = DIV_PARAM_OMR.BRUKER_ID;                                
+  IP_INFO.FJERNING_KODE  = FUNK_KODE;                                           
+  IP_INFO.FNRTIL         = WFNR_TIL ;                                           
+                                                                                
+  SSA_UQUAL     =  'PINNTEKT';                                                  
+  CALL ISRT_BARN_AV_ROOT;                                                       
+                                                                                
+ END KONTROLL_INNTEKT;                                                          
+ /* ********************************************************** */               
+ /* ********************************************************** */               
+ LES_ROT: PROC;                                                                 
+                                                                                
+    CALL PLITDLI                                (W02_PARM_CT_4    ,             
+                                                 W02_GU           ,             
+                                                 DR1          ,                 
+                                                 PERSN        ,                 
+                                                 SSA1_ROOT);                    
+                                                                                
+                                                                                
+                                                                                
+ END LES_ROT;                                                                   
+    /*----------------------------------------------------------------*/        
+    /* SKRIVE ROT                                                     */        
+    /*----------------------------------------------------------------*/        
+ ISRT_ROT: PROC;                                                                
+    CALL PLITDLI                                (W02_PARM_CT_4    ,             
+                                                 W02_ISRT         ,             
+                                                 DR1          ,                 
+                                                 PERSN        ,                 
+                                                 SSA_UQUAL    );                
+                                                                                
+                                                                                
+                                                                                
+    IF DR1.STATUS_KODE        ^=         '  '    THEN                           
+      DO;                                                                       
+ L067:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L067';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+       GO TO L999;                                                              
+     END;                                                                       
+                                                                                
+ END ISRT_ROT;                                                                  
+                                                                                
+ /*----------------------------------------------------------------*/           
+ /* SKRIVE BARN AV ROT                                             */           
+ /*----------------------------------------------------------------*/           
+ ISRT_BARN_AV_ROOT:  PROC;                                                      
+                                                                                
+    CALL PLITDLI                                (W02_PARM_CT_5    ,             
+                                                 W02_ISRT   ,                   
+                                                 DR1          ,                 
+                                                 IP_INFO      ,                 
+                                                 SSA1_ROOT,                     
+                                                 SSA_UQUAL);                    
+                                                                                
+                                                                                
+    IF DR1.STATUS_KODE        ^=         '  '    THEN                           
+      DO;                                                                       
+ L068:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L068';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+       GO TO L999;                                                              
+     END;                                                                       
+                                                                                
+ END ISRT_BARN_AV_ROOT;                                                         
+                                                                                
+  END OPPDATE_DR_INNTEKT ;  /*END  OF PROGRAM  */                               

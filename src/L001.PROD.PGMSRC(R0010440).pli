@@ -1,0 +1,819 @@
+ /*   SIST ENDRET PÅ PROD   2004.07.16 12.50.23 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 13.46.57 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.01.18 10.36.11 AV   JDA2970          */        
+ /*       SIST ENDRET 13/10-99 11.58.15 AV   JDA7339                  */        
+ /*       SIST ENDRET 13/10-99 11.57.33 AV   JDA7339                  */        
+ /*       SIST ENDRET 06/05-98 10.39.53 AV   SPA7339                  */        
+ /*       SIST ENDRET 14/01-98 15.18.26 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0010440 - PROGRAM SOM SENDER BILDE FOR RYDDING  AV SEGMENT   */        
+ /*                                                                   */        
+ /*              - AKSEPTERE BILDE                                    */        
+ /*              - KONTROLLERE FNR                                    */        
+ /*              - SPERE ROOT OG INNTEKKET SEG                        */        
+ /*              - FJERENER ALL ANDRE SEGMENT                         */        
+ /*   EXEC CICS SYNCPOINT ROLLBACK                                    */        
+ /*     PROGRAMMERER: PATHAK SATISH                  28.5.91          */        
+ /* ***************************************************************** */        
+                                                                                
+ R001R1: PROC(COMMAREA_PEKER)                  OPTIONS (MAIN);                  
+                                                                                
+    %INCLUDE P0019906;            /* TRANS-OPPL_OMR                   */        
+    %INCLUDE P0019908;            /* KOM_OMR                          */        
+    %INCLUDE P0019910;            /* STYRE_OMR                        */        
+    %INCLUDE P0019912;            /* DIV_PARAM_OMR                    */        
+    %INCLUDE S0010R;              /* MAP FOR FJERNING AV SEGMENT      */        
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0012002;   /* PCB - PEKER - OMR    */                                
+       DCL 1  RF1              BASED (RF1_PCB_PEKER),                           
+ %INCLUDE P0012003;                         /* PCB                 */           
+                                                                                
+  DCL                                                                           
+     W01_PSB_NAVN                CHAR (8)       INIT('        ');               
+  DCL                                                                           
+     PLITDLI ENTRY;                                                             
+                                                                                
+  %INCLUDE DFHBMSCA;                                                            
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   ARBEIDSFELTER SOM BRUKES AV UIB (USER INTERFACE BLOCK)       */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+    %INCLUDE DLIUIB;                                                            
+                                                                                
+      DCL  1 RF0PERSN ,                                                         
+      %INCLUDE P0019927  ;                                                      
+                                                                                
+      DCL   W01_IO                  CHAR (350);                                 
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   DLI CALL-PARAMETRE + ANDRE KODER .                           */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+ DCL 1  W01_DLI_PARAM,                                                          
+              2   W02_GET                 CHAR (4)   INIT ('    '),             
+        2   W02_GHNP                CHAR (4)   INIT ('GHNP'),                   
+        2   W02_DELT                CHAR (4)   INIT ('DLET'),                   
+        2   W02_PARM_CT_1     FIXED BIN  (31)  INIT (1),                        
+        2   W02_PARM_CT_3     FIXED BIN  (31)  INIT (3),                        
+        2   W02_PARM_CT_4     FIXED BIN  (31)  INIT (4),                        
+        2   W02_PARM_CT_5     FIXED BIN  (31)  INIT (5);                        
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   DL1 SSA-OMRÅDER FOR ROT OG STATUS-SEGMENTER.                 */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+ DCL    SSA_UQUAL              STATIC      CHAR (9) INIT ((9)' ');              
+                                                                                
+ DCL 1  SSA1_RF0PERSN          STATIC,                                          
+        2    HDEL                          CHAR (17)  INIT                      
+             ('RF0PERSN(FNR     '),                                             
+        2    REL_OP                        CHAR (2)   INIT (' ='),              
+        2    PKEY               FIXED      DEC  (11)  INIT ( 0  ),              
+        2    HP                            CHAR (1)   INIT (')' );              
+                                                                                
+                                                                                
+ DCL 01 TAB,                                                                    
+       02 FNR (14)    PIC '(11)9';                                              
+                                                                                
+ DCL CURSOR                FIXED BIN(15) INIT (-1);                             
+ DCL ( DATE, VERIFY, CSTG, DATETIME, SUBSTR) BUILTIN;                           
+                                                                                
+ DCL                                                                            
+    COMMAREA_PEKER         PTR,                                                 
+    MAPSET_PTR             PTR,                                                 
+    BMSMAPBR               PTR,                                                 
+    FKODE                  CHAR(2) INIT('  '),                                  
+    OPPLYSNINGSTYPE        CHAR(1) INIT(' '),                                   
+    SEGMENT                CHAR(8) INIT(' '),                                   
+    ROT_SEGMENT            CHAR (1) INIT (' '),                                 
+    FEIL_KODE              CHAR(1) INIT(' '),                                   
+    RXX_STATUS_KODE        CHAR(1) INIT(' '),                                   
+    MAP_MELDING (6)        CHAR(78) INIT((78)' '),                              
+    PIC_Z9_SLASH_Y9        PIC'Z9/Y9',                                          
+    PIC_3                  PIC'(3)9',                                           
+    PIC_ZZ9                PIC'ZZ9',                                            
+    PIC_9V99               PIC'9V.99',                                          
+    PIC_ZZ9V99             PIC'ZZ9V.99',                                        
+    PIC_ZZZZ9              PIC'ZZZZ9',                                          
+    PIC_ZZZZZZZZ9          PIC'ZZZZZZZZ9',                                      
+    PIC_4                  PIC'(4)9',                                           
+    PIC_6                  PIC'(6)9',                                           
+    PIC_11                 PIC'(11)9',                                          
+    FIXED_DEC3             FIXED DEC(3),                                        
+    FIXED_DEC6             FIXED DEC(6) UNAL,                                   
+    FIXED_DEC9             FIXED DEC(9),                                        
+    FIXED_DEC5_4           FIXED DEC(5,4),                                      
+    I                      PIC'Z9',                                             
+    K                      PIC'99',                                             
+    FJERN_IND              PIC'99' INIT   (1),                                  
+    FJERN_OK               CHAR (1) INIT  (' ' ),                               
+    FJERN_KODE             CHAR (1) INIT  (' ' ),                               
+    ROOT_KODE              CHAR (1) INIT  (' ' ),                               
+    BEKREFT_KODE           CHAR (1) INIT  (' ' ),                               
+    W_FNR                  PIC '(11)9' INIT (0),                                
+    TB_S                   PIC'99',                                             
+    BARN_IND               PIC'99',                                             
+    L                      PIC'99',                                             
+    M                      PIC'99',                                             
+    X                      PIC'9',                                              
+    LOW_CHAR_BASED         CHAR(300) BASED(BMSMAPBR),                           
+    ADDR                   BUILTIN;                                             
+                                                                                
+ DCL 1 FNR_REG,                                                                 
+       2 FNR1              FIXED DEC (11)     INIT ( 0 ),                       
+       2 FNR2              FIXED DEC (11)     INIT ( 0 ),                       
+       2 BRUKERID          CHAR      ( 4)     INIT ('' );                       
+                                                                                
+                                                                                
+          KOM_OMR.DIV_PARAM_PEKER   =  ADDR (KOM_OMR.DIV_PARAM_OMR);            
+          KOM_OMR.STYRINGS_PEKER    =  ADDR (KOM_OMR.STYRINGS_OMR) ;            
+          KOM_OMR.TRANS_OPPL_PEKER   =  ADDR (KOM_OMR.TRANS_OPPL_OMR) ;         
+                                                                                
+         X = HENT_FRAM_MAP;                                                     
+          W01_PSB_NAVN     =  DIV_PARAM_OMR.PSB_NAVN;                           
+                                                                                
+     IF ^HENT_FRAM_MAP THEN                                                     
+        DO;                                                                     
+          ALLOCATE S0010RO;                                                     
+          HENT_FRAM_MAP ='1'B;                                                  
+        END;                                                                    
+                                                                                
+ RECEIVE_MAP:                                                                   
+                                                                                
+     IF HENT_FRAM_MAP THEN                                                      
+        DO;                                                                     
+           EXEC CICS RECEIVE MAP('S0010R') MAPSET('S0010R3')                    
+                                       SET(BMSMAPBR);                           
+          CALL TOME_MELD;                                                       
+          FEIL_KODE    = ' ';                                                   
+        END;                                                                    
+                                                                                
+     IF S0010RI.FUNKSJONSKODEL > 0 THEN                                         
+        DO;                                                                     
+           FUNKSJONSKODE = S0010RI.FUNKSJONSKODEI;                              
+                                                                                
+          IF FUNKSJONSKODE ^= 'Z' THEN                                          
+             DO;                                                                
+                FRA_CICS = '1'B;                                                
+                EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);           
+             END;                                                               
+        END;                                                                    
+                                                                                
+     TRANS_RETURKODE = TRANSKODE;                                               
+     TRANS_OPPL_OMR.TRANSKODE = 'R0F0';                                         
+                                                                                
+     CALL KONTROLL_INPUT_HOVED_MAP;                                             
+     CALL OVERFOR_MELD;                                                         
+     CALL SJEKK_MELDING;                                                        
+                                                                                
+     IF FEIL_KODE    = ' '  &                                                   
+        ROT_SEGMENT  = ' '  &                                                   
+        BEKREFT_KODE = ' ' THEN                                                 
+        DO;                                                                     
+          TRANS_OPPL_OMR.TRANSKODE = 'R0F1';                                    
+        END;                                                                    
+                                                                                
+                                                                                
+     IF FEIL_KODE    = ' '  &                                                   
+        ROT_SEGMENT  = 'R'  &                                                   
+        BEKREFT_KODE = ' ' THEN                                                 
+        DO;                                                                     
+          TRANS_OPPL_OMR.TRANSKODE = 'R0F2';                                    
+        END;                                                                    
+                                                                                
+     IF FEIL_KODE    = ' '  &                                                   
+        ROT_SEGMENT  = 'R'  &                                                   
+        BEKREFT_KODE = 'B' THEN                                                 
+        DO;                                                                     
+          TRANS_OPPL_OMR.TRANSKODE = 'R0F3';                                    
+        END;                                                                    
+                                                                                
+     SELECT (TRANSKODE);                                                        
+        WHEN ('R0F1')                                                           
+           DO;                                                                  
+              CALL FJERNING_SEGMENT;                                            
+           END;                                                                 
+        WHEN ('R0F2')                                                           
+           DO;                                                                  
+              CALL ROOT_BEKREFTALSE;                                            
+           END;                                                                 
+        WHEN ('R0F3')                                                           
+           DO;                                                                  
+              CALL FJERNING_SEGMENT;                                            
+           END;                                                                 
+        OTHERWISE;                                                              
+     END;                                                                       
+                                                                                
+      IF  FEIL_KODE    = 'J' !                                                  
+          FEIL_MELD_NR >  0     THEN                                            
+          DO;                                                                   
+                CALL OVERFOR_MELD;                                              
+                EXEC CICS SEND MAP('S0010R') MAPSET('S0010R3')                  
+                                    DATAONLY  CURSOR;                           
+          END;                                                                  
+      ELSE                                                                      
+         DO;                                                                    
+            ALLOCATE S0010RO;                                                   
+            CALL TOME_MAP;                                                      
+            S0010RO.CICS_INFOO=DIV_PARAM_OMR.CICS_NAVN;                         
+            EXEC CICS SEND MAP('S0010R') MAPSET('S0010R3')                      
+                                    ERASE;                                      
+            HENT_FRAM_MAP ='0'B;                                                
+         END;                                                                   
+                                                                                
+     IF TRANS_OPPL_OMR.TRANSKODE = 'R0F0' !                                     
+        TRANS_OPPL_OMR.TRANSKODE = 'R0F3'  THEN                                 
+        TRANS_OPPL_OMR.TRANSKODE = 'R0F1';                                      
+                                                                                
+                                                                                
+  RETURN:                                                                       
+                                                                                
+  EXEC CICS RETURN TRANSID(TRANS_OPPL_OMR.TRANSKODE)                            
+                                     COMMAREA(KOM_OMR);                         
+                                                                                
+ /* ******************************************************** */                 
+ /*  KONTROLL SEC                                            */                 
+ /* ******************************************************** */                 
+ KONTROLL_INPUT_HOVED_MAP:                                                      
+   PROC;                                                                        
+                                                                                
+     DO K = 1 TO 14;                                                            
+         TAB.FNR(K)     = 0;                                                    
+     END;                                                                       
+                                                                                
+     TB_S       =  0;                                                           
+     DO K = 1 TO 14 WHILE (S0010RI.FNRL(K) > 0 );                               
+        IF  S0010RI.FNRL (K) > 0       THEN                                     
+           DO;                                                                  
+             TAB.FNR(K)     = S0010RI.FNRI(K);                                  
+             TB_S       = TB_S + 1;                                             
+           END;                                                                 
+     END;                                                                       
+                                                                                
+     L = 1;                                                                     
+                                                                                
+     IF S0010RI.ROOT_SEGL > 0 THEN                                              
+        DO;                                                                     
+          ROT_SEGMENT  = S0010RI.ROOT_SEGI;                                     
+          IF ROT_SEGMENT ^= 'R' THEN                                            
+             DO;                                                                
+               MAP_MELDING (L) = 'ROT-KODE      ER FEIL             ';          
+               FEIL_KODE = 'J';                                                 
+               L = L +  1;                                                      
+             END;                                                               
+        END;                                                                    
+                                                                                
+                                                                                
+   IF S0010RI.BEKREFTL > 0    THEN                                              
+      DO;                                                                       
+         BEKREFT_KODE =  S0010RI.BEKREFTI;                                      
+         IF BEKREFT_KODE = 'X'  THEN                                            
+            MAP_MELDING (L) =  '                                 ';             
+       ELSE                                                                     
+         IF BEKREFT_KODE ^= ' ' &                                               
+            BEKREFT_KODE ^= 'B' THEN                                            
+            DO;                                                                 
+               MAP_MELDING (L) = 'BEKREFT-KODE  ER FEIL             ';          
+               FEIL_KODE = 'J';                                                 
+               L = L +  1;                                                      
+           END;                                                                 
+      END;                                                                      
+                                                                                
+     IF TB_S = 0 THEN                                                           
+        DO;                                                                     
+           MAP_MELDING (L) = 'FØDSELSNUMMER ER IKKE UTFYLT      ';              
+           FEIL_KODE = 'J';                                                     
+           GOTO KONTROL_999;                                                    
+        END;                                                                    
+                                                                                
+    IF SUBSTR(DIV_PARAM_OMR.CICS_IND,2,1) ^= 'G'  THEN                          
+     DO K = 1 TO 14  WHILE (TAB.FNR(K) > 0);                                    
+                                                                                
+          IF TAB.FNR(K)   = 99999999999 !                                       
+             TAB.FNR(K)   = 00999999999 !                                       
+             TAB.FNR(K)   = 00000000001 THEN ;                                  
+        ELSE                                                                    
+              DO;                                                               
+                 IF ^F_GYLDIG_FNR(TAB.FNR(K)  ) THEN                            
+                   DO;                                                          
+                      MAP_MELDING (L) =                                         
+                                'UGYLDIG FØDSELSNUMMER ' !! TAB.FNR(K);         
+                      FEIL_KODE = 'J';                                          
+                      IF L < 6  THEN                                            
+                         L = L + 1;                                             
+                                                                                
+                   END;                                                         
+             END;                                                               
+     END;                                                                       
+    /*                                                                          
+     IF FEIL_KODE = ' '  THEN                                                   
+       DO;                                                                      
+          DO K = 1 TO 14  WHILE (TAB.FNR (K) > 0);                              
+                                                                                
+             FNR_REG.FNR1       = TAB.FNR(K);                                   
+                                                                                
+             EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);              
+                                                                                
+            IF FNR_REG.FNR2 > 0 THEN                                            
+               DO;                                                              
+                  MAP_MELDING (L) = TAB.FNR(K)   !!                             
+                           ' ER ET FØDSELSNUMMER SOM ER ENDRET' !!              
+                           ' TRYKK ENTER!';                                     
+                  TAB.FNR (K) = FNR_REG.FNR2;                                   
+                  IF L < 6  THEN                                                
+                   L = L + 1;                                                   
+               END;                                                             
+          END;                                                                  
+       END;                                                                     
+   */                                                                           
+ KONTROL_999:                                                                   
+                                                                                
+ END KONTROLL_INPUT_HOVED_MAP;                                                  
+                                                                                
+ ROOT_BEKREFTALSE:                                                              
+   PROC;                                                                        
+     S0010RO.MELDING6A  = DFHRED;                                               
+     FEIL_KODE = 'J';                                                           
+     IF  ROT_SEGMENT  ^= 'R' THEN                                               
+         DO;                                                                    
+            S0010RO.MELDING6O  =                                                
+                               'FJERN-ROOT KODE ER FEIL *** *** ***';           
+         END;                                                                   
+     ELSE                                                                       
+         DO;                                                                    
+            S0010RO.B_KTA    = DFHBMPRO;                                        
+            S0010RO.BEKREFTA = DFHBMUNP;                                        
+            S0010RI.BEKREFTL = CURSOR;                                          
+              S0010RO.MELDING6O  =                                              
+                           'VENNLIGST IKKE LA DETTE BILDET STÅ LENGDE';         
+            MAP_MELDING(6)  =                                                   
+                           'VENNLIGST IKKE LA DETTE BILDET STÅ LENGDE';         
+                                                                                
+                                                                                
+         END;                                                                   
+                                                                                
+ END ROOT_BEKREFTALSE;                                                          
+                                                                                
+                                                                                
+ TOME_MAP: PROC;                                                                
+          DO K = 1 TO 14;                                                       
+            S0010RO.FNRO = 0;                                                   
+          END;                                                                  
+          S0010RO.BEKREFTO = ' ';                                               
+          S0010RO.ROOT_SEGO = ' ';                                              
+          S0010RO.MELDING1O = (78)' ';                                          
+          S0010RO.MELDING2O = (78)' ';                                          
+          S0010RO.MELDING3O = (78)' ';                                          
+          S0010RO.MELDING4O = (78)' ';                                          
+          S0010RO.MELDING5O = (78)' ';                                          
+          S0010RO.MELDING6O = (78)' ';                                          
+ END TOME_MAP;                                                                  
+                                                                                
+ TOME_MELD: PROC;                                                               
+          MAP_MELDING(1)  = (78)' ';                                            
+          MAP_MELDING(2)  = (78)' ';                                            
+          MAP_MELDING(3)  = (78)' ';                                            
+          MAP_MELDING(4)  = (78)' ';                                            
+          MAP_MELDING(5)  = (78)' ';                                            
+          MAP_MELDING(6)  = (78)' ';                                            
+          S0010RO.MELDING1O = MAP_MELDING(1);                                   
+          S0010RO.MELDING2O = MAP_MELDING(2);                                   
+          S0010RO.MELDING3O = MAP_MELDING(3);                                   
+          S0010RO.MELDING4O = MAP_MELDING(4);                                   
+          S0010RO.MELDING5O = MAP_MELDING(5);                                   
+          S0010RO.MELDING6O = MAP_MELDING(6);                                   
+ END TOME_MELD;                                                                 
+                                                                                
+ SJEKK_MELDING:                                                                 
+   PROC;                                                                        
+         S0010RO.MELDING6A  = DFHBMPRO;                                         
+         S0010RO.B_KTA      = DFHPROTN;                                         
+         S0010RO.BEKREFTA   = DFHPROTN;                                         
+                                                                                
+ END SJEKK_MELDING;                                                             
+                                                                                
+ OVERFOR_MELD:                                                                  
+   PROC;                                                                        
+                                                                                
+          S0010RO.MELDING1O = MAP_MELDING(1);                                   
+          S0010RO.MELDING2O = MAP_MELDING(2);                                   
+          S0010RO.MELDING3O = MAP_MELDING(3);                                   
+          S0010RO.MELDING4O = MAP_MELDING(4);                                   
+          S0010RO.MELDING5O = MAP_MELDING(5);                                   
+          S0010RO.MELDING6O = MAP_MELDING(6);                                   
+                                                                                
+ END OVERFOR_MELD;                                                              
+                                                                                
+ FJERNING_SEGMENT: PROC;                                                        
+     EXEC CICS SYNCPOINT       ;                                                
+     CALL DATABASE ('OPEN ');                                                   
+                                                                                
+    IF  FEIL_KODE    = 'J'  THEN                                                
+        GOTO FJERNING_99;                                                       
+     DO I = 1 TO 6;                                                             
+        MAP_MELDING (I) = (68)' ';                                              
+     END;                                                                       
+                                                                                
+     FJERN_IND =  1;                                                            
+                                                                                
+                                                                                
+     DO M = 1 TO 14   WHILE (TAB.FNR(M) > 0);                                   
+                                                                                
+        ROOT_KODE       = ' ';                                                  
+        RXX_STATUS_KODE = ' ';                                                  
+        SSA1_RF0PERSN.PKEY = TAB.FNR (M);                                       
+        W_FNR              = TAB.FNR (M);                                       
+                                                                                
+        W02_GET = 'GHU ';                                                       
+        CALL GHU_ROOT_SEGMENT;                                                  
+        IF RXX_STATUS_KODE  = 'X'    THEN                                       
+           DO;                                                                  
+                CALL SJEKK_MELDING;                                             
+                CALL OVERFOR_MELD;                                              
+                EXEC CICS SEND MAP('S0010R') MAPSET('S0010R3')                  
+                                    DATAONLY  CURSOR;                           
+                EXEC CICS RECEIVE MAP('S0010R') MAPSET('S0010R3')               
+                                       SET(BMSMAPBR);                           
+                                                                                
+                GOTO LES_NEXT;                                                  
+           END;                                                                 
+        W02_GET = 'GHNP';                                                       
+                                                                                
+        DO WHILE ( RXX_STATUS_KODE  = ' ' );                                    
+           SELECT (SEGMENT);                                                    
+             WHEN ('RF0PERSN')                                                  
+               DO;                                                              
+                  OPPLYSNINGSTYPE = 'J';                                        
+                  FJERN_KODE = ' ';                                             
+                  IF ROT_SEGMENT = 'R' THEN                                     
+                     DO;                                                        
+     /* *********************************************************** */          
+     /* OPPDATE SPORBARHET REVISJON DATABASE                        */          
+     /* CALL TIL R0018035                                           */          
+     /* *********************************************************** */          
+                        FKODE = 'ZR';                                           
+                        CALL OPPDATE_DR_ZKODE(W_FNR,FKODE);                     
+                        IF FEIL_MELD_NR >  0  THEN                              
+                           GOTO FJERNING_99;                                    
+                                                                                
+                        CALL FJERN_ROT;                                         
+                        IF RXX_STATUS_KODE = ' ' THEN                           
+                           DO;                                                  
+                                                                                
+                             ROOT_KODE       = 'J';                             
+                             RXX_STATUS_KODE = 'X';                             
+                             MAP_MELDING (FJERN_IND) =                          
+                             '* ** ROOT_SEGMENT FJERNES      FNR  : '           
+                                             !! W_FNR;                          
+                             FJERN_IND = FJERN_IND + 1;                         
+                           END;                                                 
+                     END;                                                       
+                                                                                
+               END;                                                             
+                                                                                
+             WHEN ('PINNTEKT')                                                  
+               DO;                                                              
+                  OPPLYSNINGSTYPE = 'J';                                        
+                                                                                
+               END;                                                             
+                                                                                
+             WHEN ('STATUS  ')                                                  
+               DO;                                                              
+                                                                                
+     /* *********************************************************** */          
+     /* OPPDATE SPORBARHET REVISJON DATABASE                        */          
+     /* CALL TIL R0018035                                           */          
+     /* *********************************************************** */          
+                        FKODE = 'ZS';                                           
+                        CALL OPPDATE_DR_ZKODE(W_FNR,FKODE);                     
+                        IF FEIL_MELD_NR >  0  THEN                              
+                           GOTO FJERNING_99;                                    
+                                                                                
+                                                                                
+                  CALL FJERN_STATUS_SEGMENT;                                    
+               END;                                                             
+             WHEN ('TRANHIST')                                                  
+               DO;                                                              
+                                                                                
+                  CALL FJERN_SEGMENT;                                           
+               END;                                                             
+             OTHERWISE;                                                         
+                                                                                
+           END;                                                                 
+                                                                                
+          IF RXX_STATUS_KODE  = ' '  THEN                                       
+             CALL LES_SEGMENT;                                                  
+        END;                                                                    
+           IF FJERN_IND > 5 THEN                                                
+              FJERN_IND  = 5   ;                                                
+                                                                                
+        IF FJERN_KODE = ' '    &                                                
+           ROOT_KODE  = ' '    THEN                                             
+           DO;                                                                  
+              MAP_MELDING (FJERN_IND) =                                         
+               '* STATUS_SEGMENT FINNES IKKE  FNR  : ' !! W_FNR;                
+                                                                                
+              FJERN_IND = FJERN_IND + 1;                                        
+           END;                                                                 
+ LES_NEXT:                                                                      
+     END;                                                                       
+                                                                                
+     EXEC CICS SYNCPOINT       ;                                                
+     CALL DATABASE ('TERM');                                                    
+     IF RXX_STATUS_KODE = ' ' THEN                                              
+        FJERN_OK = 'J';                                                         
+                                                                                
+ FJERNING_99:                                                                   
+                                                                                
+ END FJERNING_SEGMENT;                                                          
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ DATABASE:                                                                      
+   PROC(STYRING);                                                               
+                                                                                
+   DCL                                                                          
+     STYRING                               CHAR(5),                             
+     NULL                                  BUILTIN,                             
+     UNSPEC                                BUILTIN;                             
+                                                                                
+                                                                                
+     DCL                                                                        
+       W01_PCB_FUNCTION            CHAR (4)       INIT('PCB ');                 
+     DCL                                                                        
+       W01_TERM_FUNCTION           CHAR (4)       INIT('TERM');                 
+  %PAGE;                                                                        
+                                                                                
+     IF STYRING = 'OPEN' THEN                                                   
+        DO;                                                                     
+           CALL   PLITDLI                        (W02_PARM_CT_3,                
+                                                  W01_PCB_FUNCTION,             
+                                                  W01_PSB_NAVN,                 
+                                                  UIBPTR);                      
+                                                                                
+           IF DLIUIB.UIBFCTR                    =    '00000000'B THEN           
+             DO;                                                                
+               ALLOCATE PCB_UIB_PEKER_OMR;                                      
+               PCB_UIB_PEKER_OMR.PCB_PEKER      =    UIBPCBAL;                  
+               PCB_UIB_PEKER_OMR.UIB_PEKER      =    UIBPTR;                    
+             END;                                                               
+           ELSE                                                                 
+             DO;                                                                
+               FEIL_KODE    = 'J';                                              
+               MAP_MELDING (6) =                                                
+               'PENSJONSREGISTERET ER IKKE TILGJENGELIG. KODE:'!!               
+             /*'NOE ER GALT MED DATABASEN, KODE: ' !! */                        
+               UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);                       
+             END;                                                               
+        END;                                                                    
+     ELSE                                                                       
+        DO;                                                                     
+           CALL   PLITDLI                        (W02_PARM_CT_1,                
+                                                  W01_TERM_FUNCTION);           
+           KOM_OMR.PCB_UIB_PEKER = NULL;                                        
+        END;                                                                    
+                                                                                
+ END DATABASE;                                                                  
+                                                                                
+                                                                                
+ GHU_ROOT_SEGMENT: PROC;                                                        
+                                                                                
+                                                                                
+                                                                                
+              CALL PLITDLI                         (W02_PARM_CT_4,              
+                                                    W02_GET,                    
+                                                    RF1,                        
+                                                    RF0PERSN,                   
+                                                    SSA1_RF0PERSN);             
+                                                                                
+              IF  UIBFCTR                    =     '00000000'B   THEN           
+                DO;                                                             
+                  SELECT ( RF1.STATUS_KODE );                                   
+                    WHEN ( '  ', 'GK' )                                         
+                      DO;                                                       
+                         RXX_STATUS_KODE = ' ';                                 
+                         SEGMENT = RF1.SEGM_NAVN;                               
+                       END;                                                     
+                    WHEN ( 'GE' )                                               
+                       DO;                                                      
+                         MAP_MELDING(6) = 'FNR ' !! TAB.FNR(M) !!               
+                                            'ER IKKE I DATABASE ';              
+                         RXX_STATUS_KODE = 'X';                                 
+                       END;                                                     
+                                                                                
+                    OTHERWISE                                                   
+                      DO;                                                       
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+                                                                                
+                   RXX_STATUS_KODE = 'X';                                       
+                   FEIL_KODE    = 'J';                                          
+                   MAP_MELDING (6) =                                            
+                        'NOE ER GALT MED DATABASEN PÅ GHU-ROOT-SEGMENT '        
+                               !!' STATUS_KODE: '!!                             
+                                           RF1.STATUS_KODE ;                    
+                      END;                                                      
+                  END;                                                          
+                END;                                                            
+                                                                                
+                                                                                
+ END GHU_ROOT_SEGMENT;                                                          
+                                                                                
+ LES_SEGMENT: PROC;                                                             
+                                                                                
+                                                                                
+                                                                                
+              CALL PLITDLI                         (W02_PARM_CT_3,              
+                                                    W02_GET,                    
+                                                    RF1,                        
+                                                    W01_IO);                    
+                                                                                
+                                                                                
+              IF  UIBFCTR                    =     '00000000'B   THEN           
+                DO;                                                             
+                  SELECT ( RF1.STATUS_KODE );                                   
+                    WHEN ( '  ', 'GK' )                                         
+                      DO;                                                       
+                         RXX_STATUS_KODE = ' ';                                 
+                         SEGMENT = RF1.SEGM_NAVN;                               
+                       END;                                                     
+                    WHEN ( 'GE' )                                               
+                       DO;                                                      
+                         RXX_STATUS_KODE = 'X';                                 
+                       END;                                                     
+                                                                                
+                    OTHERWISE                                                   
+                      DO;                                                       
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+                                                                                
+                   RXX_STATUS_KODE = 'X';                                       
+                   FEIL_KODE    = 'J';                                          
+                   MAP_MELDING (6) =                                            
+                      'NOE ER GALT MED DATABASEN PÅ LES_GNP_SEGMENT '           
+                               !!' STATUS_KODE: '!!                             
+                                           RF1.STATUS_KODE ;                    
+                      END;                                                      
+                  END;                                                          
+                END;                                                            
+                                                                                
+                                                                                
+ END LES_SEGMENT;                                                               
+                                                                                
+ %PAGE;                                                                         
+ FJERN_STATUS_SEGMENT: PROC;                                                    
+                                                                                
+                                                                                
+              CALL PLITDLI                         (W02_PARM_CT_3,              
+                                                    W02_DELT,                   
+                                                    RF1,                        
+                                                    W01_IO);                    
+                                                                                
+                                                                                
+              IF  UIBFCTR                    =     '00000000'B   THEN           
+                DO;                                                             
+                  SELECT ( RF1.STATUS_KODE );                                   
+                    WHEN ( '  ' )                                               
+                      DO;                                                       
+                          FJERN_KODE = 'J';                                     
+                          RXX_STATUS_KODE = ' ';                                
+                         SEGMENT = RF1.SEGM_NAVN;                               
+                       END;                                                     
+                    WHEN ( 'GE' )                                               
+                       DO;                                                      
+                        RXX_STATUS_KODE = 'X';                                  
+                       END;                                                     
+                    OTHERWISE                                                   
+                      DO;                                                       
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+                                                                                
+                   RXX_STATUS_KODE = 'X';                                       
+                   FEIL_KODE    = 'J';                                          
+                   MAP_MELDING (6) =                                            
+                      'NOE ER GALT MED DATABASEN PÅ DEL_STATUS_SEG'             
+                               !!' STATUS_KODE: '!!                             
+                                           RF1.STATUS_KODE ;                    
+                      END;                                                      
+                  END;                                                          
+                END;                                                            
+                                                                                
+                                                                                
+ END FJERN_STATUS_SEGMENT;                                                      
+                                                                                
+ FJERN_ROT: PROC;                                                               
+                                                                                
+                                                                                
+              CALL PLITDLI                         (W02_PARM_CT_3,              
+                                                    W02_DELT,                   
+                                                    RF1,                        
+                                                    RF0PERSN);                  
+                                                                                
+                                                                                
+              IF  UIBFCTR                    =     '00000000'B   THEN           
+                DO;                                                             
+                  SELECT ( RF1.STATUS_KODE );                                   
+                    WHEN ( '  ' )                                               
+                      DO;                                                       
+                         RXX_STATUS_KODE = ' ';                                 
+                         SEGMENT = RF1.SEGM_NAVN;                               
+                       END;                                                     
+                    WHEN ( 'GE' )                                               
+                       DO;                                                      
+                        RXX_STATUS_KODE = 'X';                                  
+                       END;                                                     
+                    OTHERWISE                                                   
+                      DO;                                                       
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+                                                                                
+                   RXX_STATUS_KODE = 'X';                                       
+                   FEIL_KODE    = 'J';                                          
+                   MAP_MELDING (6) =                                            
+                          'NOE ER GALT MED DATABASEN PÅ DEL_ANT_SEG'            
+                               !!' STATUS_KODE: '!!                             
+                                           RF1.STATUS_KODE ;                    
+                      END;                                                      
+                  END;                                                          
+                END;                                                            
+            ELSE                                                                
+               DO;                                                              
+                   RXX_STATUS_KODE = 'X';                                       
+                   FEIL_KODE    = 'J';                                          
+                   MAP_MELDING (6) =                                            
+                          'NOE ER GALT MED DATABASEN PÅ DEL_ANT_SEG'            
+                               !!' STATUS_KODE: '!!                             
+                                           RF1.STATUS_KODE ;                    
+                                                                                
+               END;                                                             
+                                                                                
+ END FJERN_ROT;                                                                 
+                                                                                
+ FJERN_SEGMENT: PROC;                                                           
+                                                                                
+                                                                                
+              CALL PLITDLI                         (W02_PARM_CT_3,              
+                                                    W02_DELT,                   
+                                                    RF1,                        
+                                                    W01_IO);                    
+                                                                                
+                                                                                
+              IF  UIBFCTR                    =     '00000000'B   THEN           
+                DO;                                                             
+                  SELECT ( RF1.STATUS_KODE );                                   
+                    WHEN ( '  ' )                                               
+                      DO;                                                       
+                         RXX_STATUS_KODE = ' ';                                 
+                         SEGMENT = RF1.SEGM_NAVN;                               
+                       END;                                                     
+                    WHEN ( 'GE' )                                               
+                       DO;                                                      
+                        RXX_STATUS_KODE = 'X';                                  
+                       END;                                                     
+                    OTHERWISE                                                   
+                      DO;                                                       
+                /* ************************************************** */        
+                /*   UGYLDIG STATUS-KODE FRA DLI. FEIL-KODE SETTES.   */        
+                /* ************************************************** */        
+                                                                                
+                   RXX_STATUS_KODE = 'X';                                       
+                   FEIL_KODE    = 'J';                                          
+                   MAP_MELDING (6) =                                            
+                          'NOE ER GALT MED DATABASEN PÅ DEL_ANT_SEG'            
+                               !!' STATUS_KODE: '!!                             
+                                           RF1.STATUS_KODE ;                    
+                      END;                                                      
+                  END;                                                          
+                END;                                                            
+            ELSE                                                                
+               DO;                                                              
+                   RXX_STATUS_KODE = 'X';                                       
+                   FEIL_KODE    = 'J';                                          
+                   MAP_MELDING (6) =                                            
+                          'NOE ER GALT MED DATABASEN PÅ DEL_ANT_SEG'            
+                               !!' STATUS_KODE: '!!                             
+                                           RF1.STATUS_KODE ;                    
+                                                                                
+               END;                                                             
+                                                                                
+ END FJERN_SEGMENT;                                                             
+                                                                                
+ %INCLUDE R0019904;      /* FØSELSNUMMERKONTROLL            */                  
+ %INCLUDE R0018035;      /* OPPDATE_DR_ZKODE                */                  
+                                                                                
+ END R001R1;                                                                    
+                                                                                

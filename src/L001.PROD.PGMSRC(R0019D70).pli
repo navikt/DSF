@@ -1,0 +1,584 @@
+ /*   SIST ENDRET PÅ PROD   2008.05.31 11.27.36 AV   SPA2990          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.26 10.26.41 AV   JDA2970          */        
+ /*       SIST ENDRET 28/08-98 15.15.08 AV   SPA7339                  */        
+ /*       SIST ENDRET 25/05-98 14.39.45 AV   MEA9991                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0019D70 - OMREGNING_ETTER_INNTEKTSOPPDATERING -              */        
+ /*                PROSEDYRE I CICS/PLI.                              */        
+ /*     PROGRAMMERER: JAN - H. KRISTENSEN MARS 1983.                  */        
+ /* HENSIKT                                                           */        
+ /*     SE FORKLARING NEDENFOR.                                       */        
+ /* PROGRAMTILKNYTNING                                                */        
+ /*     FRITTSTÅENDE PROGRAM I CICS.                                  */        
+ /* ***************************************************************** */        
+ /* ***************************************************************** */        
+ /* OMREGNING ETTER INNTEKTSOPPDATERING.                              */        
+ /*        PROGRAMMET LESER SEKVENSIELT GJENNOM EN VSAM - FILE        */        
+ /*           SOM INNEHOLDER FØDSELSNUMMER TIL PERSONER HVIS INNTEKT  */        
+ /*           ER ENDRET.                                              */        
+ /*           NÅR EN PERSON I HOVEDREGISTERET ER BLITT OPPDATERT      */        
+ /*           MED INNTEKT ELLER DET ER FORETATT INNTEKTSENDRING,      */        
+ /*           KAN DET VÆRE GRUNN TIL Å FORETA OMREGNING AV            */        
+ /*           YTELSENE OM SLIKE FINNES. DET ER AKTUELT                */        
+ /*              - FOR ALDERS- OG UFØREPENSJONISTER NÅR DET GJELDER   */        
+ /*                EGEN INNTEKT                                       */        
+ /*              - VED SAMMENSTØTENDE PENSJON NÅR INNTEKTEN GJELDER   */        
+ /*                EKTEFELLEN                                         */        
+ /*              - FOR ETTERLATTE NÅR INNTEKTEN GJELDER DEN DØDE SOM  */        
+ /*                AVGIR YTELSE                                       */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*                                                                   */        
+                                                                                
+ R0019D: PROC(COMMAREA_PEKER)                  OPTIONS (MAIN);                  
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0019906;               /* TRANS_OPPL_OMR                   */        
+ %PAGE;                                                                         
+ %INCLUDE P0019908;               /* KOM_OMR                          */        
+ %PAGE;                                                                         
+ %INCLUDE P0019910;               /* STYRINGSOMRÅDE                   */        
+ %PAGE;                                                                         
+ %INCLUDE P0019912;               /* DIV_PARAM_OMR                    */        
+ %PAGE;                                                                         
+ %INCLUDE P0014009;               /* POTALL_OPPL                      */        
+ %PAGE;                                                                         
+ %INCLUDE P0019014;               /* FNR_TAB                          */        
+ %PAGE;                                                                         
+ %INCLUDE P0019924;               /* G_V_TAB                          */        
+ %PAGE;                                                                         
+ %INCLUDE P0019925;              /* G_TAB                             */        
+ %PAGE;                                                                         
+ %INCLUDE S0019D;                 /* MAP TIL INNTEKTSENDRINGER        */        
+ %PAGE;                                                                         
+   DCL 1 B00     BASED (B00_PEKER),                                             
+ %INCLUDE P0019921;                                                             
+ %PAGE;                                                                         
+   DCL 1 B01     BASED (B01_PEKER),                                             
+ %INCLUDE P0019921;                                                             
+ %PAGE;                                                                         
+   DCL 1 B02     BASED (B02_PEKER),                                             
+ %INCLUDE P0019921;                                                             
+   DCL 1 WORK_TRANS_LISTE UNAL BASED (WORK_TRANS_LISTE_PEKER),                  
+ %INCLUDE P0019911;                                                             
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE DLIUIB;                                                               
+ %PAGE;                                                                         
+ %INCLUDE P0012002;               /* PCB_PEKER_OMR     */                       
+ %PAGE;                                                                         
+                                                                                
+    DCL 1 VSAM_RECORD,                                                          
+          2 FNR               FIXED DEC(11),                                    
+          2 PENSJONSTYPE1     CHAR     (1),                                     
+          2 TRANSTYPE         PIC      '99',                                    
+          2 VIRKDATO_ÅMD      FIXED DEC (9);                     /*Y2K*/        
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+                                                                                
+                                                                                
+    DCL COMMAREA_PEKER    POINTER;                                              
+    DCL (UNSPEC,ADDR,VERIFY,                                                    
+         NULL, CSTG)      BUILTIN;                                              
+                                                                                
+    DCL MELDING           CHAR(78) INIT((78)' ');                               
+                                                                                
+    DCL AVBRUDD BIT(1) INIT ('0'B);                                             
+    DCL OK      BIT(1) INIT ('1'B);                                             
+                                                                                
+    DCL W01_GET CHAR(4) INIT  ('GU  ');                                         
+                                                                                
+    DCL SSAKVAL CHAR(9) INIT ('         ');                                     
+                                                                                
+    DCL BRI_NUM_MDT        CHAR(1)    INIT('P');                                
+    DCL BRI_PROT_MDT       CHAR(1)    INIT('Z');                                
+    DCL NOR_NUM_MDT        CHAR(1)    INIT('J');                                
+    DCL NOR_NUM            CHAR(1)    INIT('&');                                
+    DCL BMSMAPBR        POINTER;                                                
+    DCL FEIL_RBA        POINTER;                                                
+    DCL INTERVALL_TELL  FIXED BIN (15) INIT(1);                                 
+    DCL PIC7               PIC'(7)9';                                           
+    DCL PIC4               PIC'(4)9';                                           
+    DCL PIC2_DEFP4_POS1    PIC'(2)9' DEF PIC4 POS(1);                           
+    DCL PIC2_DEFP4_POS3    PIC'(2)9' DEF PIC4 POS(3);                           
+    DCL START_TID     PIC'999B99B99'  INIT (0);                                 
+    DCL SLUTT_TID     PIC'999B99B99'  INIT (0);                                 
+                                                                                
+    DCL KEY_FNR         FIXED DEC (11);                                         
+    DCL KEY_BIT         BIT (48) BASED(KEY_PEKER);                              
+    DCL KEY_PEKER       POINTER;                                                
+    DCL REC_PTR         POINTER;                                                
+    DCL FIXED_BIN15     FIXED BIN (15);                                         
+    DCL BARN_IND        FIXED BIN (15);                                         
+    DCL TILKN_IND       FIXED BIN (15);                                         
+    DCL LINJE_TELL      FIXED BIN (15);                                         
+    DCL W_SØKER_IND     FIXED BIN (15);                                         
+    DCL LOOP            FIXED BIN (15);                                         
+    DCL I               FIXED DEC (7);                                          
+    DCL INTERVAL_TELL   FIXED BIN (15) INIT(1);                                 
+    DCL J               FIXED DEC (3);                                          
+    DCL K               FIXED DEC (3);                                          
+    DCL IJ              FIXED DEC (7);                                          
+    DCL FIXED_DEC8      FIXED DEC (8);                                          
+    DCL PIC11           PIC '(11)9';                                            
+    DCL W_BA_FNR        PIC '(11)9';                                            
+    DCL BA_KJONN        PIC'9' DEF  W_BA_FNR POS (9);                           
+    DCL W_ROT_FNR       PIC '(11)9';                                            
+    DCL W_FNR           PIC '(11)9';                                            
+    DCL PLITDLI         ENTRY;                                                  
+    DCL DAGENS_DATO_ÅMD PIC '(8)9';                              /*Y2K*/        
+    DCL GRUNN_OMR1      CHAR      (1440);                                       
+    DCL GRUNN_OMR2      CHAR      (1440);                                       
+    DCL GRUNN_IDENT     CHAR      ( 8);                                         
+                                                                                
+    DCL   W_DATO8         PIC '(8)9';                                           
+    DCL   W_DATO6         PIC '(6)9' DEF W_DATO8 POS(3);                        
+                                                                                
+    DCL 1 FEIL_STRUC,                                                           
+          2 FEIL_NR        FIXED DEC(5),                                        
+          2 FEIL_MELDING   CHAR(78),                                            
+          2 KOM_OMR_PEKER  POINTER;                                             
+                                                                                
+    DCL 1 ROUTELIST,                                                            
+          2 PRINTER,                                                            
+            3 TERMID    CHAR(4)       INIT ('R41J'),                            
+            3 REST      CHAR(12)      INIT (' '),                               
+          2 SISTE,                                                              
+            3 SLUTT     FIXED BIN(15) INIT (-1),                                
+            3 REST      CHAR(14)      INIT (' ');                               
+                                                                                
+    ON ERROR SNAP                                                               
+    BEGIN;                                                                      
+       ON ERROR SYSTEM;                                                         
+       MELDING = 'STOPP PÅ GRUNN AV PLI - ABEND, HOVEDFØDSELSNUMMER: '!!        
+                  W_FNR;                                                        
+       GOTO SLUTT;                                                              
+    END;                                                                        
+                                                                                
+                                                                                
+    ALLOCATE POTALL_OPPL;                                                       
+    ALLOCATE PCB_UIB_PEKER_OMR;                                                 
+    ALLOCATE WORK_TRANS_LISTE;                                                  
+    ALLOCATE FNRTAB;                                                            
+    ALLOCATE B00;                                                               
+    ALLOCATE B01;                                                               
+    ALLOCATE B02;                                                               
+    ALLOCATE GV_TAB_RE                                                ;         
+    ALLOCATE G_TAB_RE                                                 ;         
+    KOM_OMR.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);                      
+    KOM_OMR.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);                    
+    KOM_OMR.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);                     
+    KOM_OMR.GV_PEKER         = ADDR (GRUNN_OMR1             ) ;                 
+    KOM_OMR.G_PEKER          = ADDR (GRUNN_OMR2             ) ;                 
+    FEIL_STRUC.KOM_OMR_PEKER = COMMAREA_PEKER;                                  
+    KEY_PEKER                = ADDR(KEY_FNR);                                   
+                                                                                
+    DAGENS_DATO_ÅMD = DATO_2000;                                 /*Y2K*/        
+                                                                                
+                                                                                
+    B01           = '';                                                         
+    B00           = '';                                                         
+    POTALL_OPPL   = '';                                                         
+    GV_TAB_RE     = ''  ;                                                       
+    G_TAB_RE      = ''  ;                                                       
+    TRANS_OPPL_OMR.TRANSKODE        = 'AUTO';                                   
+    TRANS_OPPL_OMR.NY_GML_TRANS_IND = ' ';                                      
+    TRANS_OPPL_OMR.FØDSNUMMER       = 0;                                        
+    TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 0;                        /*Y2K*/        
+    TRANS_OPPL_OMR.BLANKETTYPE      = '  ';                                     
+    TRANS_OPPL_OMR.TRANS_RETURKODE  = '    ';                                   
+    DIV_PARAM_OMR. FEIL_MELD_NR     = 0;                                        
+    DIV_PARAM_OMR. STØNADSBREV_ØNSKET_IND = '1'B;                               
+    DIV_PARAM_OMR. KJØRINGS_TYPE    = 'Q';  /* STYRING AV R0014901 */           
+                                           /* INGEN SPERREPROBLEMATIKK*/        
+    DIV_PARAM_OMR. ØNSKET_STATUS    = 'S';  /* STYRING AV R0013110 */           
+                                                                                
+    STYRINGS_OMR . FUNKSJONSKODE    = 'S';  /* STYRING AV R0013110 */           
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+    GRUNN_IDENT                     = 'P0019924';                               
+                                                                                
+    CALL P9956_BER_G_CICS(GRUNN_IDENT,GRUNN_OMR1);                              
+                                                                                
+    GRUNN_IDENT                     = 'P0019925';                               
+                                                                                
+    CALL P9956_BER_G_CICS(GRUNN_IDENT,GRUNN_OMR2);                              
+                                                                                
+    IF PROGRAM_ID = 'R0010426' THEN      /* KOMMER INN FØRSTE GANG */           
+       DO;                                                                      
+          PROGRAM_ID = 'R0019D70';                                              
+                                                                                
+          EXEC CICS LOAD PROGRAM('S0019D3');                                    
+          EXEC CICS SEND MAP ('S0019D') MAPSET('S0019D3')                       
+                                   MAPONLY      ERASE;                          
+          EXEC CICS RETURN TRANSID('RD70') COMMAREA(KOM_OMR);                   
+       END;                                                                     
+                                                                                
+                                                                                
+    EXEC CICS RECEIVE MAP ('S0019D') MAPSET('S0019D3')                          
+                                     SET   (BMSMAPBR);                          
+                                                                                
+                                                                                
+    IF S0019DI.FUNKSJONSKODEL > 0 &                                             
+       VERIFY(S0019DI.FUNKSJONSKODEI,'RSVEFIAX') = 0 THEN                       
+                                                                                
+       DO;                                                                      
+          STYRINGS_OMR.FUNKSJONSKODE = S0019DI.FUNKSJONSKODEI ;                 
+          EXEC CICS XCTL PROGRAM ('R0010301') COMMAREA (KOM_OMR);               
+       END;                                                                     
+                                                                                
+                                                                                
+    IF ^ F_NUMERISK(S0019DI.ANT_Ø_BEHI) THEN                                    
+       DO;                                                                      
+          S0019DI.ANT_Ø_BEHL = -1;                                              
+          MELDING ='TEGN SOM IKKE ER TALL I ANTALL - FELT';                     
+       END;                                                                     
+    ELSE IF ^ F_NUMERISK(S0019DI.ANT_SKIPI) THEN                                
+       DO;                                                                      
+          S0019DI.ANT_SKIPL = -1;                                               
+          MELDING ='TEGN SOM IKKE ER TALL I ANTALL - SKIP - I - VSAM';          
+       END;                                                                     
+    ELSE                                                                        
+       DO;                                                                      
+          KEY_FNR     = 1;                                                      
+          EXEC CICS STARTBR  DATASET('INTENDR') RIDFLD(KEY_BIT) GTEQ;           
+          EXEC CICS READNEXT DATASET('INTENDR') RIDFLD(KEY_BIT)                 
+                                      INTO(VSAM_RECORD);                        
+                                                                                
+          DO I = 1 TO S0019DO.ANT_SKIPO                                         
+                   WHILE(VSAM_RECORD.FNR ^= 99999999999);                       
+             EXEC CICS READNEXT DATASET('INTENDR') RIDFLD(KEY_BIT)              
+                                      INTO(VSAM_RECORD);                        
+          END;                                                                  
+          IF VSAM_RECORD.FNR = 99999999999 THEN                                 
+             MELDING ='ANTALL I SKIP FELTET GJØR AT EN LESER TIL END OF'        
+                     !!' FILE UTEN BEHANDLING';                                 
+                                                                                
+          EXEC CICS ENDBR  DATASET('INTENDR');                                  
+       END;                                                                     
+                                                                                
+                                                                                
+    EXEC CICS HANDLE CONDITION ERROR (CICS_ABEND);                              
+                                                                                
+    IF MELDING ^= (78) ' ' THEN                                                 
+       CALL MAP_UT_OG_RETUR;                                                    
+    /* INITIRE FELT      */                                                     
+    S0019DO.START_TIDO  = 0;                                                    
+    S0019DO.KLOKKE_LOGO = 0;                                                    
+    W_DATO8             = 0 ;                                                   
+    S0019DO.DATO_LOGO   = 0 ;                                                   
+                                                                                
+    S0019DO.START_TIDO  = EIBTIME/100;                                          
+    S0019DO.KLOKKE_LOGO = EIBTIME/100;                                          
+    W_DATO8             = DATO_2000     ;                                       
+    S0019DO.DATO_LOGO   = W_DATO6              ;                                
+                                                                                
+    FEIL_STRUC.FEIL_MELDING = 'FEILMELDINGER FRA KJØRING AV R0019D70,'          
+                            !!' INNTEKTS - OPPDATERINGER, STEP 2.';             
+    CALL SEND_TEXT;                                                             
+                                                                                
+    CALL DATABASE('OPEN');                                                      
+                                                                                
+    S0019DO.MELDINGO = 'BEHANDLINGEN STARTER NÅ';                               
+    S0019DO.ANT_Ø_BEHA = BRI_PROT_MDT;                                          
+    S0019DO.ANT_SKIPA  = BRI_PROT_MDT;                                          
+    EXEC CICS SEND MAP ('S0019D') MAPSET('S0019D3')                             
+                              CURSOR  DATAONLY WAIT;                            
+    FIXED_DEC8 = 0;                                                             
+                                                                                
+    DO WHILE (OK & ^AVBRUDD & VSAM_RECORD.FNR ^= 99999999999 &                  
+                            FIXED_DEC8 <= S0019DO.ANT_Ø_BEHO);                  
+                                                                                
+       FIXED_DEC8 = FIXED_DEC8 + 1;                                             
+       W_FNR                        = VSAM_RECORD.FNR;                          
+       SEARCH_FNR                   = VSAM_RECORD.FNR;                          
+       TRANS_OPPL_OMR.FØDSNUMMER    = VSAM_RECORD.FNR;                          
+       TRANS_OPPL_OMR.TRANSTYPE     = VSAM_RECORD.TRANSTYPE;                    
+       TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = DAGENS_DATO_ÅMD;       /*Y2K*/        
+                                                                                
+       DIV_PARAM_OMR.FEIL_MELD_NR = 0;                                          
+                                                                                
+       IF F_KJØNN(W_FNR) = 'K' THEN                                             
+          SØKER_IND = 1;                                                        
+       ELSE                                                                     
+          SØKER_IND = 2;                                                        
+                                                                                
+       IF VSAM_RECORD.PENSJONSTYPE1 = 'B' THEN                                  
+          SØKER_IND = 3;                                                        
+                                                                                
+       POTALL_OPPL   = '';                                                      
+       B01           = '';                                                      
+       FNRTAB        = '';                                                      
+                                                                                
+      /* ************************************************************ */        
+      /* FAMILIEN BLIR LEST INN I B01                                 */        
+      /* ************************************************************ */        
+                                                                                
+       CALL ROSSFFB;                                                            
+                                                                                
+       IF FEIL_MELD_NR > 0 THEN                                                 
+          DO;                                                                   
+             CALL ACCUM_FEIL;                                                   
+             GOTO LOOP_BUNN;                                                    
+          END;                                                                  
+       ELSE                                                                     
+          PROGRAM_ID = 'R0019D70';                                              
+                                                                                
+       IF B01.FNR(SØKER_IND) = 0 THEN                                           
+          DO;                                                                   
+  L100:      DIV_PARAM_OMR.FEIL_MELD_NR   = 501;                                
+             DIV_PARAM_OMR.FEIL_VED_LABEL = 'L100';                             
+             CALL ACCUM_FEIL;                                                   
+             GOTO LOOP_BUNN;                                                    
+          END;                                                                  
+                                                                                
+          IF B01.STATUS.STATUS_KODE_HIST (SØKER_IND) ^= ' '   THEN              
+             DO;                                                                
+  L10B:      DIV_PARAM_OMR.FEIL_MELD_NR   = 1522;                               
+             DIV_PARAM_OMR.FEIL_VED_LABEL = 'L10B';                             
+                CALL ACCUM_FEIL;                                                
+                GOTO LOOP_BUNN;                                                 
+             END;                                                               
+                                                                                
+                                                                                
+       B02 = B01;                                                               
+                                                                                
+       CALL OMREGNING_PGA_INNTEKTSENDRING (VSAM_RECORD.VIRKDATO_ÅMD);           
+                                                                                
+       IF FEIL_MELD_NR > 0 THEN                                                 
+          DO;                                                                   
+             CALL ACCUM_FEIL;                                                   
+             GOTO LOOP_BUNN;                                                    
+          END;                                                                  
+       ELSE                                                                     
+          PROGRAM_ID = 'R0019D70';                                              
+                                                                                
+       IF INTERVAL_TELL * 10000  < FIXED_DEC8 THEN                              
+          DO;                                                                   
+             INTERVAL_TELL = INTERVAL_TELL + 1;                                 
+             EXEC CICS ASKTIME;                                                 
+             PIC4 = S0019DO.KLOKKE_LOGO;                                        
+             PIC7 = PIC2_DEFP4_POS1 * 60 + PIC2_DEFP4_POS3;                     
+             S0019DO.KLOKKE_LOGO = EIBTIME/100;                                 
+             PIC4 = S0019DO.KLOKKE_LOGO;                                        
+             S0019DO.ANT_MINO = PIC2_DEFP4_POS1 * 60 + PIC2_DEFP4_POS3          
+                              - PIC7;                                           
+             W_DATO8             = DATO_2000     ;                              
+             S0019DO.DATO_LOGO   = W_DATO6 ;                                    
+             PIC7 = FIXED_DEC8;                                                 
+             S0019DO.MELDINGO    = 'ANTALL GJENNOMGÅTT PÅ VSAM - FILE'!!        
+                                    PIC7;                                       
+             EXEC CICS SEND MAP ('S0019D') MAPSET('S0019D3')                    
+                              CURSOR  DATAONLY WAIT;                            
+          END;                                                                  
+                                                                                
+    LOOP_BUNN:                                                                  
+       KEY_FNR     = VSAM_RECORD.FNR;                                           
+       EXEC CICS DELETE DATASET('INTENDR') RIDFLD(KEY_BIT);                     
+                                                                                
+       S0019DO.ANT_FJERNETO = S0019DO.ANT_FJERNETO + 1;                         
+       EXEC CICS SYNCPOINT;                                                     
+       CALL DATABASE('OPEN');                                                   
+                                                                                
+                                                                                
+       KEY_FNR     = KEY_FNR         + 1;                                       
+                                                                                
+       EXEC CICS READ DATASET('INTENDR') RIDFLD(KEY_BIT)                        
+                                      INTO(VSAM_RECORD)                         
+                                                      GTEQ;                     
+                                                                                
+    END; /* END DO WHILE.........  */                                           
+                                                                                
+                                                                                
+                                                                                
+ SLUTT:                                                                         
+                                                                                
+    IF MELDING = (78)' ' THEN                                                   
+       DO;                                                                      
+          IF VSAM_RECORD.FNR = 99999999999 THEN                                 
+             MELDING = 'INTEKTSOPPDAT STEP 2 ER FERDIGE' !!                     
+                   ',SJEKK VSAM - FNR SOM ER DER ER IKKE OPPDATERT';            
+          ELSE                                                                  
+             MELDING = 'JOBBEN HAR TERMINERT NORMALT PGA TELLER';               
+                                                                                
+       END;                                                                     
+                                                                                
+    EXEC CICS ASKTIME;                                                          
+    PIC4 = S0019DO.KLOKKE_LOGO;                                                 
+    PIC7 = PIC2_DEFP4_POS1 * 60 + PIC2_DEFP4_POS3;                              
+    S0019DO.KLOKKE_LOGO = EIBTIME/100;                                          
+    PIC4 = S0019DO.KLOKKE_LOGO;                                                 
+    S0019DO.ANT_MINO = PIC2_DEFP4_POS1 * 60 + PIC2_DEFP4_POS3                   
+                              - PIC7;                                           
+    W_DATO8             = DATO_2000     ;                                       
+    S0019DO.DATO_LOGO   = W_DATO6 ;                                             
+                                                                                
+    FEIL_STRUC.FEIL_MELDING = MELDING;                                          
+    CALL SEND_TEXT;                                                             
+    FEIL_STRUC.FEIL_MELDING =                                                   
+              'PROGRAMMET STARTET KLOKKEN: ' !! S0019DO.START_TIDO !!           
+              ' OG VAR FERDIG  KLOKKEN: ' !! S0019DO.KLOKKE_LOGO;               
+    CALL SEND_TEXT;                                                             
+                                                                                
+    S0019DO.MELDINGO = MELDING;                                                 
+                                                                                
+                                                                                
+    EXEC CICS SEND MAP ('S0019D') MAPSET('S0019D3')                             
+                              CURSOR  DATAONLY WAIT;                            
+    EXEC CICS RETURN;                                                           
+                                                                                
+                                                                                
+  CICS_ABEND:                                                                   
+    MELDING = 'STOPP PÅ GRUNN AV CICS - ABEND, HOVEDFØDSELSNUMMER: ' !!         
+               W_FNR;                                                           
+    GOTO SLUTT;                                                                 
+                                                                                
+                                                                                
+ DATABASE:                                                                      
+   PROC(STYRING);                                                               
+                                                                                
+   DCL                                                                          
+     STYRING                               CHAR(5),                             
+     NULL                                  BUILTIN,                             
+     UNSPEC                                BUILTIN;                             
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  %SKIP;                                                                        
+  /* **************************************************************** */        
+  /*                                                                  */        
+  /*     DL1-PARAMETRE SOM BRUKES VED INITIERINGS- OG AVSLUTTNINGS-   */        
+  /*     KALL                                                         */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+     DCL                                                                        
+       W01_PSB_NAVN                CHAR (8)       INIT('        ');             
+     DCL                                                                        
+       W01_PCB_FUNCTION            CHAR (4)       INIT('PCB ');                 
+     DCL                                                                        
+       W01_TERM_FUNCTION           CHAR (4)       INIT('TERM');                 
+  %PAGE;                                                                        
+  /* **************************************************************** */        
+  /*                                                                  */        
+  /*     ARBEIDSFELTER SOM BRUKES AV UIB (USER INTERFACE BLOCK)       */        
+  /*                                                                  */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+                                                                                
+  %PAGE;                                                                        
+  /* **************************************************************** */        
+  /*                                                                  */        
+  /*     DLI CALL-PARAMETRE                                           */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+  %SKIP(2);                                                                     
+     DCL 1  W01_DLI_PARAM,                                                      
+            2   W02_GU             CHAR (4)       INIT('GU  '),                 
+            2   W02_PARM_CT_1      FIXED BIN(31)  INIT(1),                      
+            2   W02_PARM_CT_3      FIXED BIN(31)  INIT(3),                      
+            2   W02_PARM_CT_4      FIXED BIN(31)  INIT(4);                      
+                                                                                
+  %PAGE;                                                                        
+                                                                                
+       W01_PSB_NAVN   = DIV_PARAM_OMR.PSB_NAVN;                                 
+     IF STYRING = 'OPEN' THEN                                                   
+        DO;                                                                     
+           CALL   PLITDLI                        (W02_PARM_CT_3,                
+                                                  W01_PCB_FUNCTION,             
+                                                  W01_PSB_NAVN,                 
+                                                  UIBPTR);                      
+                                                                                
+           IF DLIUIB.UIBFCTR                    =    '00000000'B THEN           
+             DO;                                                                
+               PCB_UIB_PEKER_OMR.PCB_PEKER      =    UIBPCBAL;                  
+               PCB_UIB_PEKER_OMR.UIB_PEKER      =    UIBPTR;                    
+             END;                                                               
+           ELSE                                                                 
+             DO;                                                                
+                MELDING =                                                       
+                 'NOE ER GALT MED DATABASEN PÅ ÅPNINGSKALLET, KODE: ' !!        
+                  UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);                    
+                GOTO SLUTT;                                                     
+             END;                                                               
+        END;                                                                    
+     ELSE                                                                       
+        DO;                                                                     
+           CALL   PLITDLI                        (W02_PARM_CT_1,                
+                                                  W01_TERM_FUNCTION);           
+           KOM_OMR.PCB_UIB_PEKER = NULL;                                        
+        END;                                                                    
+                                                                                
+ END DATABASE;                                                                  
+                                                                                
+                                                                                
+ ACCUM_FEIL:                                                                    
+    PROC;                                                                       
+      S0019DO.ANT_SKIPO = S0019DO.ANT_SKIPO + 1;                                
+                                                                                
+      FEIL_STRUC.FEIL_MELDING = 'PROGRAM: ' !! DIV_PARAM_OMR.PROGRAM_ID         
+             !! ' FEIL VED LABEL: ' !! DIV_PARAM_OMR.FEIL_VED_LABEL   !!        
+                ' DB-STATUSKODE: '  !! DIV_PARAM_OMR.DB_STATUS_KODE   !!        
+                ' HOVEDFNR: '  !! W_FNR;                                        
+                                                                                
+      CALL SEND_TEXT;                                                           
+                                                                                
+      FEIL_STRUC.FEIL_NR = DIV_PARAM_OMR.FEIL_MELD_NR;                          
+      EXEC CICS LINK PROGRAM ('R0019921') COMMAREA(FEIL_STRUC);                 
+                                                                                
+      CALL SEND_TEXT;                                                           
+                                                                                
+      FEIL_STRUC.FEIL_MELDING = ' ';                                            
+                                                                                
+      CALL SEND_TEXT;                                                           
+                                                                                
+      EXEC CICS SYNCPOINT ROLLBACK;                                             
+                                                                                
+ END ACCUM_FEIL;                                                                
+                                                                                
+                                                                                
+ SEND_TEXT:                                                                     
+   PROC;                                                                        
+                                                                                
+                                                                                
+      EXEC CICS WRITE DATASET('OMRFEIL')                                        
+      FROM (FEIL_STRUC.FEIL_MELDING) RIDFLD(FEIL_RBA) RBA;                      
+                                                                                
+ END SEND_TEXT;                                                                 
+                                                                                
+                                                                                
+                                                                                
+ MAP_UT_OG_RETUR:                                                               
+  PROC;                                                                         
+     S0019DO.MELDINGO = MELDING;                                                
+     EXEC CICS SEND MAP ('S0019D') MAPSET('S0019D3') DATAONLY                   
+                                              CURSOR;                           
+     EXEC CICS RETURN TRANSID('RD70') COMMAREA (KOM_OMR);                       
+ END  MAP_UT_OG_RETUR;                                                          
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE R0019902;          /*     F_KJØNN             */                      
+ %PAGE;                                                                         
+ %INCLUDE R0019904;          /*     F_GYLDIG_FNR        */                      
+ %PAGE;                                                                         
+ %INCLUDE R0019910;          /*     F_NUMERISK          */                      
+ %PAGE;                                                                         
+ %PAGE;                                                                         
+ %INCLUDE R0019F21;          /*     ROSSFFB             */                      
+ %PAGE;                                                                         
+ %INCLUDE R0019951;          /*     OMREGNING_PGA_INNTEKTSENDRING */            
+ %PAGE;                                                                         
+ %INCLUDE R0019956;          /*     P9956_BER_G_CICS    */                      
+                                                                                
+                                                                                
+                                                                                
+ END R0019D;                                                                    

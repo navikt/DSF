@@ -1,0 +1,260 @@
+ /*   SIST ENDRET PÅ PROD   2004.01.27 11.29.08 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.01.18 14.14.41 AV   JDA7339          */        
+ /*       SIST ENDRET 06/07-98 11.34.22 AV   JDA7339                  */        
+ /*       SIST ENDRET 25/05-98 13.30.50 AV   MEA9991                  */        
+ /* **************************************************************** */         
+ /*IDENTIFIKASJON:                                                   */         
+ /*    R0014801 - PROSEDYRE I PLI                                    */         
+ /*    PROGRAMMERER: JAN, JUNI 1982                                  */         
+ /*HENSIKT:                                                          */         
+ /*    BEREGNE ETTERLATTEPENSJON FOR BARN, EN AV FORELDRENE DØD      */         
+ /*                                                                  */         
+ /*PROGRAMTILKNYTNING:                                               */         
+ /*    KALLES OPP AV PROGRAM R0013520                                */         
+ /*BRUK:                                                             */         
+ /*    EXEC CICS XCTL PROGRAM ('R0014801') COMMAREA (KOM_OMR)        */         
+ /* **************************************************************** */         
+ /* SIST ENDRET AV KARIN 11/10-84                                    */         
+ /* ENDRINGEN GJELDER FEIL I TT_ANV, TT_FRAMT_DØD ER ERSTATTET MED   */         
+ /*                          TT_FRAMT.                               */         
+ /* **************************************************************** */         
+ /* SIST ENDRET AV TRUDE MARS 91                                     */         
+ /* ENDRINGEN GJELDER : NY BLANKETT B6,BT TRYGDETIDSAVHENGIG.        */         
+ /*                                                                  */         
+ /* **************************************************************** */         
+ %PAGE;                                                                         
+ REGN_BP:                                                                       
+   PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                        
+ %PAGE;                                                                         
+  /*  %INCLUDE P0011101;   */                                                   
+      %INCLUDE P0019906;                                                        
+      %INCLUDE P0019908;                                                        
+      %INCLUDE P0019910;                                                        
+      %INCLUDE P0019912;                                                        
+ %PAGE;                                                                         
+   DCL 1 B01 BASED(B01_PEKER), %INCLUDE P0019921;                               
+   DCL COMMAREA_PEKER PTR;                                                      
+ %PAGE;                                                                         
+   DCL 1 B02 BASED(B02_PEKER), %INCLUDE P0019921;                               
+ %PAGE;                                                                         
+   DCL                                                                          
+      VERIFY                      BUILTIN,                                      
+      FNR                         PIC '(11)9',                                  
+      FNR_IND_SIF DEF FNR POS (9) PIC '9';                                      
+   DCL                                                                          
+      GP                    FIXED DEC(7),                                       
+      KT                    FIXED DEC(5),                                       
+      W_GP_UFØR             FIXED DEC(7),                                       
+      W_ANTALL_BARN         FIXED DEC(3),                                       
+      TT_ANV_ETTERLATT UNAL FIXED DEC(3),                                       
+      TT_ANV_UFØR UNAL      FIXED DEC(3),                                       
+      MF_IND                FIXED BIN(15),                                      
+      I                     FIXED BIN(15);                                      
+                                                                                
+   DCL                                                                          
+      B6_TT_REDUSERT       FIXED DEC (3) INIT (0);                              
+                                                                                
+ /* ***************************************************************** */        
+ /* PROGRAMMET STARTER HER                                            */        
+ /* ***************************************************************** */        
+                                                                                
+  IF TRANS_OPPL_OMR.BLANKETTYPE  = 'B6' THEN                                    
+     CALL HENT_FRA_B6;                                                          
+  ELSE                                                                          
+    IF TRANS_OPPL_OMR.BLANKETTYPE  = 'BP' THEN                                  
+       CALL HENT_FRA_BP;                                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM AVDØDE ER KVINNE                                           */        
+ /* ***************************************************************** */        
+                                                                                
+    IF VERIFY(FNR_IND_SIF,'02468') = 0 THEN                                     
+       MF_IND = 1;                                                              
+    ELSE                                                                        
+                                                                                
+ /* **************************************************************** */         
+ /* AVDØDE ER MANN                                                   */         
+ /* **************************************************************** */         
+                                                                                
+       MF_IND = 2;                                                              
+    TT_ANV_ETTERLATT = 0;                                                       
+    TT_ANV_UFØR      = 0;                                                       
+                                                                                
+    TT_ANV_ETTERLATT = B02.TT_FØR_1967   (MF_IND) +                             
+                      (B02.TT_ETTER_1966 (MF_IND) +                             
+                       B02.TT_FRAMT      (MF_IND) + 11)/ 12 +                   
+                       B02.TT_67_TIL_70  (MF_IND);                              
+                                                                                
+                                            /*NY 0191 */                        
+    IF B02.TT_16_66(MF_IND)  > 0  THEN                                          
+       TT_ANV_ETTERLATT = (B02.TT_16_66(MF_IND) +                               
+                           B02.TT_FRAMT (MF_IND) + 6) / 12 +                    
+                           B02.TT_67_TIL_70(MF_IND);                            
+                                                                                
+    IF B6_TT_REDUSERT  > 0 THEN                                                 
+      DO;                                                                       
+        TT_ANV_ETTERLATT = B6_TT_REDUSERT;                                      
+        B02.TT_16_66(BER_SØ_IND)  = TT_ANV_ETTERLATT * 12;                      
+      END;                                                                      
+                                                                                
+    ELSE                                               /*TRUDE 0991*/           
+      DO;                                                                       
+       IF B02.TT_16_66(BER_SØ_IND)  = 0  THEN                                   
+         DO;                                                                    
+          TT_ANV_ETTERLATT = 40;                                                
+          B02.TT_16_66(BER_SØ_IND)  = TT_ANV_ETTERLATT * 12;                    
+         END;                                                                   
+      END;                                                                      
+                                                         /*TIL HIT */           
+                                                                                
+    IF B02.TT_16_66(BER_SØ_IND)  > 0 THEN                                       
+       TT_ANV_ETTERLATT = B02.TT_16_66(BER_SØ_IND) / 12;                        
+                                                                                
+    IF TT_ANV_ETTERLATT > 39 THEN                                               
+       TT_ANV_ETTERLATT = 40;                                                   
+                                                                                
+                                                                                
+    W_ANTALL_BARN    = B02.ANTALL_BARN (BER_SØ_IND);                            
+    GP               = G * 0.4;                                                 
+                                                                                
+    IF W_ANTALL_BARN > 1 THEN                                                   
+       GP = GP + G * 0.25 * (W_ANTALL_BARN - 1);                                
+    IF W_ANTALL_BARN > 0 THEN                                                   
+       GP = GP / (W_ANTALL_BARN * 12) + 0.5;                                    
+                                                                                
+  /* IF TRANS_OPPL_OMR.BLANKETTYPE  = 'B6' THEN        NY0191*/                 
+  /*   IF B6_TT_REDUSERT   > 0 THEN             */                              
+  IF TT_ANV_ETTERLATT < 40   THEN      /*0891TS*/                               
+      DO;                                                                       
+          GP            = G * 0.4;                                              
+                                                                                
+          IF W_ANTALL_BARN > 1 THEN                                             
+             GP = GP + G * 0.25 * (W_ANTALL_BARN - 1);                          
+                                                                                
+       /* GP = GP * B6_TT_REDUSERT / 40;   */                                   
+          GP = GP * TT_ANV_ETTERLATT / 40;                                      
+          GP = GP / (W_ANTALL_BARN * 12) + 0.5;                                 
+      END;                                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* DEM SKAL NORMALT IKKE OVERFØRES KOMP.TILLEGG,MEN DET KAN OVERFØRES*/        
+ /* FRA DEN ETTERLATTE EKTEFELLEN                                     */        
+ /* ***************************************************************** */        
+                                                                                
+    IF TRANSTYPE = 40 ! B01.ETTEBARN.KT (BER_SØ_IND) > 0 THEN                   
+                                                                                
+ /* ***************************************************************** */        
+ /* VED ENDRINGER BEHOLDES KT DERSOM DET ER UTBETALT FRA FØR          */        
+ /* ***************************************************************** */        
+ /*   ENDRET   10.02.88   SATISH                                */              
+ /*    KT = F_BEREGN_KOMPENSASJONSTILLEGG('Y',                  */              
+ /*              TT_ANV_ETTERLATT,W_ANTALL_BARN,1,'J');         */              
+ /*  HIT TIL         10.02.88                                   */              
+       KT = F_BEREGN_KOMPENSASJONSTILLEGG('N','P',                              
+                 TT_ANV_ETTERLATT,W_ANTALL_BARN,1,'J');                         
+    ELSE                                                                        
+       KT = 0;                                                                  
+                                                                                
+ /* ***************************************************************** */        
+ /* KOMP. SKAL IKKE GIS TIL UTENLANDSBOENDE.  ERIK 22.12.86.          */        
+ /* ***************************************************************** */        
+                                                                                
+    IF B02.TKNR(BER_SØ_IND) > '2100' THEN                                       
+       DO;                                                                      
+          KT = 0;                                                               
+       END;                                                                     
+                                                                                
+    DO I = 3 TO 14;                                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM BARNET ER ETTERLATT MED UFØREPENSJON.                      */        
+ /* ***************************************************************** */        
+                                                                                
+       B02.ETTEBARN.SPT_MOR(I) = 0;                                             
+       B02.ETTEBARN.OPT_MOR(I) = 0;                                             
+       B02.ETTEBARN.PÅ_MOR(I)  = 0;                                             
+       B02.ETTEBARN.SPT_FAR(I) = 0;                                             
+       B02.ETTEBARN.OPT_FAR(I) = 0;                                             
+       B02.ETTEBARN.PÅ_FAR(I)  = 0;                                             
+       IF B02.PENSJONSTYPE1 (I) = 'N' THEN                                      
+          DO;                                                                   
+             IF B02.PENSJONSTYPE3 (I) = 'U' THEN                                
+                DO;                                                             
+                   CALL BEREGN_GP_UFØR_ETTERLATT_BARN(I,TT_ANV_UFØR,            
+                                                       W_GP_UFØR);              
+                   B02.TT_ANV     (I) = TT_ANV_UFØR;                            
+                   B02.UFØRPENS.GP(I) = W_GP_UFØR;                              
+                   B02.UFØRPENS.ST(I) = F_BEREGN_SÆRTILLEGG_BARN(               
+                                           B02.VIRK_DATO_ÅMD(I), /*Y2K*/        
+                                            TT_ANV_UFØR,0,G,                    
+                                            ST_PROSENT_ENSLIG,1);               
+                                                                                
+ /* ***************************************************************** */        
+ /* SYSTEMET KAN IKKE BEREGNE TILLEGGSPENSJON I SLIKE TILFELLE,       */        
+ /* MELDING PÅ STØNADSBREVET OM DETTE.                                */        
+ /* ***************************************************************** */        
+                                                                                
+ /* ENDRET 15.03.88  SATISH                                          */         
+ /*            B02.UFØRPENS.KT(I) = F_BEREGN_KOMPENSASJONSTILLEGG    */         
+ /*                               ('P',TT_ANV_UFØR,1,1,'J');         */         
+ /* HITTIL                                                           */         
+                                                                                
+                   B02.UFØRPENS.KT(I) = F_BEREGN_KOMPENSASJONSTILLEGG           
+                                        ('0','P',TT_ANV_UFØR,1,1,'J');          
+                                                                                
+                                                                                
+ /*KOMP.TILLEGGET ENDRET FRA 1.5.91 ( G > 34100 ) */                            
+                                                                                
+  IF G > 34100 THEN                                                             
+     IF B02.UFØRPENS.KT(I) > B02.UFØRPENS.ST(I) THEN                            
+        B02.UFØRPENS.KT(I) =                                                    
+        B02.UFØRPENS.KT(I) - B02.UFØRPENS.ST(I);                                
+     ELSE                                                                       
+        B02.UFØRPENS.KT(I) = 0;                                                 
+                                                                                
+                                                                                
+                                                                                
+                   B02.SUM_YTELSE (I) = B02.UFØRPENS.GP (I)                     
+                                         + B02.UFØRPENS.ST (I)                  
+                                         + B02.UFØRPENS.KT (I);                 
+                                                                                
+ /* ***************************************************************** */        
+ /* YTELSENE SOM UFØR ER ALLTID STØRRE ENN SOM ETTERLATT BARN.        */        
+ /* ***************************************************************** */        
+ /* ***************************************************************** */        
+ /* HER NULLES ETTEBARN SEGMENTET.                                    */        
+ /* ***************************************************************** */        
+                                                                                
+                  B02.ETTEBARN.GP (I) = 0;                                      
+                  B02.ETTEBARN.KT (I) = 0;                                      
+               END;                                                             
+            ELSE IF  B02.STATUS_KODE_HIST (I) ^= 'O'  THEN                      
+               DO;                                                              
+                  B02.ETTEBARN.GP (I) = GP;                                     
+                  B02.ETTEBARN.KT (I) = KT;                                     
+                  B02.ETTEBARN.TP (I) = 0;                                      
+                  B02.ETTEBARN.TP (I) = 0;                                      
+                  B02.SUM_YTELSE  (I) = GP + KT;                                
+                  B02.TT_ANV      (I) = TT_ANV_ETTERLATT;                       
+               END;                                                             
+        END;                                                                    
+    END;                                                                        
+                                                                                
+   HENT_FRA_BP: PROC;                                                           
+   %INCLUDE P0011101;                                                           
+                                                                                
+   END HENT_FRA_BP;                                                             
+                                                                                
+                                                                                
+   HENT_FRA_B6: PROC;                                                           
+   %INCLUDE P001NB01;                                                           
+                                                                                
+   IF B6B.TT_REDUSERT  >  0   THEN                                              
+      B6_TT_REDUSERT = B6B.TT_REDUSERT;                                         
+                                                                                
+   END HENT_FRA_B6;                                                             
+   EXEC CICS RETURN;                                                            
+        %INCLUDE R0014134;                                                      
+        %INCLUDE R0014723;                                                      
+        %INCLUDE R0014724;                                                      
+   END REGN_BP;                                                                 

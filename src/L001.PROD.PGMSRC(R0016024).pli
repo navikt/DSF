@@ -1,0 +1,655 @@
+ /*       SIST ENDRET 07/05-98 14.13.21 AV   JDA7339                  */00000000
+ /*       SIST ENDRET 04/05-98 13.14.24 AV   JDA7339                  */00000010
+ /*       SIST ENDRET 12/03-98 10.34.01 AV   SLA9300                  */00000020
+ /*       SIST ENDRET 03/07-97 14.15.36 AV   JDA7339                  */00000030
+ /*       SIST ENDRET 03/07-97 13.34.03 AV   JDA7339                  */00000040
+ /*       SIST ENDRET 03/07-97 13.07.23 AV   JDA7339                  */00000050
+ /*       SIST ENDRET 03/07-97 12.54.33 AV   JDA7339                  */00000060
+ /*       SIST ENDRET 03/07-97 12.27.06 AV   JDA7339                  */00000070
+ /*       SIST ENDRET 27/06-94 14.54.18 AV   DYBVIK                   */00000080
+ /*       SIST ENDRET 13/12-91 12.26.06 AV   DYBVIK                   */00000090
+ /*********************************************************************/00000100
+ /* IDENTIFIKASJON:                                                   */00000110
+ /*    R0016024 - PLUKKET UT AV R0016001 (BEDRE OVERSIKT). BØ9112     */00000120
+ /* HENSIKT:                                                          */00000130
+ /*    SKRIVER DANNETE SEGMENTER TIL TRMAIN (TRANS-BASE)              */00000140
+ /* PROGRAMTILKNYTNING:                                               */00000150
+ /*    LOKAL PROSEDYRE I R0016001                                     */00000160
+ /*********************************************************************/00000170
+                                                                        00000180
+ SKRIV_STAT_SEGM: PROC;                                                 00000190
+                                                                        00000200
+ /*-------------------------------------------------------------------*/00000210
+ /* PROSEDYREN LESER SEGMENT-TABELL OG SKRIVER UT DE SEGMENTENE TIL   */00000220
+ /* TRANS-STAT-BASEN SOM HAR TILHØRENDE ELEMENTET I SEGMENT-TABELL    */00000230
+ /* SATT TIL 'TRUE' (DVS '1'B). PROSEDYREN HENTER INFORMASJONEN       */00000240
+ /* FRA ARBEIDS-OMRÅDE TIL TRANS-STAT-BASEN.                          */00000250
+ /*-------------------------------------------------------------------*/00000260
+ /* SETTING AV REGDATO'ER VED HJELP AV 'DATE' OG 'TIME'               */00000270
+ /* FORDI OPPDATERING AV HVERT REGTPKT. SKJER OFTERE ENN HVERT MILLI- */00000280
+ /* SEKUND LEGGES EN LOOP SOM STOPPER VED NYTT MILLISEKUND            */00000290
+ /*-------------------------------------------------------------------*/00000300
+    EXEC CICS ASKTIME ABSTIME(W_ABSTIME);                               00000310
+    W_ABS  = W_ABSTIME;                                                 00000320
+    DO WHILE (W_ABS = W_ABSTIME);                                       00000330
+        EXEC CICS ASKTIME ABSTIME(W_ABSTIME);                           00000340
+    END;                                                                00000350
+    W_ABS           = W_ABSTIME;                                        00000360
+                                                                        00000370
+    DATO            = DATO_2000;                                        00000380
+    KLOKKE_CH       = TIME;                                             00000390
+    MILLI_SEK       = W_ABS_MILLI_SEK;                                  00000400
+    PTYPE.REGDATO   = DATO_2000;                                        00000430
+    SIVILST.REGDATO = DATO_2000;                                        00000440
+    APOPPL.REGDATO  = DATO_2000;                                        00000450
+    PENSJON.REGDATO = DATO_2000;                                        00000460
+    UPPER.REGDATO   = DATO_2000;                                        00000470
+    KT.REGDATO      = DATO_2000;                                        00000480
+    VT.REGDATO      = DATO_2000;                                        00000490
+    ET.REGDATO      = DATO_2000;                                        00000500
+    BT.REGDATO      = DATO_2000;                                        00000510
+    YSKADE.REGDATO  = DATO_2000;                                        00000520
+                                                                        00000530
+    /* BEHANDLING AV ROT-SEGMENT */                                     00000540
+                                                                        00000550
+    HELP_FNR  = TR0ROT.FNR;                                             00000560
+    PBR_TEXT = 'DANN ROTSEGMENT.  ID = ' !! HELP_FNR;                   00000570
+ /* EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                        00000580
+                                                                        00000590
+    SSA_UNQUAL = 'TR0ROT  ';                                            00000600
+    CALL PLITDLI (PARAM_COUNT_4,                                        00000610
+                  INSERT,                                               00000620
+                  TR0_PCB,                                              00000630
+                  TR0ROT,                                               00000640
+                  SSA_UNQUAL);                                          00000650
+    IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                           00000660
+       ^(TR0_PCB.STATUS_KODE = '  ' ! TR0_PCB.STATUS_KODE = 'II') THEN  00000670
+    DO;                                                                 00000680
+ L100:                                                                  00000690
+     /*--------------------------------------*/                         00000700
+     /* FEIL VED INSERT-KALLET TIL TR0-BASEN */                         00000710
+     /* SEGMENTET FANTES IKKE FRA FØR OG     */                         00000720
+     /* LOT SEG HELLER IKKE LEGGE INN        */                         00000730
+     /*--------------------------------------*/                         00000740
+                                                                        00000750
+        DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                             00000760
+        DIV_PARAM_OMR.FEIL_VED_LABEL = 'L100';                          00000770
+        DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;             00000780
+        GO TO UTGANG;                                                   00000790
+    END;                                                                00000800
+                                                                        00000810
+                                                                        00000820
+ /*-------------------------------*/                                    00000830
+ /* BEHANDLING AV REGTPKT-SEGMENT */                                    00000840
+ /*-------------------------------*/                                    00000850
+                                                                        00000860
+    SSA_TR0ROT.FNR_KEY = TR0ROT.FNR;                                    00000870
+    IF SEGMENT_TABELL.REGTPKT THEN                                      00000880
+    DO;                                                                 00000890
+       REGTPKT.DATO   = DATO;                                           00000900
+       REGTPKT.KLOKKE = KLOKKE;                                         00000910
+       PBR_TEXT = 'DANN REGTPKT-SEGMENT.ID='  !! DATO !! ' ' !! KLOKKE; 00000920
+    /* EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00000930
+                                                                        00000940
+       IO_PEK = ADDR(REGTPKT);                                          00000950
+       IO_AREA = IO_HELP_AREA;                                          00000960
+       SSA_UNQUAL = 'REGTPKT ';                                         00000970
+       CALL PLITDLI (PARAM_COUNT_5,                                     00000980
+                     INSERT,                                            00000990
+                     TR0_PCB,                                           00001000
+                     IO_AREA,                                           00001010
+                     SSA_TR0ROT,                                        00001020
+                     SSA_UNQUAL);                                       00001030
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00001040
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00001050
+       DO;                                                              00001060
+ L110:                                                                  00001070
+        /*------------------------------------------------*/            00001080
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN           */            00001090
+        /* UNIKT REGTPKT-SEGMENTET LOT SEG IKKE LEGGE INN */            00001100
+        /*------------------------------------------------*/            00001110
+                                                                        00001120
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00001130
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L110';                       00001140
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00001150
+           GO TO UTGANG;                                                00001160
+        END;                                                            00001170
+     END;                                                               00001180
+                                                                        00001190
+ /*-----------------------------*/                                      00001200
+ /* BEHANDLING AV PTYPE-SEGMENT */                                      00001210
+ /*-----------------------------*/                                      00001220
+                                                                        00001230
+    SSA_REGTPKT.DATO_KEY   = REGTPKT.DATO  ;                            00001240
+    SSA_REGTPKT.KLOKKE_KEY = REGTPKT.KLOKKE;                            00001250
+    IF SEGMENT_TABELL.PTYPE THEN                                        00001260
+    DO;                                                                 00001270
+       PBR_TEXT = 'DANN PTYPE-SEGMENT';                                 00001280
+   /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00001290
+                                                                        00001300
+       IO_PEK = ADDR(PTYPE);                                            00001310
+       IO_AREA = IO_HELP_AREA;                                          00001320
+       SSA_UNQUAL = 'PTYPE   ';                                         00001330
+       CALL PLITDLI (PARAM_COUNT_6,                                     00001340
+                     INSERT,                                            00001350
+                     TR0_PCB,                                           00001360
+                     IO_AREA,                                           00001370
+                     SSA_TR0ROT,                                        00001380
+                     SSA_REGTPKT,                                       00001390
+                     SSA_UNQUAL);                                       00001400
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00001410
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00001420
+       DO;                                                              00001430
+ L120:                                                                  00001440
+           /*----------------------------------------------*/           00001450
+           /* FEIL VED INSERT-KALLET TIL TR0-BASEN         */           00001460
+           /* UNIKT PTYPE-SEGMENTET LOT SEG IKKE LEGGE INN */           00001470
+           /*----------------------------------------------*/           00001480
+                                                                        00001490
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00001500
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L120';                       00001510
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00001520
+           GO TO UTGANG;                                                00001530
+        END;                                                            00001540
+     END;                                                               00001550
+                                                                        00001560
+ /*-------------------------------*/                                    00001570
+ /* BEHANDLING AV SIVILST-SEGMENT */                                    00001580
+ /*-------------------------------*/                                    00001590
+                                                                        00001600
+    IF SEGMENT_TABELL.SIVILST THEN                                      00001610
+    DO;                                                                 00001620
+       PBR_TEXT = 'DANN SIVILST-SEGMENT';                               00001630
+    /* EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM; */                    00001640
+                                                                        00001650
+       IO_PEK = ADDR(SIVILST);                                          00001660
+       IO_AREA = IO_HELP_AREA;                                          00001670
+       SSA_UNQUAL = 'SIVILST ';                                         00001680
+       CALL PLITDLI (PARAM_COUNT_6,                                     00001690
+                     INSERT,                                            00001700
+                     TR0_PCB,                                           00001710
+                     IO_AREA,                                           00001720
+                     SSA_TR0ROT,                                        00001730
+                     SSA_REGTPKT,                                       00001740
+                     SSA_UNQUAL);                                       00001750
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00001760
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00001770
+       DO;                                                              00001780
+ L130:                                                                  00001790
+        /*------------------------------------------------*/            00001800
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN           */            00001810
+        /* UNIKT SIVILST-SEGMENTET LOT SEG IKKE LEGGE INN */            00001820
+        /*------------------------------------------------*/            00001830
+                                                                        00001840
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00001850
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L130';                       00001860
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00001870
+           GO TO UTGANG;                                                00001880
+        END;                                                            00001890
+     END;                                                               00001900
+                                                                        00001910
+                                                                        00001920
+ /*-------------------------------*/                                    00001930
+ /* BEHANDLING AV APOPPL-SEGMENT */                                     00001940
+ /*-------------------------------*/                                    00001950
+                                                                        00001960
+    IF SEGMENT_TABELL.APOPPL THEN                                       00001970
+    DO;                                                                 00001980
+       PBR_TEXT = 'DANN APOPPL-SEGMENT';                                00001990
+    /* EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00002000
+                                                                        00002010
+       IO_PEK = ADDR(APOPPL);                                           00002020
+       IO_AREA = IO_HELP_AREA;                                          00002030
+       SSA_UNQUAL = 'APOPPL ';                                          00002040
+       CALL PLITDLI (PARAM_COUNT_6,                                     00002050
+                     INSERT,                                            00002060
+                     TR0_PCB,                                           00002070
+                     IO_AREA,                                           00002080
+                     SSA_TR0ROT,                                        00002090
+                     SSA_REGTPKT,                                       00002100
+                     SSA_UNQUAL);                                       00002110
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00002120
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00002130
+       DO;                                                              00002140
+ L140:                                                                  00002150
+        /*------------------------------------------------*/            00002160
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN           */            00002170
+        /* UNIKT APOPPL-SEGMENTET LOT SEG IKKE LEGGE INN */             00002180
+        /*------------------------------------------------*/            00002190
+                                                                        00002200
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00002210
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L140';                       00002220
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00002230
+           GO TO UTGANG;                                                00002240
+        END;                                                            00002250
+     END;                                                               00002260
+                                                                        00002270
+ /*-------------------------------*/                                    00002280
+ /* BEHANDLING AV PENSJON-SEGMENT */                                    00002290
+ /*-------------------------------*/                                    00002300
+                                                                        00002310
+    IF SEGMENT_TABELL.PENSJON THEN                                      00002320
+    DO;                                                                 00002330
+       PBR_TEXT = 'DANN PENSJON-SEGMENT';                               00002340
+   /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM; */                    00002350
+                                                                        00002360
+       IO_PEK = ADDR(PENSJON);                                          00002370
+       IO_AREA = IO_HELP_AREA;                                          00002380
+       SSA_UNQUAL = 'PENSJON ';                                         00002390
+       CALL PLITDLI (PARAM_COUNT_6,                                     00002400
+                     INSERT,                                            00002410
+                     TR0_PCB,                                           00002420
+                     IO_AREA,                                           00002430
+                     SSA_TR0ROT,                                        00002440
+                     SSA_REGTPKT,                                       00002450
+                     SSA_UNQUAL);                                       00002460
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00002470
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00002480
+       DO;                                                              00002490
+ L150:                                                                  00002500
+        /*------------------------------------------------*/            00002510
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN           */            00002520
+        /* UNIKT PENSJON-SEGMENTET LOT SEG IKKE LEGGE INN */            00002530
+        /*------------------------------------------------*/            00002540
+                                                                        00002550
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00002560
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L150';                       00002570
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00002580
+           GO TO UTGANG;                                                00002590
+        END;                                                            00002600
+     END;                                                               00002610
+                                                                        00002620
+ /*--------------------------*/                                         00002630
+ /* BEHANDLING AV KT-SEGMENT */                                         00002640
+ /*--------------------------*/                                         00002650
+                                                                        00002660
+    IF SEGMENT_TABELL.KT THEN                                           00002670
+    DO;                                                                 00002680
+       PBR_TEXT = 'DANN KT-SEGMENT';                                    00002690
+   /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00002700
+                                                                        00002710
+       IO_PEK = ADDR(KT);                                               00002720
+       IO_AREA = IO_HELP_AREA;                                          00002730
+       SSA_UNQUAL = 'KT      ';                                         00002740
+       CALL PLITDLI (PARAM_COUNT_6,                                     00002750
+                     INSERT,                                            00002760
+                     TR0_PCB,                                           00002770
+                     IO_AREA,                                           00002780
+                     SSA_TR0ROT,                                        00002790
+                     SSA_REGTPKT,                                       00002800
+                     SSA_UNQUAL);                                       00002810
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00002820
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00002830
+       DO;                                                              00002840
+ L160:                                                                  00002850
+        /*-------------------------------------------*/                 00002860
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN      */                 00002870
+        /* UNIKT KT-SEGMENTET LOT SEG IKKE LEGGE INN */                 00002880
+        /*-------------------------------------------*/                 00002890
+                                                                        00002900
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00002910
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L160';                       00002920
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00002930
+           GO TO UTGANG;                                                00002940
+        END;                                                            00002950
+     END;                                                               00002960
+                                                                        00002970
+ /*------------------------------*/                                     00002980
+ /* BEHANDLING AV EKTILL-SEGMENT */                                     00002990
+ /*------------------------------*/                                     00003000
+                                                                        00003010
+    IF SEGMENT_TABELL.ET THEN                                           00003020
+    DO;                                                                 00003030
+       PBR_TEXT = 'DANN ET-SEGMENT';                                    00003040
+   /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM; */                    00003050
+                                                                        00003060
+       IO_PEK = ADDR(ET);                                               00003070
+       IO_AREA = IO_HELP_AREA;                                          00003080
+       SSA_UNQUAL = 'ET      ';                                         00003090
+       CALL PLITDLI (PARAM_COUNT_6,                                     00003100
+                     INSERT,                                            00003110
+                     TR0_PCB,                                           00003120
+                     IO_AREA,                                           00003130
+                     SSA_TR0ROT,                                        00003140
+                     SSA_REGTPKT,                                       00003150
+                     SSA_UNQUAL);                                       00003160
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00003170
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00003180
+       DO;                                                              00003190
+ L170:                                                                  00003200
+        /*-------------------------------------------*/                 00003210
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN      */                 00003220
+        /* UNIKT ET-SEGMENTET LOT SEG IKKE LEGGE INN */                 00003230
+        /*-------------------------------------------*/                 00003240
+                                                                        00003250
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00003260
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L170';                       00003270
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00003280
+           GO TO UTGANG;                                                00003290
+        END;                                                            00003300
+     END;                                                               00003310
+                                                                        00003320
+ /*-----------------------------*/                                      00003330
+ /* BEHANDLING AV UPPER-SEGMENT */                                      00003340
+ /*-----------------------------*/                                      00003350
+                                                                        00003360
+    IF SEGMENT_TABELL.UPPER THEN                                        00003370
+    DO;                                                                 00003380
+       PBR_TEXT = 'DANN UPPER-SEGMENT';                                 00003390
+  /*   EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00003400
+                                                                        00003410
+       IO_PEK = ADDR(UPPER);                                            00003420
+       IO_AREA = IO_HELP_AREA;                                          00003430
+       SSA_UNQUAL = 'UPPER   ';                                         00003440
+       CALL PLITDLI (PARAM_COUNT_6,                                     00003450
+                     INSERT,                                            00003460
+                     TR0_PCB,                                           00003470
+                     IO_AREA,                                           00003480
+                     SSA_TR0ROT,                                        00003490
+                     SSA_REGTPKT,                                       00003500
+                     SSA_UNQUAL);                                       00003510
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00003520
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00003530
+       DO;                                                              00003540
+ L180:                                                                  00003550
+        /*----------------------------------------------*/              00003560
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN         */              00003570
+        /* UNIKT UPPER-SEGMENTET LOT SEG IKKE LEGGE INN */              00003580
+        /*----------------------------------------------*/              00003590
+                                                                        00003600
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00003610
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L180';                       00003620
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00003630
+           GO TO UTGANG;                                                00003640
+        END;                                                            00003650
+     END;                                                               00003660
+                                                                        00003670
+ /*--------------------------*/                                         00003680
+ /* BEHANDLING AV VT-SEGMENT */                                         00003690
+ /*--------------------------*/                                         00003700
+                                                                        00003710
+    IF SEGMENT_TABELL.VT THEN                                           00003720
+    DO;                                                                 00003730
+       PBR_TEXT = 'DANN VT-SEGMENT';                                    00003740
+    /* EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00003750
+                                                                        00003760
+       IO_PEK = ADDR(VT);                                               00003770
+       IO_AREA = IO_HELP_AREA;                                          00003780
+       SSA_UNQUAL = 'VT      ';                                         00003790
+       CALL PLITDLI (PARAM_COUNT_6,                                     00003800
+                     INSERT,                                            00003810
+                     TR0_PCB,                                           00003820
+                     IO_AREA,                                           00003830
+                     SSA_TR0ROT,                                        00003840
+                     SSA_REGTPKT,                                       00003850
+                     SSA_UNQUAL);                                       00003860
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00003870
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00003880
+       DO;                                                              00003890
+ L190:                                                                  00003900
+        /*-------------------------------------------*/                 00003910
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN      */                 00003920
+        /* UNIKT VT-SEGMENTET LOT SEG IKKE LEGGE INN */                 00003930
+        /*-------------------------------------------*/                 00003940
+                                                                        00003950
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00003960
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L190';                       00003970
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00003980
+           GO TO UTGANG;                                                00003990
+        END;                                                            00004000
+     END;                                                               00004010
+                                                                        00004020
+ /*--------------------------*/                                         00004030
+ /* BEHANDLING AV BT-SEGMENT */                                         00004040
+ /*--------------------------*/                                         00004050
+                                                                        00004060
+    IF SEGMENT_TABELL.BT THEN                                           00004070
+    DO;                                                                 00004080
+       PBR_TEXT = 'DANN BT-SEGMENT';                                    00004090
+   /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM; */                    00004100
+                                                                        00004110
+       IO_PEK = ADDR(BT);                                               00004120
+       IO_AREA = IO_HELP_AREA;                                          00004130
+       SSA_UNQUAL = 'BT      ';                                         00004140
+       CALL PLITDLI (PARAM_COUNT_6,                                     00004150
+                     INSERT,                                            00004160
+                     TR0_PCB,                                           00004170
+                     IO_AREA,                                           00004180
+                     SSA_TR0ROT,                                        00004190
+                     SSA_REGTPKT,                                       00004200
+                     SSA_UNQUAL);                                       00004210
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00004220
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00004230
+       DO;                                                              00004240
+ L200:                                                                  00004250
+        /*-------------------------------------------*/                 00004260
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN      */                 00004270
+        /* UNIKT BT-SEGMENTET LOT SEG IKKE LEGGE INN */                 00004280
+        /*-------------------------------------------*/                 00004290
+                                                                        00004300
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00004310
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L200';                       00004320
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00004330
+           GO TO UTGANG;                                                00004340
+        END;                                                            00004350
+     END;                                                               00004360
+                                                                        00004370
+ /*-----------------------------*/                                      00004380
+ /* BEHANDLING AV TILKN-SEGMENT */                                      00004390
+ /*-----------------------------*/                                      00004400
+                                                                        00004410
+    IF SEGMENT_TABELL.TILKN THEN                                        00004420
+    DO;                                                                 00004430
+       SSA_UNQUAL = 'TILKN   ';                                         00004440
+                                                                        00004450
+       DO J=1 TO 6;    /* ØKER TIL 6 TILKN-MULIGHETER(SAMBOER) BØ9012 */00004460
+          IF TILKN.TKNYTT(J).FNR_TILKN > 0 THEN                         00004470
+          DO;                                                           00004480
+                                                                        00004490
+             HELP_FNR = TILKN.TKNYTT(J).FNR_TILKN;                      00004500
+             PBR_TEXT = 'TILKN : ' !! HELP_FNR !! ' KODE : ' !!         00004510
+                        TILKN.TKNYTT(J).TILKNYTNINGSKODE;               00004520
+         /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/               00004530
+                                                                        00004540
+             IO_PEK = ADDR(TILKN.TKNYTT(J));                            00004550
+             IO_AREA = IO_HELP_AREA;                                    00004560
+             CALL PLITDLI (PARAM_COUNT_6,                               00004570
+                           INSERT,                                      00004580
+                           TR0_PCB,                                     00004590
+                           IO_AREA,                                     00004600
+                           SSA_TR0ROT,                                  00004610
+                           SSA_REGTPKT,                                 00004620
+                           SSA_UNQUAL);                                 00004630
+             IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                  00004640
+                TR0_PCB.STATUS_KODE ^= '  ' THEN                        00004650
+             DO;                                                        00004660
+ L210:                                                                  00004670
+              /*----------------------------------------------*/        00004680
+              /* FEIL VED INSERT-KALLET TIL TR0-BASEN         */        00004690
+              /* ET TILKN-SEGMENTET LOT SEG IKKE LEGGE INN    */        00004700
+              /*----------------------------------------------*/        00004710
+                                                                        00004720
+                 DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                    00004730
+                 DIV_PARAM_OMR.FEIL_VED_LABEL = 'L210';                 00004740
+                 DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;    00004750
+                 GO TO UTGANG;                                          00004760
+              END;                                                      00004770
+           END;                                                         00004780
+        END;                                                            00004790
+     END;                                                               00004800
+                                                                        00004810
+ /*------------------------------*/                                     00004820
+ /* BEHANDLING AV ETTERL-SEGMENT */                                     00004830
+ /*------------------------------*/                                     00004840
+                                                                        00004850
+    IF SEGMENT_TABELL.ETTERL THEN                                       00004860
+    DO;                                                                 00004870
+       PBR_TEXT = 'DANN ETTERL-SEGMENT';                                00004880
+    /* EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM; */                    00004890
+                                                                        00004900
+       IO_PEK = ADDR(ETTERL);                                           00004910
+       IO_AREA = IO_HELP_AREA;                                          00004920
+       SSA_UNQUAL = 'ETTERL  ';                                         00004930
+       CALL PLITDLI (PARAM_COUNT_6,                                     00004940
+                     INSERT,                                            00004950
+                     TR0_PCB,                                           00004960
+                     IO_AREA,                                           00004970
+                     SSA_TR0ROT,                                        00004980
+                     SSA_REGTPKT,                                       00004990
+                     SSA_UNQUAL);                                       00005000
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00005010
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00005020
+       DO;                                                              00005030
+ L220:                                                                  00005040
+        /*-----------------------------------------------*/             00005050
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN          */             00005060
+        /* UNIKT ETTERL-SEGMENTET LOT SEG IKKE LEGGE INN */             00005070
+        /*-----------------------------------------------*/             00005080
+                                                                        00005090
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00005100
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L220';                       00005110
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00005120
+           GO TO UTGANG;                                                00005130
+        END;                                                            00005140
+     END;                                                               00005150
+ /*--------------------------------*/                                   00005160
+ /* BEHANDLING AV DIAGNOSE-SEGMENT */                                   00005170
+ /*--------------------------------*/                                   00005180
+                                                                        00005190
+    IF SEGMENT_TABELL.DIAGNOSE THEN                                     00005200
+    DO;                                                                 00005210
+       PBR_TEXT = 'DANN DIAGNOSE-SEGMENT';                              00005220
+                                                                        00005240
+       IO_PEK = ADDR(DIAGNOSE);                                         00005250
+       IO_AREA = IO_HELP_AREA;                                          00005260
+       SSA_UNQUAL = 'DIAGNOSE';                                         00005270
+       CALL PLITDLI (PARAM_COUNT_6,                                     00005280
+                     INSERT,                                            00005290
+                     TR0_PCB,                                           00005300
+                     IO_AREA,                                           00005310
+                     SSA_TR0ROT,                                        00005320
+                     SSA_REGTPKT,                                       00005330
+                     SSA_UNQUAL);                                       00005340
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00005350
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00005360
+       DO;                                                              00005370
+ L230:                                                                  00005380
+        /*-----------------------------------------------*/             00005390
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN          */             00005400
+        /* UNIKT DIAGNOSE-SEGMENT LOT SEG IKKE LEGGE INN */             00005410
+        /*-----------------------------------------------*/             00005420
+                                                                        00005430
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00005440
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L230';                       00005450
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00005460
+           GO TO UTGANG;                                                00005470
+        END;                                                            00005480
+     END;                                                               00005490
+                                                                        00005500
+ /*--------------------------------*/                                   00005510
+ /* BEHANDLING AV SPESOPPL-SEGMENT */                                   00005520
+ /*--------------------------------*/                                   00005530
+                                                                        00005540
+    IF SEGMENT_TABELL.SPESOPPL THEN                                     00005550
+    DO;                                                                 00005560
+       PBR_TEXT = 'DANN SPESOPPL-SEGMENT';                              00005570
+   /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00005580
+                                                                        00005590
+       IO_PEK = ADDR(SPESOPPL);                                         00005600
+       IO_AREA = IO_HELP_AREA;                                          00005610
+       SSA_UNQUAL = 'SPESOPPL';                                         00005620
+       CALL PLITDLI (PARAM_COUNT_6,                                     00005630
+                     INSERT,                                            00005640
+                     TR0_PCB,                                           00005650
+                     IO_AREA,                                           00005660
+                     SSA_TR0ROT,                                        00005670
+                     SSA_REGTPKT,                                       00005680
+                     SSA_UNQUAL);                                       00005690
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00005700
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00005710
+       DO;                                                              00005720
+ L240:                                                                  00005730
+        /*-----------------------------------------------*/             00005740
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN          */             00005750
+        /* UNIKT SPESOPPL-SEGMENT LOT SEG IKKE LEGGE INN */             00005760
+        /*-----------------------------------------------*/             00005770
+                                                                        00005780
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00005790
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L240';                       00005800
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00005810
+           GO TO UTGANG;                                                00005820
+        END;                                                            00005830
+     END;                                                               00005840
+ /*--------------------------------*/                                   00005850
+ /* BEHANDLING AV YSKADE-SEGMENT */                                     00005860
+ /*--------------------------------*/                                   00005870
+                                                                        00005880
+    IF SEGMENT_TABELL.YSKADE THEN                                       00005890
+    DO;                                                                 00005900
+       PBR_TEXT = 'DANN YSKADE-SEGMENT';                                00005910
+   /*  EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM; */                    00005920
+                                                                        00005930
+       IO_PEK = ADDR(YSKADE);                                           00005940
+       IO_AREA = IO_HELP_AREA;                                          00005950
+       SSA_UNQUAL = 'YSKADE  ';                                         00005960
+       CALL PLITDLI (PARAM_COUNT_6,                                     00005970
+                     INSERT,                                            00005980
+                     TR0_PCB,                                           00005990
+                     IO_AREA,                                           00006000
+                     SSA_TR0ROT,                                        00006010
+                     SSA_REGTPKT,                                       00006020
+                     SSA_UNQUAL);                                       00006030
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00006040
+          TR0_PCB.STATUS_KODE ^= '  ' THEN                              00006050
+       DO;                                                              00006060
+ L250:                                                                  00006070
+        /*-----------------------------------------------*/             00006080
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN          */             00006090
+        /* UNIKT YSKADE  -SEGMENT LOT SEG IKKE LEGGE INN */             00006100
+        /*-----------------------------------------------*/             00006110
+                                                                        00006120
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00006130
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L250';                       00006140
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00006150
+           GO TO UTGANG;                                                00006160
+        END;                                                            00006170
+     END;                                                               00006180
+                                                                        00006190
+ /*--------------------------------*/                                   00006200
+ /* BEHANDLING AV EØSINFO-SEGMENT  */                                   00006210
+ /*--------------------------------*/                                   00006220
+                                                                        00006230
+    IF SEGMENT_TABELL.EØSINFO THEN                                      00006240
+    DO;                                                                 00006250
+       PBR_TEXT = 'DANN EØSINFO-SEGMENT';                               00006260
+  /*   EXEC CICS SEND TEXT FROM (PBR_TEXT) ACCUM;*/                     00006270
+                                                                        00006280
+       IO_PEK = ADDR(TR.EØSINFO);                                       00006290
+       IO_AREA = IO_HELP_AREA;                                          00006300
+       SSA_UNQUAL = 'EØSINFO ';                                         00006310
+                                                                        00006320
+       CALL PLITDLI (PARAM_COUNT_6,                                     00006330
+                     INSERT,                                            00006340
+                     TR0_PCB,                                           00006350
+                     IO_AREA,                                           00006360
+                     SSA_TR0ROT,                                        00006370
+                     SSA_REGTPKT,                                       00006380
+                     SSA_UNQUAL);                                       00006390
+                                                                        00006400
+       IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                        00006410
+          TR0_PCB.STATUS_KODE     ^= '  ' THEN                          00006420
+       DO;                                                              00006430
+ L260:                                                                  00006440
+        /*-----------------------------------------------*/             00006450
+        /* FEIL VED INSERT-KALLET TIL TR0-BASEN          */             00006460
+        /* UNIKT EØSINFO-SEGMENT LOT SEG IKKE LEGGE INN */              00006470
+        /*-----------------------------------------------*/             00006480
+                                                                        00006490
+           DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                          00006500
+           DIV_PARAM_OMR.FEIL_VED_LABEL = 'L260';                       00006510
+           DIV_PARAM_OMR.DB_STATUS_KODE = TR0_PCB.STATUS_KODE;          00006520
+           GO TO UTGANG;                                                00006530
+        END;                                                            00006540
+     END;                                                               00006550
+ END SKRIV_STAT_SEGM;                                                   00006560
+                                                                        00006570

@@ -1,0 +1,108 @@
+ /*   SIST ENDRET PÅ PROD   2006.10.10 13.37.08 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ TEST   2006.09.07  8.16.52 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2000.03.22  9.51.13 AV   JDA7339          */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0014574 : FYLLER_VILKÅR_3_17_NASJONAL                         */        
+ /* PROGRAMMERER:                                                     */        
+ /*    MARTIN HELLE, MARS 2000.                                       */        
+ /* HENSIKT:                                                          */        
+ /*    PROGRAMMET FORETAR KONTROLL OM VILKÅRA FOR RETT TIL FRAMTIDIGE */        
+ /*    POENGÅR ETTER PARAGRAF 3-17 ER OPPFYLT ETTER EØS-REGLENE       */        
+ /* PROGRAMTILKNYTTNING:                                              */        
+ /*    PROGRAMMET BLIR INKLUDERT I DIVERSE EØS-PROGRAMMER:            */        
+ /*       4370  ETTERLATTE EØS - CALL FRA HOVEDPROGRAM                */        
+ /*       4470  UFØREPENSJON EØS - CALL FRA HOVEDPROGRAM              */        
+ /*       4570  UFØR/ETTERLATT EØS - CALL FRA HOVEDPROGRAM            */        
+ /* ***************************************************************** */        
+ FYLLER_VILKÅR_3_17_EØS : PROC  (IDX,FM_PÅ,SM_PÅ)                               
+                          RETURNS (BIT(1));                                     
+    DCL /* VARIABLER MOTTATT */                                                 
+        (IDX,                                                                   
+         FM_PÅ,                                                                 
+         SM_PÅ)     FIXED BIN(15);                                              
+    DCL /* VARIABLER RETURNERT */                                               
+         FYLLER_VILKÅRA     BIT (1) ALIGNED INIT ('0'B);                        
+    DCL /* INTERNE VARIABLER */                                                 
+        (BOM,                                                                   
+         TREFF                                                                  
+        )            FIXED BIN(15) INIT (0);                                    
+     DCL                                                                        
+         (W_PGI,                                                                
+          W_G_V,                                                                
+          W_UFG                                                                 
+         )        FIXED DEC (9) INIT (0);                                       
+     DCL W_PP     FIXED DEC (13,2) INIT (0);                                    
+                                                                                
+    DO I = SM_PÅ TO FM_PÅ                                                       
+                 BY -1                                                          
+                 UNTIL (BOM = 1 !                                               
+                        FYLLER_VILKÅRA);                                        
+        W_PGI = B02.PI(IDX,I);                                                  
+        W_G_V = GV_TAB_ARRAY.G_V(I);                                            
+        W_UFG = POREKKE.UFG(IDX,I);                                             
+        W_PP  = W_PGI -(((100-W_UFG) * W_G_V)/100);                             
+        W_PP  = W_PP / W_G_V + 0.005;                                           
+        IF W_PP > 0 THEN                                                        
+           FYLLER_VILKÅRA = '1'B;                                               
+        ELSE                                                                    
+        IF (B02.INNTEKTSÅR_EØS(IDX,I) ) THEN                                    
+           FYLLER_VILKÅRA = '1'B;                                               
+        ELSE                                                                    
+        IF POREKKE.KODE(IDX,I) ^= 'U03' THEN                                    
+           BOM = 1; /* IKKE REG MED OMSORGSPOENG FOR DETTE ÅR */                
+     END; /* KONTROLL MED VILKÅR 3_17_B */                                      
+                                                                                
+     IF ^(FYLLER_VILKÅRA) THEN                                                  
+        DO;  /* VILKÅR 3_17_B IKKE OPPFYLT - VI FORTSETTER */                   
+           BOM = 0;                                                             
+           DO I = SM_PÅ TO FM_PÅ                                                
+                        BY -1                                                   
+                        UNTIL (BOM = 2 !                                        
+                               TREFF = 3);                                      
+              W_PGI = B02.PI(IDX,I);                                            
+              W_G_V = GV_TAB_ARRAY.G_V(I);                                      
+              W_UFG = POREKKE.UFG(IDX,I);                                       
+              W_PP  = W_PGI -(((100-W_UFG) * W_G_V)/100);                       
+              W_PP  = W_PP / W_G_V + 0.005;                                     
+              IF (B02.INNTEKTSÅR_EØS(IDX,I))  THEN                              
+                 TREFF = TREFF + 1;                                             
+              ELSE                                                              
+              IF W_PP > 0 THEN                                                  
+                 TREFF = TREFF + 1;                                             
+              ELSE                                                              
+              IF POREKKE.KODE(IDX,I) ^= 'U03' THEN                              
+                 BOM = BOM + 1;                                                 
+           END; /* DO I */                                                      
+           IF TREFF = 3 THEN                                                    
+              FYLLER_VILKÅRA = '1'B;                                            
+           ELSE                                                                 
+              TREFF,                                                            
+              BOM    =  0;                                                      
+           IF ^(FYLLER_VILKÅRA) THEN                                            
+              DO;  /* KONTROLL VILKÅR 3_17_D - SISTE SJANSE */                  
+                 DO I = SM_PÅ TO FM_PÅ                                          
+                              BY -1                                             
+                              UNTIL (BOM = 1 !                                  
+                                     FYLLER_VILKÅRA);                           
+                    IF (POREKKE.KODE(IDX,I) = 'U55' !                           
+                        POREKKE.KODE(IDX,I) = 'U56' ) THEN                      
+                       /* ------------------------------------------- */        
+                       /* U55 = ÅR FØR UFØRHET VP_POENG ^= 2.00       */        
+                       /* U56 = ÅR FØR UFØRHET VP_POENG = 2.00        */        
+                       /* ------------------------------------------- */        
+                       FYLLER_VILKÅRA = '1'B;                                   
+                    ELSE                                                        
+                    IF POREKKE.KODE(IDX,I) ^= 'U03' THEN                        
+                       /* ------------------------------------------- */        
+                       /* U03 = ÅR MED OMSORGSPOENG                   */        
+                       /* NB! UNNTAKET FOR OMSORGSPOENG HJEMMLES I    */        
+                       /*     PRAGRAF 3-20 FØRSTE LEDD.               */        
+                       /* ------------------------------------------- */        
+                       BOM = 1;                                                 
+                 END; /* DO I */                                                
+              END; /* KONTROLL VILKÅR 3_17_D1*/                                 
+        END; /* VILKÅR 3_17_B IKKE OPPFYLT - KONTROLL FORTSETTER */             
+     RETURN(FYLLER_VILKÅRA);                                                    
+  END FYLLER_VILKÅR_3_17_EØS;                                                   
+ /* ----------------------------------------------------------------- */        

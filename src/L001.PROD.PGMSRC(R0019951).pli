@@ -1,0 +1,320 @@
+ /*   SIST ENDRET PÅ PROD   2001.03.15 14.22.04 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.09.11  9.27.23 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.09.08 12.55.35 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.08.07 10.11.18 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.08.04 12.16.10 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.08.03 13.32.56 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.08.03 12.43.09 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.28 14.03.27 AV   JDA7339          */        
+ /*       SIST ENDRET 18/12-98 12.12.30 AV   JDA7339                  */        
+ /*       SIST ENDRET 18/12-98 12.09.18 AV   JDA7339                  */        
+ /*       SIST ENDRET 28/08-98 15.10.57 AV   SPA7339                  */        
+ /*       SIST ENDRET 01/04-98 15.32.23 AV   MEA9991                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0019951 - OMREGNING_PGA_INNTEKTSENDRING.                     */        
+ /*                SUBRUTINE I PLI.                                   */        
+ /*     PROGRAMMERER: JAN - H. KRISTENSEN AUGUST 1983.                */        
+ /* HENSIKT                                                           */        
+ /*     SE FORKLARING NEDENFOR.                                       */        
+ /* PROGRAMTILKNYTNING                                                */        
+ /*     INCLUDE MODUL. KALLES FRA I601 ELLER 9D70                     */        
+ /* ***************************************************************** */        
+ /* ***************************************************************** */        
+ /* OMREGNING ETTER INNTEKTSOPPDATERING.                              */        
+ /*        MODULEN KALLER DE AKTUELLE PROGRAM SOM FORETAR             */        
+ /*           BEREGNING, STØNADSBREVUTSKRIVING, DATABASESKRIV SAMT    */        
+ /*           KALL PÅ STATISTIKKRUTINE.                               */        
+ /*           NÅR EN PERSON I HOVEDREGISTERET ER BLITT OPPDATERT      */        
+ /*           MED INNTEKT ELLER DET ER FORETATT INNTEKTSENDRING,      */        
+ /*           KAN DET VÆRE GRUNN TIL Å FORETA OMREGNING AV            */        
+ /*           YTELSENE OM SLIKE FINNES. DET ER AKTUELT                */        
+ /*              - FOR ALDERS- OG UFØREPENSJONISTER NÅR DET GJELDER   */        
+ /*                EGEN INNTEKT                                       */        
+ /*              - VED SAMMENSTØTENDE PENSJON NÅR INNTEKTEN GJELDER   */        
+ /*                EKTEFELLEN                                         */        
+ /*              - FOR ETTERLATTE NÅR INNTEKTEN GJELDER DEN DØDE SOM  */        
+ /*                AVGIR YTELSE                                       */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ OMREGNING_PGA_INNTEKTSENDRING: PROC (VSAM_RECORD_VIRKDATO_ÅMD);                
+    DCL IND1               FIXED BIN(15);                                       
+    DCL IND2               FIXED BIN(15);                                       
+    DCL SAVE_KJØRINGSTYPE  CHAR(1);                                             
+                                                                                
+    DCL DAGENS_DATO_ÅMD                    PIC '(8)9',                          
+        DAGENS_DATO_ÅM DEF DAGENS_DATO_ÅMD PIC '(6)9',                          
+        DAGENS_DATO_Å  DEF DAGENS_DATO_ÅMD PIC '(4)9',                          
+        DAGENS_DATO_M  DEF DAGENS_DATO_ÅMD POS(5) PIC '99',                     
+        DAGENS_DATO_D  DEF DAGENS_DATO_ÅMD POS(7) PIC '99';                     
+                                                                                
+    DCL HJ_DAGENS_DATO_ÅMD                      PIC '(8)9',                     
+        HJ_DAGENS_DATO_ÅM DEF HJ_DAGENS_DATO_ÅMD PIC '(6)9',                    
+        HJ_DAGENS_DATO_Å DEF HJ_DAGENS_DATO_ÅMD PIC '(4)9',                     
+        HJ_DAGENS_DATO_M DEF HJ_DAGENS_DATO_ÅMD POS(5) PIC '99',                
+        HJ_DAGENS_DATO_D DEF HJ_DAGENS_DATO_ÅMD POS(7) PIC '99';                
+                                                                                
+    DCL VSAM_RECORD_VIRKDATO_ÅMD FIXED DEC (9);                                 
+                                                                                
+    DCL W_FNR         PIC '(11)9';                                              
+    DCL W_FNR_ÅM      PIC '(4)9';                                               
+    DCL  1 W_FNR_R DEF W_FNR,                                                   
+           2 W_DAG      PIC '99',                                               
+           2 W_MND      PIC '99',                                               
+           2 W_ÅR       PIC '99',                                               
+           2 W_ÅRHUNDRE PIC '9',                                                
+           2 W_REST     PIC '(4)9';                                             
+                                                                                
+    DCL B01_TP_SUM    FIXED DEC (7) INIT (0);                                   
+    DCL B02_TP_SUM    FIXED DEC (7) INIT (0);                                   
+    DCL NEDSATT_DATO_ÅMD PIC '(8)9';                                            
+    DCL W_DATO_ÅMD       PIC '(8)9';                                            
+  /* VI BRUKER TRANTYPE 46 NÅ *************                                     
+      DCL SAVE_TRANSTYPE   PIC '99'                                             
+                                                                                
+  SAVE_TRANSTYPE = TRANS_OPPL_OMR.TRANSTYPE                                     
+  IF TRANS_OPPL_OMR.TRANSTYPE = 10            THEN                              
+     TRANS_OPPL_OMR.TRANSTYPE = 22                                              
+  ********************************************** */                             
+                                                                                
+    DAGENS_DATO_ÅMD = DATO_2000;                                                
+                                                                                
+ /*FØRST FINNER VI DATO FOR UTSKRIVING AV BREV NÅR PENSJONEN GÅR NED*/          
+                                                                                
+    HJ_DAGENS_DATO_ÅM = DAGENS_DATO_ÅM + 1;                                     
+    IF HJ_DAGENS_DATO_M > 12 THEN                                               
+       DO;                                                                      
+          HJ_DAGENS_DATO_Å = HJ_DAGENS_DATO_Å + 1;                              
+          HJ_DAGENS_DATO_M = HJ_DAGENS_DATO_M - 12;                             
+       END;                                                                     
+    HJ_DAGENS_DATO_D  = 0;                                                      
+    NEDSATT_DATO_ÅMD = HJ_DAGENS_DATO_ÅMD;                    /*Y2K*/           
+    NESTE_HENDELSE_DATO_ÅMD = HJ_DAGENS_DATO_ÅMD;             /*Y2K*/           
+                                                                                
+    TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =NESTE_HENDELSE_DATO_ÅMD;/*Y2K*/           
+                                                                                
+ /* ***************************************************************** */        
+ /* BEREGNING UTFØRES                                                 */        
+ /* ***************************************************************** */        
+    EXEC CICS LINK PROGRAM('R0014001') COMMAREA(KOM_OMR);                       
+                                                                                
+    IF FEIL_MELD_NR > 0 THEN                                                    
+       GOTO SLUTT;                                                              
+                                                                                
+    B02_TP_SUM    =                                                             
+          (B02.ALDERSP .TP       (SØKER_IND) +                                  
+           B02.UFØRPENS.TP       (SØKER_IND) +                                  
+           B02.YRKEPENS.TP       (SØKER_IND) +                                  
+           B02.ETTEPENS.TP_BRUTTO(SØKER_IND) +                                  
+           B02.ETTEBARN.TP       (SØKER_IND) )    ;                             
+                                                                                
+    B01_TP_SUM    =                                                             
+          (B01.ALDERSP .TP       (SØKER_IND) +                                  
+           B01.UFØRPENS.TP       (SØKER_IND) +                                  
+           B01.YRKEPENS.TP       (SØKER_IND) +                                  
+           B01.ETTEPENS.TP_BRUTTO(SØKER_IND) +                                  
+           B01.ETTEBARN.TP       (SØKER_IND) )    ;                             
+ /* ****************************************                                    
+  KJØRT 9.9.00:                                                                 
+    IF    (B02.ALDERSP .ET       (SØKER_IND)   > 0 )    !                       
+          (B02.ALDERSP .ST       (SØKER_IND)   > 0  &                           
+           B02.PENSJONSTYPE1     (SØKER_IND)   = 'K' )   THEN                   
+  ******************************************* */                                
+                                                                                
+    IF B02_TP_SUM ^= B01_TP_SUM THEN                                            
+       DO;  /* HAR FÅTT ENDRA YTELSE */                                         
+          IF (B02_TP_SUM < B01_TP_SUM) THEN                                     
+             VSAM_RECORD_VIRKDATO_ÅMD = NEDSATT_DATO_ÅMD;    /*Y2K*/            
+                                                                                
+              /* *************************************************** */         
+              /* R0014901 LINKES FORDI STØNADSBREVET SKAL INNEHOLDE  */         
+              /* OPPL. OM ETTERBETALING.  ERIK 24.9.86               */         
+              /* *************************************************** */         
+                                                                                
+          IF VSAM_RECORD_VIRKDATO_ÅMD                        /*Y2K*/            
+             <= B02.STATUS.VIRK_DATO_ÅMD (SØKER_IND) THEN /*Y2K*/               
+             DO;                                                                
+                TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =            /*Y2K*/           
+                           B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND);  /*Y2K*/        
+                                                                                
+                IF B01.FORVENTET(SØKER_IND) > 0  &            /*Y2K*/           
+                   B01.GT_TILLEGG_LOV92(SØKER_IND) = 0   THEN                   
+                                                                                
+                CALL RULL_FORVENTET((NESTE_HENDELSE_DATO_ÅMD),                  
+                     B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND),    /*Y2K*/            
+                     B02.FORVENTET(SØKER_IND));              /*Y2K*/            
+                                                                                
+                   /*-----------------------------------------------*/          
+                   /*VI MÅ RULLERE FORSI-INNTEKTER OG FAI           */          
+                   /*NYE REGLER FRA 0591 OG 0192.   270492,TRUDE    */          
+                   /*-----------------------------------------------*/          
+                                                                                
+                W_FNR     = B02.FNR(SØKER_IND);                                 
+                W_FNR_ÅM  = W_FNR_R.W_ÅR*100+W_FNR_R.W_MND;                     
+                                                                                
+                IF (W_FNR_ÅM                  > 2412 &                          
+                    W_FNR_R.W_ÅRHUNDRE        < 5    &                          
+                    B02.KONV_P_KODE(SØKER_IND) ^= 'K') !                        
+                   (B02.KONV_P_KODE(SØKER_IND) = 'K'  &                         
+                    B02.UTTAKSDATO_ÅMD(SØKER_IND) > 19920000) /*Y2K*/           
+                   THEN                                          /*Y2K*/        
+                      IF B02.ALDERSP.FAI    (SØKER_IND) > 0 THEN                
+                         CALL RULL_FAI(                                         
+                                  (NESTE_HENDELSE_DATO_ÅMD),                    
+                                  B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND),          
+                                  B02.ALDERSP.FAI(SØKER_IND));                  
+                                                                                
+                IF B02.FORSI.ARBEIDSINNTEKT(SØKER_IND) > 0 THEN                 
+                   B02.FORSI.ARBEIDSINNTEKT(SØKER_IND) =                        
+                           F_RULL_FORSI(                                        
+                            (NESTE_HENDELSE_DATO_ÅMD),                          
+                            B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND), /*Y2K*/        
+                            B02.FORSI.ARBEIDSINNTEKT(SØKER_IND));               
+                                                                                
+                IF B02.FORSI.PENSJONSINNTEKT(SØKER_IND) > 0 THEN                
+                   B02.FORSI.PENSJONSINNTEKT(SØKER_IND) =                       
+                           F_RULL_FORSI(                                        
+                            (NESTE_HENDELSE_DATO_ÅMD),                          
+                            B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND), /*Y2K*/        
+                            B02.FORSI.PENSJONSINNTEKT(SØKER_IND));              
+                                                                                
+                IF B02.FORSI.ARBEIDSINNTEKT_EK(SØKER_IND) > 0 THEN              
+                   B02.FORSI.ARBEIDSINNTEKT_EK(SØKER_IND) =                     
+                           F_RULL_FORSI(                                        
+                            (NESTE_HENDELSE_DATO_ÅMD),                          
+                            B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND), /*Y2K*/        
+                            B02.FORSI.ARBEIDSINNTEKT_EK(SØKER_IND));            
+                                                                                
+                IF B02.FORSI.PENSJONSINNTEKT_EK(SØKER_IND) > 0 THEN             
+                   B02.FORSI.PENSJONSINNTEKT_EK(SØKER_IND) =                    
+                           F_RULL_FORSI(                                        
+                            (NESTE_HENDELSE_DATO_ÅMD),           /*Y2K*/        
+                            B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND), /*Y2K*/        
+                            B02.FORSI.PENSJONSINNTEKT_EK(SØKER_IND));           
+                                                                                
+ /* RULLERING AV EKTEFELLES INNTEKTER - 9802 HL */                              
+    IF B02.ALDERSP.FAI(EKTEF_IND) > 0   THEN                                    
+       CALL RULL_FAI((NESTE_HENDELSE_DATO_ÅMD),                                 
+                     B02.VIRK_DATO_ÅMD(EKTEF_IND),                              
+                     B02.ALDERSP.FAI(EKTEF_IND));                               
+                                                                                
+    IF B02.FORSI.PENSJONSINNTEKT(EKTEF_IND) > 0  THEN                           
+       B02.FORSI.PENSJONSINNTEKT(EKTEF_IND) =                                   
+           F_RULL_FORSI((NESTE_HENDELSE_DATO_ÅMD),                              
+                 B02.VIRK_DATO_ÅMD(EKTEF_IND),                                  
+                 B02.FORSI.PENSJONSINNTEKT(EKTEF_IND));                         
+                                                                                
+    IF B02.FORSI.ARBEIDSINNTEKT(EKTEF_IND) > 0  THEN                            
+       B02.FORSI.ARBEIDSINNTEKT(EKTEF_IND) =                                    
+           F_RULL_FORSI((NESTE_HENDELSE_DATO_ÅMD),                              
+                 B02.VIRK_DATO_ÅMD(EKTEF_IND),                                  
+                 B02.FORSI.ARBEIDSINNTEKT(EKTEF_IND));                          
+                                                                                
+    IF B02.FORSI.PENSJONSINNTEKT_EK(EKTEF_IND) > 0  THEN                        
+       B02.FORSI.PENSJONSINNTEKT_EK(EKTEF_IND) =                                
+           F_RULL_FORSI((NESTE_HENDELSE_DATO_ÅMD),                              
+                  B02.VIRK_DATO_ÅMD(EKTEF_IND),                                 
+                  B02.FORSI.PENSJONSINNTEKT_EK(EKTEF_IND));                     
+                                                                                
+    IF B02.FORSI.ARBEIDSINNTEKT_EK(EKTEF_IND) > 0  THEN                         
+       B02.FORSI.ARBEIDSINNTEKT_EK(EKTEF_IND) =                                 
+           F_RULL_FORSI((NESTE_HENDELSE_DATO_ÅMD),                              
+                 B02.VIRK_DATO_ÅMD(EKTEF_IND),                                  
+                 B02.FORSI.ARBEIDSINNTEKT_EK(EKTEF_IND));                       
+                                                                                
+                                                                                
+                   STØNADSBREV_ØNSKET_IND = '1'B;                               
+                                                                                
+                   EXEC CICS LINK PROGRAM('R0014001') COMMAREA(KOM_OMR);        
+                                                                                
+                   CALL STAT_SKRIV;                                             
+                                                                                
+                   B01 = B02 ;                                                  
+                                                                                
+                   IF TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =         /*Y2K*/        
+                                   NESTE_HENDELSE_DATO_ÅMD THEN; /*Y2K*/        
+                   ELSE                                                         
+                                                                                
+                   EXEC CICS LINK PROGRAM('R0014901') COMMAREA(KOM_OMR);        
+                                                                                
+                 END;                                                           
+                                                                                
+              ELSE                                                              
+                 DO;                                                            
+                    W_DATO_ÅMD       = VSAM_RECORD_VIRKDATO_ÅMD; /*Y2K*/        
+                    DIV_PERIODE.INTENDR_ÅMD = W_DATO_ÅMD;        /*Y2K*/        
+                    TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =W_DATO_ÅMD;/*Y2K*/        
+                    CALL STAT_SKRIV;                                            
+                    DIV_PERIODE.INTENDR_ÅMD = 0;                 /*Y2K*/        
+                 END;                                                           
+                                                                                
+         END;                                                                   
+              CALL RYDD_OPP; /* INTERN I 9951 */                                
+                                                                                
+  STAT_SKRIV: PROC;                                                             
+              /* *************************************************** */         
+              /* STATISTIKK - TRANS BLIR LAGET PÅ GRUNNLAG AV        */         
+              /* ENDRINGER B01 TIL B02                               */         
+              /* *************************************************** */         
+                                                                                
+              IF  B02.PENSJONSTYPE2(SØKER_IND) ^= 'A'   THEN /*AB */            
+  /*ROLF */   EXEC CICS LINK PROGRAM('R0016001') COMMAREA(KOM_OMR);             
+                                                                                
+              IF FEIL_MELD_NR > 0 THEN                                          
+                 GOTO SLUTT;                                                    
+                                                                                
+                                                                                
+              /* *************************************************** */         
+              /* STØNADSBREV SKRIVES                                 */         
+              /* *************************************************** */         
+                                                                                
+  /*          TRANS_OPPL_OMR.TRANSTYPE = SAVE_TRANSTYPE    */                   
+              EXEC CICS LINK PROGRAM('R0017001') COMMAREA(KOM_OMR);             
+              IF FEIL_MELD_NR > 0 THEN                                          
+                 DO;                                                            
+                    EXEC CICS LINK PROGRAM('R0016401')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                    GOTO SLUTT;                                                 
+                 END;                                                           
+                                                                                
+  END STAT_SKRIV;                                                               
+                                                                                
+                                                                                
+       SLUTT:;                                                                  
+                                                                                
+    %INCLUDE R0019954;         /*     RULL_FORVENTET           */               
+    %INCLUDE R0019967;         /*     RULL_FAI                 */               
+    %INCLUDE R0019968;         /*     RULL_FORSI               */               
+                                                                                
+       RYDD_OPP: PROC;                                                          
+                                                                                
+                                                                                
+                                                                                
+              IF FEIL_MELD_NR = 0 THEN                                          
+                 DO;                                                            
+                                                                                
+ /* ***************************************************************** */        
+ /* FAMILIEN BLIR SKREVET TILBAKE PÅ BASEN                            */        
+ /* ***************************************************************** */        
+                                                                                
+                    EXEC CICS LINK PROGRAM('R0015401')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                                                                                
+                    EXEC CICS LINK PROGRAM('R0017101')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                                                                                
+                 END;                                                           
+                                                                                
+              IF FEIL_MELD_NR > 0 THEN                                          
+                                                                                
+                                                                                
+                    EXEC CICS LINK PROGRAM('R0016401')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                                                                                
+       END RYDD_OPP;                                                            
+                                                                                
+    END OMREGNING_PGA_INNTEKTSENDRING;                                          

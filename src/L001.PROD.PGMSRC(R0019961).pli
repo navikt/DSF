@@ -1,0 +1,145 @@
+ /*   SIST ENDRET PÅ PROD   2001.03.15 14.22.06 AV   HLA7339          */        
+ /*       SIST ENDRET 28/08-98 15.22.50 AV   SPA7339                  */        
+ /*       SIST ENDRET 01/04-98 15.32.26 AV   MEA9991                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0019961 - OMREGNING_PGA_FNRENDRING.                          */        
+ /*               (LIK OMREGNING_PGA_INNTEKTSENDRING, FØR ENDRING     */        
+ /*                I NOV. 1986                                     )  */        
+ /*                PROSEDYRE I PLI.                                   */        
+ /*     PROGRAMMERER: SVERRE LUNDEBY,DATA-UTVIKLING A/S               */        
+ /*     LAGET       : UKE 18 1987.                                    */        
+ /* HENSIKT                                                           */        
+ /*     SE FORKLARING NEDENFOR.                                       */        
+ /* PROGRAMTILKNYTNING                                                */        
+ /*     INCLUDE MODUL.                                                */        
+ /* ***************************************************************** */        
+ /* ***************************************************************** */        
+ /* OMREGNING ETTER INNTEKTSOPPDATERING.                              */        
+ /*        MODULEN KALLER DE AKTUELLE PROGRAM SOM FORETAR             */        
+ /*           BEREGNING, STØNADSBREVUTSKRIVING, DATABASESKRIV SAMT    */        
+ /*           KALL PÅ STATISTIKKRUTINE.                               */        
+ /*           NÅR EN PERSON I HOVEDREGISTERET ER BLITT OPPDATERT      */        
+ /*           MED INNTEKT ELLER DET ER FORETATT INNTEKTSENDRING,      */        
+ /*           KAN DET VÆRE GRUNN TIL Å FORETA OMREGNING AV            */        
+ /*           YTELSENE OM SLIKE FINNES. DET ER AKTUELT                */        
+ /*              - FOR ALDERS- OG UFØREPENSJONISTER NÅR DET GJELDER   */        
+ /*                EGEN INNTEKT                                       */        
+ /*              - VED SAMMENSTØTENDE PENSJON NÅR INNTEKTEN GJELDER   */        
+ /*                EKTEFELLEN                                         */        
+ /*              - FOR ETTERLATTE NÅR INNTEKTEN GJELDER DEN DØDE SOM  */        
+ /*                AVGIR YTELSE                                       */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*                                                                   */        
+                                                                                
+                                                                                
+    OMREGNING_PGA_FNRENDRING: PROC;                                             
+                                                                                
+                                                                                
+       DCL IND1               FIXED BIN(15);                                    
+       DCL IND2               FIXED BIN(15);                                    
+       DCL DAGENS_DATO_ÅMD    PIC '(8)9';                        /*Y2K*/        
+       DCL SAVE_KJØRINGSTYPE  CHAR(1);                                          
+                                                                                
+       DAGENS_DATO_ÅMD =      DATO_2000;                         /*Y2K*/        
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* BEREGNING UTFØRES                                                 */        
+ /* ***************************************************************** */        
+       EXEC CICS LINK PROGRAM('R0014001') COMMAREA(KOM_OMR);                    
+                                                                                
+       IF FEIL_MELD_NR > 0 THEN                                                 
+          GOTO SLUTT;                                                           
+                                                                                
+       IF (B02.ALDERSP .TP       (SØKER_IND) +                                  
+           B02.UFØRPENS.TP       (SØKER_IND) +                                  
+           B02.YRKEPENS.TP       (SØKER_IND) +                                  
+           B02.ETTEPENS.TP_BRUTTO(SØKER_IND) +                                  
+           B02.ETTEBARN.TP       (SØKER_IND) )                                  
+                                                   =                            
+          (B01.ALDERSP .TP       (SØKER_IND) +                                  
+           B01.UFØRPENS.TP       (SØKER_IND) +                                  
+           B02.YRKEPENS.TP       (SØKER_IND) +                                  
+           B01.ETTEPENS.TP_BRUTTO(SØKER_IND) +                                  
+           B01.ETTEBARN.TP       (SØKER_IND) ) !                                
+           B02.PENSJONSTYPE2(SØKER_IND) = 'A' THEN;/*AB 22.12.00*/              
+                                                                                
+                                                                                
+         ELSE                                                                   
+            DO;                                                                 
+              /* STATISTIKK - TRANS BLIR LAGET PÅ GRUNNLAG AV        */         
+              /* ENDRINGER B01 TIL B02                               */         
+              /* *************************************************** */         
+                                                                                
+              EXEC CICS LINK PROGRAM('R0016001') COMMAREA(KOM_OMR);             
+                                                                                
+              IF FEIL_MELD_NR > 0 THEN                                          
+                 GOTO SLUTT;                                                    
+                                                                                
+              /* *************************************************** */         
+              /* STØNADSBREV SKRIVES                                 */         
+              /* *************************************************** */         
+                                                                                
+              EXEC CICS LINK PROGRAM('R0017001') COMMAREA(KOM_OMR);             
+                                                                                
+              IF FEIL_MELD_NR > 0 THEN                                          
+                 DO;                                                            
+                    /* ********************************************* */         
+                    /*    CALL FJERN-TRANS-FRA-STØNADSBREV-BASE      */         
+                    /*             (STØNADSBREV-NØKKEL-TABELL)       */         
+                    /* ********************************************* */         
+                                                                                
+                    EXEC CICS LINK PROGRAM('R0016401')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                    GOTO SLUTT;                                                 
+                 END;                                                           
+                                                                                
+                                                                                
+               CALL RYDD_OPP;                                                   
+                                                                                
+           END;                                                                 
+                                                                                
+                                                                                
+       SLUTT:;                                                                  
+                                                                                
+    %INCLUDE R0019954;         /*     RULL_FORVENTET           */               
+                                                                                
+                                                                                
+       RYDD_OPP: PROC;                                                          
+                                                                                
+                                                                                
+              IF FEIL_MELD_NR = 0 THEN                                          
+                 DO;                                                            
+                                                                                
+ /* ***************************************************************** */        
+ /* FAMILIEN BLIR SKREVET TILBAKE PÅ BASEN                            */        
+ /* ***************************************************************** */        
+                                                                                
+                    EXEC CICS LINK PROGRAM('R0015401')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                                                                                
+         /*******   CALL                                                        
+                        JUSTER-SB-ROTSEGMENTSTØNADSBREV-BASEN                   
+                          (ST-BREV-NØKKEL-TABELL)  *****/                       
+                    EXEC CICS LINK PROGRAM('R0017101')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                                                                                
+                 END;                                                           
+                                                                                
+              IF FEIL_MELD_NR > 0 THEN                                          
+                                                                                
+                /******   CALL FJERN-TRANS-FRA-STØNADSBREV-BASE                 
+                                   (STØNADSBREV-NØKKEL-TABELL)  **/             
+                    EXEC CICS LINK PROGRAM('R0016401')                          
+                                    COMMAREA(KOM_OMR);                          
+                                                                                
+                                                                                
+       END RYDD_OPP;                                                            
+                                                                                
+    END OMREGNING_PGA_FNRENDRING;                                               
+                                                                                

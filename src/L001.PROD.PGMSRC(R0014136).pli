@@ -1,0 +1,121 @@
+ /*   SIST ENDRET PÅ PROD   2000.03.22  9.40.39 AV   JDA7339          */        
+ /*       SIST ENDRET 04/05-98 12.40.59 AV   JDA7339                  */        
+ /*       SIST ENDRET 25/02-98 09.48.17 AV   RFA9991                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0014136 - ÅTTI_PROSENT_REGELEN - INTERN PROC I PLI.           */        
+ /*    PROGRAMMERER: KRISTENSEN, MAI 1982.                            */        
+ /*    ENDRET JULI 82 AV KARIN                                        */        
+ /*HENSIKT:                                                           */        
+ /*    PROGRAMMET BEREGNER W_APD_80.                                  */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROGRAMMET BLIR INKLUDERT I / CALL FRA                         */        
+ /*       4101 / 4122                                                 */        
+ /*       4201 / 4122                                                 */        
+ /*       4251 / 4122                                                 */        
+ /*BRUK:                                                              */        
+ /*    CALL ÅTTI_PROSENT_REGELEN(W_TAI,W_APD_ØNSKET,                  */        
+ /*                              W_APD_80,W_FRAVIK)                   */        
+ /*    RUTINEN FÅR OVERFØRT TAI(TIDLIGERE ARBEIDSINNTEKT) OG EVENTUELL*/        
+ /*    ØNSKET APD, RETURNERER APD REGNET ETTER 80_PROSENT-REGELEN.    */        
+ /* ***************************************************************** */        
+ ÅTTI_PROSENT_REGELEN: PROC(W_TAI,W_APD_ØNSKET,W_APD_80,W_FRAVIK);              
+                                                                                
+ DCL                                                                            
+    W_TAI               FIXED DEC (7),                                          
+    W_DIVISOR           FIXED DEC (7),                                          
+    W_DIVIDEND          FIXED DEC (9,2),                                        
+    W_RESULTAT          FIXED DEC (9,3),                                        
+    W_APD_ØNSKET        FIXED DEC(3),                                           
+    W_APD_80            FIXED DEC (7,3),                                        
+    W_FRAVIK            CHAR(1),                                                
+    W_APD_FRAVIK        FIXED DEC(7,3),                                         
+    W_KOMPFAKTOR        FIXED DEC(3,1),                                         
+    W_HALV_KT           FIXED DEC(3),                                           
+    W_FAI_MAX           FIXED DEC (7);                                          
+                                                                                
+                                                                                
+                                                                                
+ W_APD_80 = (0.8000*W_TAI*1000 - (B02.ALDERSP.FAI(BER_SØ_IND) * 100))           
+                         / (B02.ALDERSP.GP (BER_SØ_IND) * 12                    
+                         +  B02.ALDERSP.TP (BER_SØ_IND) * 12                    
+                         +  B02.ALDERSP.ET (BER_SØ_IND) * 12                    
+                         +  B02.ALDERSP.ST (BER_SØ_IND) * 12                    
+                         +  B02.ALDERSP.KT (BER_SØ_IND) * 12                    
+                         +  B02.TP_BRUTTO  (BER_SØ_IND) * 12);                  
+                                                                                
+                                                                                
+                                                                                
+ IF W_APD_80 < 0.25 THEN                                                        
+   DO;                                                                          
+      W_KOMPFAKTOR = 0.5;                                                       
+                                                                                
+                                                                                
+      W_HALV_KT = F_BEREGN_KOMPENSASJONSTILLEGG                                 
+                  (B02.PENSJONSTYPE1 (BER_SØ_IND),                              
+                   B02.PENSJONSTYPE2 (BER_SØ_IND),                              
+                   B02.TT_ANV (BER_SØ_IND),0,                                   
+                   W_KOMPFAKTOR,'J');                                           
+                                                                                
+      W_DIVIDEND=0.8*W_TAI*1000-B02.ALDERSP.FAI(BER_SØ_IND) * 100;              
+      W_DIVISOR = B02.ALDERSP.GP (BER_SØ_IND) * 12 +                            
+                  B02.ALDERSP.TP (BER_SØ_IND) * 12 +                            
+                  B02.ALDERSP.ET (BER_SØ_IND) * 12 +                            
+                  B02.ALDERSP.ST (BER_SØ_IND) * 12 +                            
+                  B02.TP_BRUTTO  (BER_SØ_IND) * 12 +                            
+                  W_HALV_KT * 12 ;                                              
+      W_RESULTAT = W_DIVIDEND / W_DIVISOR;                                      
+      IF W_RESULTAT < 0.25 THEN                                                 
+                                                                                
+        W_APD_80 = 0;                                                           
+      ELSE                                                                      
+        W_APD_80 = 25;                                                          
+   END;                                                                         
+                                                                                
+ ELSE IF W_APD_80 < 0.50 THEN                                                   
+    W_APD_80 = 25;                                                              
+                                                                                
+ ELSE IF W_APD_80 < 0.75 THEN                                                   
+    W_APD_80 = 50;                                                              
+                                                                                
+ ELSE IF W_APD_80 < 1.00 THEN                                                   
+    W_APD_80 = 75;                                                              
+                                                                                
+ ELSE                                                                           
+    W_APD_80 = 100;                                                             
+                                                                                
+ IF W_APD_80 < 100 THEN                                                         
+    DO;                                                                         
+      CALL FRAVIK_80_PROSENT(W_APD_FRAVIK);                                     
+                                                                                
+      /* UNDERSØKER OM DET SKAL GIS FRAVIK ETTER 80-%-REGELEN */                
+      /* 4147 */                                                                
+                                                                                
+      IF W_APD_80 >= W_APD_FRAVIK THEN  /*ENDRET TIL = OGSÅ.TRUDE */            
+        DO;                                                                     
+           CALL FAI_GRENSER(W_APD_80,W_TAI,W_FAI_MAX);                          
+           /* 4146 */                                                           
+           W_FRAVIK = 'N';                                                      
+        END;                                                                    
+      ELSE                                                                      
+        DO;                                                                     
+          W_APD_80 = W_APD_FRAVIK;                                              
+          IF W_APD_80 > 0 THEN                                                  
+             DO;                                                                
+                CALL FAI_GRENSER_FRAVIK(W_APD_80,W_FAI_MAX);                    
+                /* 4155 */                                                      
+                W_FRAVIK = 'J';                                                 
+             END;                                                               
+          ELSE                                                                  
+             W_FRAVIK = 'N';                                                    
+        END;                                                                    
+    END;                                                                        
+                                                                                
+ ELSE                                                                           
+    DO;                                                                         
+       CALL FAI_GRENSER(W_APD_80,W_TAI,W_FAI_MAX);                              
+       /* 4146 */                                                               
+       W_FRAVIK = 'N';                                                          
+    END;                                                                        
+                                                                                
+ END ÅTTI_PROSENT_REGELEN;                                                      

@@ -1,0 +1,188 @@
+ /*   SIST ENDRET PÅ PROD   2005.04.18 13.47.38 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.10  8.59.18 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 13.08.26 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 13.16.05 AV   JDA7339          */        
+ /*       SIST ENDRET 03/06-99 14.43.26 AV   JDA7339                  */        
+ /*       SIST ENDRET 03/05-99 11.41.21 AV   SPA7339                  */        
+ /*       SIST ENDRET 04/05-98 14.31.31 AV   JDA7339                  */        
+ /*       SIST ENDRET 23/03-98 12.23.00 AV   SPA7339                  */        
+  /* **************************************************************** */        
+  /* IDENTIFIKASJON:  R0017101                                        */        
+  /* PROGRAMMERER:    HELEN ,  JULI 1982.                             */        
+  /* HENSIKT:                                                         */        
+  /*        NÅR ALLE TRANSAKSJONER ER BEHANDLET  OG ALLE              */        
+  /*        HENDELSENE SKREVET UT PÅ SB_BASEN, MÅ ROTEN OPPDATERES    */        
+  /*        MED INFORMASJON SOM ER MIDLERTIDIG OPPBEVART I FNR_TABELL.*/        
+  /*        ALLE PERSONER SOM SKAL FÅ ST-BREV HAR FNR I FNR-TABELLEN  */        
+  /*        OG MÅ OPPDATERES.INFORMASJONEN I ROTEN BRUKES I UTSKRIFTS-*/        
+  /*        RUTINEN.                                                  */        
+  /* PROGRAM TILKNYTNING:                                             */        
+  /*        PROGRAMMET KALLES OPP I BEHANDLE_TRANS.                   */        
+  /*                                                                  */        
+  /* ENDRET: 15.10.86 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S           */        
+  /*                     LA INN TILORDNING FOR UIB-PEKER.             */        
+  /*                     RYDDET OG REDIGERTE OM PROGRAMMET.           */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+  R001710:                                                                      
+        PROC(COMMAREA_PEKER) OPTIONS (MAIN);                                    
+                                                                                
+  %INCLUDE  P0019912;                                                           
+                                                                                
+  DCL 01 B02 BASED (B02_PEKER),                                                 
+  %INCLUDE  P0019921;                                                           
+                                                                                
+  DCL COMMAREA_PEKER          POINTER;                                          
+                                                                                
+  % INCLUDE  P0019906;   /*TRANS_OPPL_OMR   */                                  
+                                                                                
+  % INCLUDE  P0019908;   /*KOMM_OMR   */                                        
+                                                                                
+  % INCLUDE  P0019014;   /*   FNR_TABELL R0017001/R0017101            */        
+                                                                                
+  % INCLUDE  P0019001;   /*   W_ROT, W_HENDELSE, W_BEREGNVEDL         */        
+                                                                                
+  % INCLUDE  DLIUIB;                                                            
+                                                                                
+  DCL  PLITDLI         ENTRY;                                                   
+                                                                                
+  DCL  UIB_RC_OK       BIT(8)  INIT('00000000'B);                               
+                                                                                
+  DCL  I               FIXED BIN(15);                                           
+                                                                                
+  /* **************************************************************** */        
+  /*     INNEBYGDE PLI-FUNKSJONER                                     */        
+  /* **************************************************************** */        
+                                                                                
+     DCL                                                                        
+       ( ADDR , LOW , CSTG , DATE , TIME ) BUILTIN;                             
+                                                                                
+                                                                                
+  /* **************************************************************** */        
+  /*     DATO-HÅNDTERING                                              */        
+  /* **************************************************************** */        
+                                                                                
+   DCL 1  DATO,                                                                 
+          2  AAR                           PIC '(4)9',                          
+          2  MND                           PIC '99',                            
+          2  DAG                           PIC '99';                            
+   DCL DATO_D        DEFINED   DATO        PIC '(8)9';                          
+   /*                                                                           
+   DCL 1  W_D_DATO_ÅMD                     PIC '99999999';                      
+                                                                                
+   DCL 1  W_D_DATO_ÅM DEF W_D_DATO_ÅMD     PIC '999999';                        
+                                                                                
+   DCL W_VIRK_DATO                         PIC  '999999',                       
+       W_VIRK_DATO_CH  DEF W_VIRK_DATO     CHAR (4);                            
+ */                                                                             
+  /* **************************************************************** */        
+  /*     TIDS-HÅNDTERING                                              */        
+  /* **************************************************************** */        
+                                                                                
+   DCL 1  TID,                                                                  
+          2  TID1                          CHAR (6), /* TT,MM,.SEK    */        
+          2  TID2                          CHAR (3); /* MILL.SEK.     */        
+  DCL TID_D          DEFINED   TID         CHAR (9);                            
+                                                                                
+  DCL TID1_PIC                             PIC '999999999' INIT (0);            
+                                                                                
+                                                                                
+  /* **************************************************************** */        
+  /*     DLI CALL-PARAMETRE                                           */        
+  /* **************************************************************** */        
+                                                                                
+     DCL      GU                 CHAR     (4)   STATIC INIT('GU  '),            
+              GN                 CHAR     (4)   STATIC INIT('GN  '),            
+              GHU                CHAR     (4)   STATIC INIT('GHU '),            
+              GHNP               CHAR     (4)   STATIC INIT('GHNP'),            
+              REPL               CHAR     (4)   STATIC INIT('REPL'),            
+              ISRT               CHAR     (4)   STATIC INIT('ISRT'),            
+              DLET               CHAR     (4)   STATIC INIT('DLET'),            
+              PARM_CT_3          FIXED BIN(31)  STATIC INIT(3),                 
+              PARM_CT_4          FIXED BIN(31)  STATIC INIT(4),                 
+              PARM_CT_5          FIXED BIN(31)  STATIC INIT(5);                 
+                                                                                
+  /* **************************************************************** */        
+  /*     DL1 SSA-OMRÅDER FOR  ROT OG STATUS-SEGMENTER.                */        
+  /* **************************************************************** */        
+                                                                                
+     DCL 1  SSA1_SB0PERSN          STATIC,                                      
+            2    HDEL                            CHAR (17)  INIT                
+                 ('SB0PERSN(FNR     '),                                         
+            2    REL_OP                          CHAR (2)   INIT (' ='),        
+            2    PKEY               FIXED        DEC  (11)  INIT ( 0 ),         
+            2    HP                              CHAR (1)   INIT (')');         
+                                                                                
+  %INCLUDE  P0012002;                                                           
+                                                                                
+      DCL 1  PCB_SB1         BASED        (SB1_PCB_PEKER),                      
+         %INCLUDE  P0012003;                                                    
+                                                                                
+                                                                                
+                                                                                
+  /* *************************************************************** */         
+  /*                                                                 */         
+  /*   PROGRAMMET BEGYNNER HER.                                      */         
+  /*                                                                 */         
+  /* *************************************************************** */         
+                                                                                
+  IF FEIL_MELD_NR = 0 THEN /* AB 01.08.16 */                                    
+     PROGRAM_ID   =  'R0017101';                                                
+     UIBPTR       =  UIB_PEKER;                                                 
+     DATO_D       =  DATO_2000;                                                 
+     TID_D        =  TIME;                                                      
+     TID1_PIC     =  TID_D;                                                     
+                                                                                
+ /*ALL KONV_AV_BRUKER_ID  */                                                    
+  DO I = 1 TO 14 WHILE (FNR_TABELL.FNR(I) > 0);                                 
+                                                                                
+    SSA1_SB0PERSN.PKEY = FNR_TABELL.FNR(I);                                     
+    TID1_PIC           = TID1_PIC + 1;                                          
+                                                                                
+    CALL PLITDLI         (PARM_CT_4,                                            
+                          GHU,                                                  
+                          PCB_SB1,                                              
+                          W_ROT,                                                
+                          SSA1_SB0PERSN);                                       
+                                                                                
+    /*------------------------------------------------------------*/            
+    /* SJEKKER RETURKODE FRA DL1 OG UIB                           */            
+    /*------------------------------------------------------------*/            
+                                                                                
+    IF PCB_SB1.STATUS_KODE  ^= '  '          !                                  
+       DLIUIB.UIBFCTR       ^= UIB_RC_OK     THEN                               
+       DO;                                                                      
+ L140:                                                                          
+          FEIL_MELD_NR       = 500;                                             
+          FEIL_VED_LABEL     = 'L140';                                          
+          DB_STATUS_KODE     = PCB_SB1.STATUS_KODE;                             
+          GO TO L999;                                                           
+       END;                                                                     
+    ELSE                                                                        
+       DO;                                                                      
+          W_ROT.NESTE_SB_VERSJON_NR = W_ROT.NESTE_SB_VERSJON_NR + 1;            
+          W_ROT.SISTE_TERMINAL_NR   = DIV_PARAM_OMR.BRUKER_ID;                  
+          SISTE_REG_TIDSPUNKT       = TID1_PIC!!DATO_D;                         
+                                                                                
+          CALL         PLITDLI        (PARM_CT_3,                               
+                                       REPL,                                    
+                                       PCB_SB1,                                 
+                                       W_ROT);                                  
+       END;                                                                     
+                                                                                
+       IF PCB_SB1.STATUS_KODE      ^= '  '         !                            
+          DLIUIB.UIBFCTR           ^= UIB_RC_OK    THEN                         
+          DO;                                                                   
+ L150:                                                                          
+             FEIL_MELD_NR           = 500;                                      
+             FEIL_VED_LABEL         = 'L150';                                   
+             DB_STATUS_KODE         = PCB_SB1.STATUS_KODE;                      
+             GO TO L999;                                                        
+         END;                                                                   
+ END;                                                                           
+                                                                                
+ L999:                                                                          
+ /*CALL KONV_AV_BRUKER_ID  */                                                   
+  EXEC CICS RETURN;                                                             
+ %INCLUDE R0019970;  /* KONV_AV_BRUKER_ID                     */                
+ END R001710;                                                                   

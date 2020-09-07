@@ -1,0 +1,468 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.40.45 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.57.29 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 13.05.59 AV   JDA2970          */        
+ /*       SIST ENDRET 30/07-98 13.40.07 AV   JDA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R0011301     KONTROLL AV TILLEGGSBLANKETT - HOVED*/        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  TILLEGGSBLANKETTEN KONTROLLERES.                                 */        
+ /*  SKJERMBILDE S001131  GIR VALG MELLOM 4 FORSKJELLIGE BILDER :     */        
+ /*                                                                   */        
+ /*  S001132 -  INNTEKTER I 1963-66  FOR UFøRE                        */        
+ /*                                                                   */        
+ /*  S001133 -  INNTEKTER I 1963-66  FOR AVDøD EKTEFELLE              */        
+ /*                                                                   */        
+ /*  S001134 -  INNTEKTER I 1963-66  FOR MOR/FAR TIL ETTERLATT BARN   */        
+ /*                                                                   */        
+ /*  S001135 -  ANTATT INNTEKT I 1967                                 */        
+ /*                                                                   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMETS TRANSKODER ER R131,R132,R133,R134,R135,R136,R137,R138*/        
+ /*  PROGRAMMET GIS KONTROLL VIA CICS/TRANSKODE FRA R0011304          */        
+ /*  PROGRAMMET CALLER  :                                             */        
+ /*  PROGRAMMET INCLUDER:                                             */        
+ /*                 1302 - BLANK OG FLYTT FRA MAP TIL ARB.OMR         */        
+ /*                        BLANK_TG_UFØRE;                            */        
+ /*                        BLANK_TG_BARN;                             */        
+ /*                        BLANK_TG_ETTERL;                           */        
+ /*                        BLANK_TG_MELDNR;                           */        
+ /*                        BLANK_TG_MAP;                              */        
+ /*                        OVERFØR_TG_UFØRE;                          */        
+ /*                        OVERFØR_TG_ETTERL;                         */        
+ /*                        OVERFØR_TG_BARN;                           */        
+ /*                        OVERFØR_TG_AI67;                           */        
+ /*                                                                   */        
+ /*                 1303 - KONTROLL                                   */        
+ /*                        KONTROLL_TG_UFØRE(FEIL_FUNNET);            */        
+ /*                        KONTROLL_TG_ETTERL(FEIL_FUNNET);           */        
+ /*                        KONTROLL_TG_BARN(FEIL_FUNNET);             */        
+ /*                        KONTROLL_TG_AI67(FEIL_FUNNET);             */        
+ /*                 1306 - FLYTT FRA ARB.OMR. TIL MAP                 */        
+ /*                        OVERFØR_TGUFØRE_MAP;                       */        
+ /*                        OVERFØR_TGETTERL_MAP;                      */        
+ /*                        OVERFØR_TGBARN_MAP;                        */        
+ /*                        OVERFØR_TGAI67_MAP;                        */        
+ /*                                                                   */        
+ /*  PROGRAMMET HAR EXEC      XCTL TIL  :                             */        
+ /*                        R0010301 - VALG AV FUNKSJON                */        
+ /*                        R0010401 - REGISTRERING                    */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ R00113:                                                                        
+   PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                          
+ %PAGE;                                                                         
+ %INCLUDE S00113;    /*  TILLEGG TIL GRUNNBLANKETT MAPSETTET */                 
+ %PAGE;                                                                         
+ %INCLUDE P0011301;  /*  TRANS_OMR FOR TILLEGG TIL GRUNNBLANKETTT */            
+ %PAGE;                                                                         
+ %INCLUDE P0019906;  /*  TRANS_OPPL_OMR  (BASED)        */                      
+ %PAGE;                                                                         
+ %INCLUDE P0019908;  /*  KOM_OMRÅDE  (BASED)            */                      
+ %PAGE;                                                                         
+ %INCLUDE P0019910;  /*  STYRINGSOMRÅDE (BASED)         */                      
+ %PAGE;                                                                         
+ %INCLUDE P0019912;  /*  DIV_PARAM      (BASED)         */                      
+ %INCLUDE DFHBMSCA;                                                             
+ %PAGE;                                                                         
+   DCL                                                                          
+      (BMSMAPBR,COMMAREA_PEKER) PTR;                                            
+   DCL                                                                          
+      (ADDR,UNSPEC,CSTG,ONCODE,VERIFY,SUBSTR) BUILTIN;                          
+   DCL                                                                          
+      FEIL_FUNNET  BIT (1),                                                     
+      ONKODE PIC'9999',                                                         
+      CURSOR_POS FIXED BIN(15) INIT(-1),                                        
+      ONK DEF ONKODE CHAR(4),                                                   
+      FEILKODE       CHAR(4),                                                   
+      DSNAVN         CHAR(8),                                                   
+      ANT_FEIL_SKREVET FIXED DEC (3);                                           
+ %SKIP(1);                                                                      
+      ANT_FEIL_SKREVET = 0;                                                     
+      FEIL_FUNNET = '0'B;                                                       
+ %SKIP(1);                                                                      
+ %PAGE;                                                                         
+      ON ERROR SNAP BEGIN       ;                                               
+         ON ERROR SYSTEM        ;                                               
+         ONKODE=ONCODE          ;                                               
+         FEILKODE = ONK         ;                                               
+         DSNAVN   = EIBDS       ;                                               
+         GO TO FEILBEH          ;                                               
+      END;                                                                      
+                                                                                
+ FEILKODE   = 'FEIL'    ;                                                       
+ DSNAVN     = '        ';                                                       
+                                                                                
+ EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                                     
+ EXEC CICS HANDLE AID PF14(PF14) PF15(PF15);                                    
+                                                                                
+ KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);           
+ KOM_OMR.PEKER_LISTE.TRANS_PEKER  = ADDR(KOM_OMR.TRANS_OMR);                    
+ KOM_OMR.PEKER_LISTE.STYRINGS_PEKER = ADDR(KOM_OMR.STYRINGS_OMR);               
+ KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER = ADDR(KOM_OMR.DIV_PARAM_OMR);             
+ ATK_KOM_PTR           = ADDR  (KOM_OMR.ATK_COM_OMR  ) ;                        
+                                                                                
+ IF ^HENT_FRAM_MAP   THEN                                                       
+   DO;                                                                          
+     FEIL_MELD_NR = 0;                                                          
+   END;                                                                         
+                                                                                
+ SELECT (TRANSKODE);                                                            
+                                                                                
+   WHEN('R131','R134')                                                          
+     DO;                                                                        
+       EXEC CICS RECEIVE MAP('S001132') MAPSET ('S001133')                      
+       SET (BMSMAPBR);                                                          
+                                                                                
+       IF S001132I.FUNKSJONSKODEL > 0 THEN                                      
+          DO;                                                                   
+             FUNKSJONSKODE = S001132I.FUNKSJONSKODEI;                           
+             EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);              
+          END;                                                                  
+                                                                                
+       IF S001132I.STYRE_KODEL > 0 THEN                                         
+          DO;                                                                   
+             STYREKODE = S001132I.STYRE_KODEI;                                  
+             TRANSKODE = 'R041';                                                
+             EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);              
+          END;                                                                  
+     END;                                                                       
+                                                                                
+   WHEN('R132','R135')                                                          
+     DO;                                                                        
+       EXEC CICS RECEIVE MAP('S001133') MAPSET ('S001133')                      
+       SET (BMSMAPBR);                                                          
+                                                                                
+       IF S001133I.FUNKSJONSKODEL > 0 THEN                                      
+          DO;                                                                   
+             FUNKSJONSKODE = S001133I.FUNKSJONSKODEI;                           
+             EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);              
+          END;                                                                  
+                                                                                
+       IF S001133I.STYRE_KODEL > 0 THEN                                         
+          DO;                                                                   
+             STYREKODE = S001133I.STYRE_KODEI;                                  
+             TRANSKODE = 'R041';                                                
+             EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);              
+          END;                                                                  
+     END;                                                                       
+                                                                                
+   WHEN('R133','R136')                                                          
+     DO;                                                                        
+       EXEC CICS RECEIVE MAP('S001134') MAPSET ('S001133')                      
+       SET (BMSMAPBR);                                                          
+                                                                                
+       IF S001134I.FUNKSJONSKODEL > 0 THEN                                      
+          DO;                                                                   
+             FUNKSJONSKODE = S001134I.FUNKSJONSKODEI;                           
+             EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);              
+          END;                                                                  
+                                                                                
+       IF S001134I.STYRE_KODEL > 0 THEN                                         
+          DO;                                                                   
+             STYREKODE = S001134I.STYRE_KODEI;                                  
+             TRANSKODE = 'R041';                                                
+             EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);              
+          END;                                                                  
+     END;                                                                       
+                                                                                
+ /* TILLEGG 19.3.85  HL                                        */               
+                                                                                
+   WHEN('R137','R138')                                                          
+     DO;                                                                        
+       EXEC CICS RECEIVE MAP('S001135') MAPSET ('S001133')                      
+       SET (BMSMAPBR);                                                          
+                                                                                
+       IF S001135I.FUNKSJONSKODEL > 0 THEN                                      
+          DO;                                                                   
+             FUNKSJONSKODE = S001135I.FUNKSJONSKODEI;                           
+             EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);              
+          END;                                                                  
+                                                                                
+       IF S001135I.STYRE_KODEL > 0 THEN                                         
+          DO;                                                                   
+             STYREKODE = S001135I.STYRE_KODEI;                                  
+             TRANSKODE = 'R041';                                                
+             EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);              
+          END;                                                                  
+     END;                                                                       
+                                                                                
+ /* HIT 19.3.85  HL                                           */                
+                                                                                
+   OTHERWISE                                                                    
+      ;                                                                         
+ END;                                                                           
+                                                                                
+                                                                                
+ IF STYREKODE ^= 'TG' THEN                                                      
+    TRANSKODE = 'R041';     /* GIR RETUR TIL PROGRAM      */                    
+ ELSE                                                                           
+  DO;                                                                           
+   SELECT (TRANSKODE);                                                          
+    WHEN('R131')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_AI67;                     /* 1302 */                    
+          CALL BLANK_TG_UFØRE;                    /* 1302 */                    
+          CALL BLANK_TG_BARN;                     /* 1302 */                    
+          CALL BLANK_TG_ETTERL;                   /* 1302 */                    
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_UFØRE;                  /* 1302 */                    
+          CALL KONTROLL_TG_UFØRE(FEIL_FUNNET);    /* 1303 */                    
+       END;                                                                     
+    WHEN('R132')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_AI67;                     /* 1302 */                    
+          CALL BLANK_TG_UFØRE;                    /* 1302 */                    
+          CALL BLANK_TG_BARN;                     /* 1302 */                    
+          CALL BLANK_TG_ETTERL;                   /* 1302 */                    
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_ETTERL;                 /* 1302 */                    
+          CALL KONTROLL_TG_ETTERL(FEIL_FUNNET);   /* 1303 */                    
+       END;                                                                     
+    WHEN('R133')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_AI67;                     /* 1302 */                    
+          CALL BLANK_TG_UFØRE;                    /* 1302 */                    
+          CALL BLANK_TG_BARN;                     /* 1302 */                    
+          CALL BLANK_TG_ETTERL;                   /* 1302 */                    
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_BARN;                   /* 1302 */                    
+          CALL KONTROLL_TG_BARN(FEIL_FUNNET);     /* 1303 */                    
+       END;                                                                     
+                                                                                
+ /* TILLEGG 19.3.85  HL                                     */                  
+                                                                                
+    WHEN('R137')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_AI67;                     /* 1302 */                    
+          CALL BLANK_TG_UFØRE;                    /* 1302 */                    
+          CALL BLANK_TG_BARN;                     /* 1302 */                    
+          CALL BLANK_TG_ETTERL;                   /* 1302 */                    
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_AI67;                   /* 1302 */                    
+          CALL KONTROLL_TG_AI67(FEIL_FUNNET);     /* 1303 */                    
+       END;                                                                     
+                                                                                
+ /* HIT 19.3.85  HL                                         */                  
+                                                                                
+    WHEN('R134')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_UFØRE;                  /* 1302 */                    
+          CALL KONTROLL_TG_UFØRE(FEIL_FUNNET);    /* 1303 */                    
+       END;                                                                     
+    WHEN('R135')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_ETTERL;                 /* 1302 */                    
+          CALL KONTROLL_TG_ETTERL(FEIL_FUNNET);   /* 1303 */                    
+       END;                                                                     
+    WHEN('R136')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_BARN;                   /* 1302 */                    
+          CALL KONTROLL_TG_BARN(FEIL_FUNNET);     /* 1303 */                    
+       END;                                                                     
+                                                                                
+ /* TILLEGG 19.3.85  HL                                    */                   
+                                                                                
+    WHEN('R138')                                                                
+       DO;                                                                      
+          CALL BLANK_TG_MELDNR;                   /* 1302 */                    
+          CALL OVERFØR_TG_AI67;                   /* 1302 */                    
+          CALL KONTROLL_TG_AI67(FEIL_FUNNET);     /* 1303 */                    
+       END;                                                                     
+                                                                                
+ /* HIT 19.3.85  HL                                                 */          
+                                                                                
+    OTHERWISE;                                                                  
+   END; /* SELECT */                                                            
+                                                                                
+       /* INGEN UTGANG DA CICS IKKE GODTAR UGYLDIGE TRANSAKSJONSKODER */        
+                                                                                
+ IF FEIL_FUNNET ! EIBTRNID ^= TRANSKODE THEN                                    
+    DO;                                                                         
+       SELECT (TRANSKODE);                                                      
+          WHEN ('R131')                                                         
+            TRANSKODE = 'R134';                                                 
+          WHEN ('R132')                                                         
+            TRANSKODE = 'R135';                                                 
+          WHEN ('R133')                                                         
+            TRANSKODE = 'R136';                                                 
+                                                                                
+ /* TILLEGG 19.3.85  HL                                              */         
+                                                                                
+          WHEN ('R137')                                                         
+            TRANSKODE = 'R138';                                                 
+                                                                                
+ /* HIT 19.3.85  HL                                           */                
+                                                                                
+          OTHERWISE                                                             
+              ;                                                                 
+       END;                                                                     
+                                                                                
+       CALL BLANK_TG_MAP;  /* 1302 */                                           
+                                                                                
+       SELECT (TRANSKODE);                                                      
+          WHEN ('R134')                                                         
+             DO;                                                                
+                CALL OVERFØR_TGUFØRE_MAP;              /* 1306 */               
+                EXEC CICS SEND MAP('S001132') MAPSET('S001133')                 
+                DATAONLY ERASEAUP CURSOR;                                       
+             END;                                                               
+          WHEN ('R135')                                                         
+             DO;                                                                
+                CALL OVERFØR_TGETTERL_MAP;             /* 1306 */               
+                EXEC CICS SEND MAP('S001133') MAPSET('S001133')                 
+                DATAONLY ERASEAUP CURSOR;                                       
+             END;                                                               
+          WHEN ('R136')                                                         
+             DO;                                                                
+                CALL OVERFØR_TGBARN_MAP;               /* 1306 */               
+                EXEC CICS SEND MAP('S001134') MAPSET('S001133')                 
+                DATAONLY ERASEAUP CURSOR;                                       
+             END;                                                               
+                                                                                
+ /* TILLEGG 19.3.85  HL                                           */            
+                                                                                
+          WHEN ('R138')                                                         
+             DO;                                                                
+                CALL OVERFØR_TGAI67_MAP;               /* 1306 */               
+                EXEC CICS SEND MAP('S001135') MAPSET('S001133')                 
+                DATAONLY ERASEAUP CURSOR;                                       
+             END;                                                               
+                                                                                
+ /* HIT 19.3.85  HL                                               */            
+                                                                                
+          OTHERWISE;                                                            
+       END;                                                                     
+   EXEC CICS RETURN TRANSID(TRANSKODE)                                          
+                            COMMAREA(KOM_OMR);                                  
+    END;                                                                        
+   ELSE                                                                         
+       TRANSKODE   = 'R042';                                                    
+       TRANS_RETURKODE = TRANSKODE;                                             
+       BLANKETTYPE = STYREKODE;                                                 
+    END;                                                                        
+                                                                                
+    EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                       
+                                                                                
+                    /* 0401 ER REGISTRERING */                                  
+                                                                                
+  FEILBEH:                                                                      
+                                                                                
+     EXEC CICS HANDLE CONDITION ERROR(ABEND);                                   
+     IF FEIL_MELD_NR = 0 THEN /* AB 01.08.16 */                                 
+         PROGRAM_ID = 'R0011301';                                               
+                                                                                
+     S001131O.MELDINGO =                                                        
+              'F E I L  H A R  O P P S T Å T T ! ! !.' !!                       
+              'TRYKK "ENTER" OG PRØV PÅ NYTT.';                                 
+                                                                                
+                                                                                
+                                                                                
+     EXEC CICS SEND MAP('S001131')                                              
+                                                 MAPSET('S001133');             
+                                                                                
+ /* MAP S001131 GIR MENYEN FOR TILLEGGSBLANKETTEN  */                           
+                                                                                
+                                                                                
+     EXEC CICS RECEIVE MAP('S001131')                                           
+                                    MAPSET('S001133') SET(BMSMAPBR);            
+                                                                                
+                                                                                
+     EXEC CICS SYNCPOINT ROLLBACK;                                              
+                                                                                
+                                                                                
+     TERMINERINGS_IND = 'F';                                                    
+                                                                                
+     TRANSKODE  = 'R041';                                                       
+                                                                                
+     EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                      
+                                                                                
+                   /* 0401 ER REGISTRERING */                                   
+                                                                                
+  ABEND:                                                                        
+     EXEC CICS ABEND ABCODE(FEIL);                                              
+                                                                                
+  PF14:                                                                         
+     TERMINERINGS_IND = 'O';                                                    
+                                                                                
+     SELECT (TRANSKODE);                                                        
+        WHEN('R131','R134')                                                     
+           DO;                                                                  
+              CALL OVERFØR_TG_UFØRE;               /* 1302 */                   
+              TRANS_RETURKODE = 'R134';                                         
+           END;                                                                 
+        WHEN('R132','R135')                                                     
+           DO;                                                                  
+              CALL OVERFØR_TG_ETTERL;             /* 1302 */                    
+              TRANS_RETURKODE = 'R135';                                         
+           END;                                                                 
+        WHEN('R133','R136')                                                     
+           DO;                                                                  
+              CALL OVERFØR_TG_BARN;               /* 1302 */                    
+              TRANS_RETURKODE = 'R136';                                         
+           END;                                                                 
+                                                                                
+ /* TILLEGG 19.3.85  HL                                         */              
+                                                                                
+        WHEN('R137','R138')                                                     
+           DO;                                                                  
+              CALL OVERFØR_TG_AI67;               /* 1302 */                    
+              TRANS_RETURKODE = 'R138';                                         
+           END;                                                                 
+                                                                                
+ /* HIT 19.3.85  HL                                             */              
+                                                                                
+        OTHERWISE;                                                              
+     END; /* SELECT */                                                          
+                                                                                
+     TRANSKODE = 'R043';                                                        
+     EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                      
+                                                                                
+  PF15:                                                                         
+     TERMINERINGS_IND = 'F';                                                    
+     TRANSKODE = 'R041';                                                        
+     EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                      
+                                                                                
+                    /* 0401 ER REGISTRERING */                                  
+                                                                                
+ %PAGE;                                                                         
+      %INCLUDE R0011302;               /* MAP -> ARBEIDSOMRÅDE */               
+ %PAGE;                                                                         
+      %INCLUDE R0011303;               /* KONTROLL AV SØKERDELEN */             
+ %PAGE;                                                                         
+      %INCLUDE R0011306;               /* ARBEIDSOMRÅDE -> MAP */               
+ %PAGE;                                                                         
+      %INCLUDE R0019904;               /* FØDSELSNUMMERKONTROLL */              
+ %PAGE;                                                                         
+      %INCLUDE R0019905;               /* BEREGNER ALDER */                     
+ %PAGE;                                                                         
+      %INCLUDE R0019907;               /* TABELLSØKING */                       
+ %PAGE;                                                                         
+      %INCLUDE R0019910;               /* NUMERISK KONTROLL */                  
+ %PAGE;                                                                         
+      %INCLUDE R0019901;               /*  DATO KONTROLL  */                    
+ %PAGE;                                                                         
+      %INCLUDE R0019995;               /*KONV_FNR11_FNR13 */                    
+ %PAGE;                                                                         
+      %INCLUDE R0019912;  /* KONVERTERING CHAR ==> PIC / PIC ==> CHAR */        
+                                                                                
+      %INCLUDE R0019999;               /* KONTROLL_ACF2           */            
+   END R00113;                                                                  

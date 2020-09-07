@@ -1,0 +1,191 @@
+ /*   SIST ENDRET PÅ PROD   2004.12.17 15.20.56 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 15.01.53 AV   SPA2970          */        
+ /*       SIST ENDRET 09/06-98 08.41.59 AV   SPA7339                  */        
+ /*       SIST ENDRET 04/05-98 14.16.03 AV   JDA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R00104U3  MAP_FRA_TRANS_LISTE    HOVEDPROGRAM    */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : KRISTENSEN                                       */        
+ /*  PROGRAMMET BLE LAGET : MARCH 1994                                */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*    PROGRAMMET SKAL BYGGE OPP SIDER SOM BESTÅR AV BLANKETTMAPENE.  */        
+ /*    DETTE GJØRES UT FRA EN LISTE AV TRANSER SOM ER SORTERT På      */        
+ /*    FORHÅND.                                                       */        
+ /*    MAPS HØRER INN UNDER MAPSET 'S001F3'.                         */         
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*    PROGRAMMET BLIR GITT KONTROLL FRA R0010412 - FORESPØRSEL       */        
+ /*                                                                   */        
+ /*    PROGRAMMETS TRANSKODE ER F41D.                                 */        
+ /*    BRUK :                                                         */        
+ /*    EXEC CICS XCTL PROGRAM ('R00104U3') COMMAREA(KOM_OMR);         */        
+ /*    PROGRAMMET INCLUDER :                                          */        
+ /*               R001  06   FLYTT FRA ARB.OMRÅDE TIL MAP    U3       */        
+ /*               R001  07   FORTEKSTER OG ATTRIBUTTER       U3       */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*  DET BLIR IKKE BRUKT NOEN DATASETT I DETTE PROGRAMMET             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /* PROGRAMMET GIR IKKE NOEN FEILMELDINGER.                           */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ R0014U3: PROC(LOKAL_KOM_PTR) OPTIONS (MAIN);                                   
+                                                                                
+          %INCLUDE P0019906;                                                    
+          %INCLUDE P0019908;                                                    
+          %INCLUDE P0019910;                                                    
+          %INCLUDE P0019912;                                                    
+          %INCLUDE P0019913;                                                    
+                                                                                
+ DCL                                                                            
+      (CSTG, ADDR, HBOUND  )         BUILTIN;                                   
+ DCL  COMMAREA_PEKER         PTR,                                               
+      LOKAL_KOM_PTR          PTR;                                               
+                                                                                
+                                                                                
+        /**   DUMMY DEKLARASJONER FOR OVERFØRINGSMODULENE  **/                  
+ DCL                                                                            
+    CURSOR_POS FIXED BIN(15) INIT(-1),                                          
+    DFHBMUNP             CHAR(1) INIT(' '),                                     
+    DFHBMBRY             CHAR(1) INIT('H'),                                     
+    DFHBMASK             CHAR(1) INIT('8'),   /* H.INT + ASKIP  */              
+    FEIL_FUNNET          BIT(1)  INIT('1'B),                                    
+    MELDING6O            CHAR(10),                                              
+    YMELDING6O           CHAR(10);                                              
+                                                                                
+          %INCLUDE S001F3  ;                                                    
+          %INCLUDE P001U601;                                                    
+                                                                                
+                                                                                
+ COMMAREA_PEKER = HOVED_KOM_OMR_PTR;                                            
+                                                                                
+ KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);           
+ KOM_OMR.PEKER_LISTE.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);                
+ KOM_OMR.PEKER_LISTE.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);             
+ KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);            
+                                                                                
+                                                                                
+ KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER =   TRANS_OPPL_PTR(W01_TRANS_IND);        
+ KOM_OMR.PEKER_LISTE.TRANS_PEKER      = TRANS_PTR(W01_TRANS_IND);               
+                                                                                
+                                                                                
+           IF ^W01_EØS          &                                               
+              ^W01_YSKADE       &                                               
+              ^W01_NORSK_BOSATT  THEN                                           
+              DO;                                                               
+                  CALL OVERFØR_U3_SØKER_MAP;          /* R001U606 */            
+                                                                                
+                  S001U61O.DUMMYA = 'Ø';             /* PROT,DARK  */           
+                  W01_MAP = 'S001U61' ;                                         
+                                                                                
+                  IF U3SP.EØS_OPPLYSN   = 'J'   THEN                            
+                     DO;                                                        
+                        W01_EØS          = '1'B;                                
+                        W01_SIDE_ANTALL  = W01_SIDE_ANTALL + 1;                 
+                     END;                                                       
+                  IF U3S.NORSK_BOSATT   = 'N'    THEN                           
+                     DO;                                                        
+                        W01_NORSK_BOSATT = '1'B;                                
+                        W01_SIDE_ANTALL  = W01_SIDE_ANTALL + 1;                 
+                     END;                                                       
+                  IF U3S.YSKADE_TILLEGG = 'J' THEN                              
+                     DO;                                                        
+                        W01_YSKADE       = '1'B;                                
+                        W01_SIDE_ANTALL  = W01_SIDE_ANTALL + 1;                 
+                     END;                                                       
+       /*                                                                       
+                  IF U3SP.EØS_OPPLYSN   = 'J'   &                               
+                     U3S.NORSK_BOSATT   = 'N'   &                               
+                     U3S.YSKADE_TILLEGG = 'J' THEN                              
+                     DO;                                                        
+                        W01_EØS          = '1'B;                                
+                        W01_NORSK_BOSATT = '1'B;                                
+                        W01_YSKADE       = '1'B;                                
+                        W01_SIDE_ANTALL  = W01_SIDE_ANTALL + 3;                 
+                     END;                                                       
+                  ELSE                                                          
+                  IF U3SP.EØS_OPPLYSN   = 'J'   &                               
+                     U3S.NORSK_BOSATT   = 'N'   THEN                            
+                     DO;                                                        
+                        W01_EØS          = '1'B;                                
+                        W01_NORSK_BOSATT = '1'B;                                
+                        W01_SIDE_ANTALL  = W01_SIDE_ANTALL + 2;                 
+                     END;                                                       
+                  ELSE                                                          
+                  IF U3S.NORSK_BOSATT   = 'N'   &                               
+                     U3S.YSKADE_TILLEGG = 'J' THEN                              
+                     DO;                                                        
+                        W01_NORSK_BOSATT = '1'B;                                
+                        W01_YSKADE       = '1'B;                                
+                        W01_SIDE_ANTALL  = W01_SIDE_ANTALL + 2;                 
+                     END;                                                       
+                  ELSE                                                          
+                  IF U3S.NORSK_BOSATT  = 'N'   THEN                             
+                     DO;                                                        
+                       W01_NORSK_BOSATT = '1'B;                                 
+                       W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                   
+                                                                                
+                     END;                                                       
+                  ELSE                                                          
+                  IF U3S.YSKADE_TILLEGG = 'J' THEN                              
+                     DO;                                                        
+                        W01_YSKADE = '1'B;                                      
+                        W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                  
+                                                                                
+                     END;                                                       
+                */                                                              
+                                                                                
+              END;                                                              
+           ELSE                                                                 
+              IF W01_NORSK_BOSATT  THEN                                         
+                 DO;                                                            
+                        W01_NORSK_BOSATT = '0'B;                                
+                        CALL OVERFØR_U3_SP_MAP;                                 
+                        S001U62O.DUMMYA = 'Ø';     /* PROT,DARK  */             
+                        W01_MAP = 'S001U62' ;                                   
+                                                                                
+                 END;                                                           
+           ELSE                                                                 
+              IF W01_EØS           THEN                                         
+                 DO;                                                            
+                        W01_EØS          = '0'B;                                
+                        CALL OVERFØR_U3_EØS_MAP;                                
+                        S001U63O.DUMMYA = 'Ø';     /* PROT,DARK  */             
+                        W01_MAP = 'S001U63' ;                                   
+                                                                                
+                 END;                                                           
+           ELSE                                                                 
+              IF W01_YSKADE       THEN                                          
+                 DO;                                                            
+                    CALL OVERFØR_U3_YP_MAP;            /* R001U606 */           
+                    W01_YSKADE = '0'B;                                          
+                                                                                
+                    S001201O.DUMMYA = 'Ø';             /* PROT,DARK  */         
+                    W01_MAP = 'S001201' ;                                       
+                                                                                
+                 END;                                                           
+                                                                                
+                                                                                
+      EXEC CICS RETURN;                                                         
+                                                                                
+                                                                                
+   %INCLUDE R0019912;                                                           
+   %INCLUDE R001U606;                                                           
+   %INCLUDE  R0019988;                        /*  KONV_HÅMD_ÅMD       */        
+   %INCLUDE  R0019989;                        /*  KONV_HÅMD_MÅ        */        
+   %INCLUDE  R0019990;                        /*  KONV_HÅMD_DMÅ       */        
+   %INCLUDE  R0019972;                        /*  DUMMY FEIL MELDING  */        
+                                                                                
+ END R0014U3;                                                                   

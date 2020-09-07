@@ -1,0 +1,410 @@
+ /*   SIST ENDRET PÅ PROD   2000.08.15  9.12.02 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 13.04.16 AV   JDA7339          */        
+ /*       SIST ENDRET 30/07-98 08.34.35 AV   JDA7339                  */        
+ /* ***************************************************************** */        
+ /*               R 0 0 1 1 8 3 1                                     */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R0011831 - KONTROLL AV BLANKETT FOR  UFØRETIDS-  */        
+ /*                             PUNKT FOR PERSONER FØDT 1923 TIL 1944 */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : TRUDE                                            */        
+ /*  PROGRAMMET BLE LAGET  I JUNI 1989                                */        
+ /*  ENDRINGERSDATO :                                                 */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  PROGRAMMET KONTROLLERER BLANKETT .                               */        
+ /*  BLANKETTEN KONTROLLERES ISOLERT - IKKE MOT STATUS.               */        
+ /*  OPERATØREN KAN BRUKE PF_TASENE:                                  */        
+ /*    PF_2 FØRER TIL AT TRANSAKSJONEN FORKASTES                      */        
+ /*    I BEGGE DISSE TILFELLENE SKRIVES DET UT MELDING PÅ SKJERMEN    */        
+ /*    OG PROGRAM R0010401 SØRGER FOR Å LEGGE UT NYTT BILDE FOR       */        
+ /*    REGISRERING AV NYTT UFØRETIDSPUNKT. TRANSKODE=R183             */        
+ /*  NÅR INGEN MMIL FINNES, SETTES TRANSKODE = R041 OG DET RETURNERES */        
+ /*  TIL R0010401.                                                    */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMETS TRANSKODER ER:                                       */        
+ /*  PROGRAMMET KALLES FRA R0010401 - REGISTRERING MED TRANSKODE      */        
+ /*  R183:                                                            */        
+ /*    EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);         */        
+ /*  PROGRAMMET HAR EXEC CICS XCTL TIL:                               */        
+ /*    R0010301 - VALG AV FUNKSJON                                    */        
+ /*    R0010401 - REGISTRERING                                        */        
+ /*  PROGRAMMET INCLUDERER:                                           */        
+ /*    R0011833 - KONTROLL_UF_SØKER                                             
+ /*    R0019902 - FINNE KJØNN                                         */        
+ /*    R0019904 - FØDSELSNUMMERKONTROLL                               */        
+ /*    R0019905 - BEREGN_ALDER                                        */        
+ /*    R0019909 - KONTROLL TRYGDETID                                  */        
+ /*    R0019910 - NUMERISK KONTROLL                                   */        
+ /*    R0019911 - DATO KONTROLL                                       */        
+ /*    R0019944 - SKRIV FEIL                                          */        
+ /*  PROGRAMMET BRUKER FØLGENDE MAPSET:                               */        
+ /*    S001833:                                                       */        
+ /*      MAP - S001831 - REGISTRERINGSBILDE GRUNNBLANKETT-UNGE_UFØRE_ */        
+ /*                                                      FØR_1967     */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*  FØDSELSNUMMERENDRINGSREGISERET BLIR LEST I SUBPROGRAM R0011833   */        
+ /*  VED CALL TIL R0019906.                                           */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*  BLIR SKREVET UT PÅ SKJERMBILDET FOR UF-BLANKETT  AV              */        
+ /*  PROSEDYRE SKRIV_FEIL I R0019944.                                 */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+  R00118:                                                                       
+    PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                         
+  %INCLUDE S00183;    /*  UF-MAPSETTET   */                                     
+  %INCLUDE P0011831;  /*  TRANS_OMR  UNGE_UFØRE_FØR_1967*/                      
+  %INCLUDE P0019906;  /*  TRANS_OPPL_OMRÅDE (BASED)             */              
+  %INCLUDE P0019908;  /*  COMMAREA     (BASED)           */                     
+  %INCLUDE P0019910;  /*  STYRINGS_OMRÅDE (BASED)           */                  
+  %INCLUDE P0019912;  /*  DIV-PARAM_OMRÅDE (BASED)          */                  
+  %INCLUDE DFHBMSCA;                                                            
+    DCL                                                                         
+       (BMSMAPBR,COMMAREA_PEKER) PTR;                                           
+                                                                                
+    /* NULLET UT ETTER KONF. MED PATHAK 10.08.2000 MARTIN */                    
+    /* DCL PLIXOPT CHAR(13) VAR STATIC EXTERNAL INIT(                           
+                                                   'NOSPIE NOSTAE')             
+    /* NULLET UT ETTER KONF. MED PATHAK 10.08.2000 MARTIN */                    
+                                                                                
+    DCL                                                                         
+       (ADDR,UNSPEC,CSTG,ONCODE,VERIFY,SUBSTR) BUILTIN;                         
+    DCL                                                                         
+       FEIL_FUNNET     BIT (1),                                                 
+       FEIL_I_SØKER    BIT (1),                                                 
+       FEIL_I_SPES     BIT (1),                                                 
+       ONKODE PIC'9999',                                                        
+       CURSOR_POS FIXED BIN(15) INIT(-1),                                       
+       ONK DEF ONKODE CHAR(4),                                                  
+       FEILKODE       CHAR(4),                                                  
+       DSNAVN         CHAR(8),                                                  
+       DATO           PIC '(6)9',                                               
+       ANT_FEIL_SKREVET FIXED DEC (3);                                          
+     DCL ALDER_UF   FIXED DEC (7) INIT (0);                                     
+  %PAGE;                                                                        
+                                                                                
+ FEILKODE  = 'FEIL';                                                            
+ DSNAVN     = '        ';                                                       
+                                                                                
+ EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                                     
+ EXEC CICS HANDLE AID PF2(PF2);                                                 
+                                                                                
+ KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);            
+ DATO = DATO_2000;                                                              
+                                                                                
+ IF FRA_CICS THEN                                                               
+  DO;                                                                           
+    KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);        
+    KOM_OMR.PEKER_LISTE.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);             
+    KOM_OMR.PEKER_LISTE.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);          
+  END;                                                                          
+                                                                                
+                                                                                
+ IF HENT_FRAM_MAP  THEN                                                         
+   DO;                                                                          
+     /* SKJERMBILDE GRUNNBLANKETT-UF */                                         
+     EXEC CICS SEND MAP('S001831') MAPSET('S001833') MAPONLY                    
+                                                         SET (BMSMAPBR);        
+     ALLOCATE S001831O;                                                         
+     S001831O.REGDATOO        = KONV_HÅMD_ÅMD(DATO_2000);                       
+   END;                                                                         
+                                                                                
+ RECEIVE_MAP:                                                                   
+                                                                                
+ IF ^HENT_FRAM_MAP  THEN                                                        
+    DO;                                                                         
+          EXEC CICS RECEIVE MAP('S001831')                                      
+                                    MAPSET('S001833') SET(BMSMAPBR);            
+       CALL BLANK_UF_MELDNR;                                                    
+       FEIL_MELD_NR = 0;                                                        
+    END;                                                                        
+                                                                                
+ IF FUNKSJONSKODEL > 0 THEN                                                     
+    DO;                                                                         
+       FUNKSJONSKODE = FUNKSJONSKODEI;                                          
+                                                                                
+             /* KONTROLLEN TILBAKE TIL R001030 - VALG AV FUNKSJON */            
+       EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);                    
+    END;                                                                        
+                                                                                
+ IF STYRE_KODEL > 0 THEN                                                        
+    DO;                                                                         
+       STYREKODE = STYRE_KODEI;                                                 
+       TRANSKODE = 'R041';                                                      
+                                                                                
+             /* KONTROLLEN TILBAKE TIL R0010401 - REGISTRERING */               
+                                                                                
+       EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                    
+    END;                                                                        
+                                                                                
+                                                                                
+ IF STYREKODE ^= 'UF'  &  FRA_CICS THEN                                         
+    TRANSKODE = 'R041';                                                         
+ ELSE                                                                           
+  DO;                                                                           
+                                                                                
+   TRANS_RETURKODE  = TRANSKODE;                                                
+   ANT_FEIL_SKREVET = 0;                                                        
+   FEIL_FUNNET      = '0'B;                                                     
+   FEIL_I_SØKER     = '0'B;                                                     
+                                                                                
+   SELECT (TRANSKODE);                                                          
+     WHEN('R183')                                                               
+        DO;                                                                     
+      /*   CALL BLANK_UF_SØKER;   */                                            
+           CALL BLANK_UF_MELDNR;                                                
+           CALL OVERFØR_MAP_TIL_SØKER;                                          
+           CALL KONTROLL_UF_SØKER(FEIL_I_SØKER);                                
+           TRANS_OPPL_OMR.FØDSNUMMER             = UFS.FNR;                     
+           ALDER_UF   = F_ALDER(UFS.FNR,UFS.UFT_ÅMD); /*TS0992*/                
+           IF ALDER_UF   > 2400 THEN                                            
+              TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD= 19970700; /*HL0897*/            
+           ELSE                                                                 
+           IF ALDER_UF   > 2200 THEN                                            
+              TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD= 19920500;                       
+           ELSE                                                                 
+              TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD= 19870700;                       
+        END;                                                                    
+     OTHERWISE;                                                                 
+        /*INGEN UTGANG DA CICS IKKE GODTAR UGYLDIGE TRANSAKSJONSKODER */        
+    END;  /*END SELECT */                                                       
+                                                                                
+                                                                                
+     IF FEIL_I_SØKER = '0'B  THEN                                               
+        FEIL_FUNNET = '0'B;                                                     
+     ELSE                                                                       
+        FEIL_FUNNET = '1'B;                                                     
+                                                                                
+  IF FEIL_FUNNET ! HENT_FRAM_MAP !                                              
+     FRA_UTEN_DIALOG ! TRANS_RETURKODE ^= TRANSKODE THEN                        
+     DO;                                                                        
+        CALL BLANK_MAP_MELDING;                                                 
+        CALL OVERFØR_SØKER_TIL_MAP;                                             
+                                                                                
+        IF HENT_FRAM_MAP THEN                                                   
+            EXEC CICS SEND MAP('S001831') MAPSET('S001833')                     
+                                        ERASE CURSOR;                           
+        ELSE                                                                    
+            EXEC CICS SEND MAP('S001831') MAPSET('S001833') ERASEAUP            
+                                                     DATAONLY CURSOR;           
+        HENT_FRAM_MAP = '0'B;                                                   
+        FEIL_MELD_NR  = 666;/* => FEIL_FUNNET ER SATT. */                       
+                                                                                
+        IF  FRA_CICS THEN                                                       
+          EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);                
+        ELSE                                                                    
+          GOTO RECEIVE_MAP;                                                     
+     END;                                                                       
+  ELSE                                                                          
+     DO;                                                                        
+          IF TRANSKODE = 'R183' THEN                                            
+             TRANS_RETURKODE = 'R183';                                          
+          ELSE                                                                  
+             TRANS_RETURKODE = TRANSKODE;                                       
+          IF FRA_CICS  THEN                                                     
+             DO;                                                                
+                BLANKETTYPE = STYREKODE;                                        
+                TRANSKODE = 'R042';                                             
+             END;                                                               
+      END;                                                                      
+   END;                                                                         
+   CALL UTGANG;                                                                 
+                                                                                
+  BLANK_UF_SØKER: PROC;                                                         
+                                                                                
+           UFS.FNR            =  0;                                             
+           UFS.FNR_GML        =  0;                                             
+           UFS.UFT_ÅMD        =  0;                                             
+  END BLANK_UF_SØKER;                                                           
+                                                                                
+                                                                                
+  BLANK_UF_MELDNR: PROC;                                                        
+                                                                                
+           UFS.REGDATO_ÅMDNR  =  0;                                             
+           UFS.TERMIDNR       =  0;                                             
+           UFS.REGDATO_ÅMD  = KONV_HÅMD_ÅMD((DIV_PARAM_OMR.DATO_2000));         
+           UFS.TERMID          = DIV_PARAM_OMR.TERMINAL_NR;                     
+           UFS.FNRNR          =  0;                                             
+           UFS.UFT_ÅMDNR      =  0;                                             
+  END BLANK_UF_MELDNR;                                                          
+                                                                                
+  BLANK_MAP_MELDING: PROC;                                                      
+                                                                                
+      DCL                                                                       
+        LOW BUILTIN;                                                            
+                                                                                
+        S001831O.MELDING1O    = (78)' ';                                        
+        S001831O.MELDING2O    = (78)' ';                                        
+        S001831O.MELDING3O    = (78)' ';                                        
+        S001831O.MELDING4O    = (78)' ';                                        
+        S001831O.MELDING5O    = (78)' ';                                        
+        S001831O.MELDING6O    = (78)' ';                                        
+   END BLANK_MAP_MELDING;                                                       
+                                                                                
+                                                                                
+                                                                                
+  OVERFØR_SØKER_TIL_MAP: PROC;                                                  
+                                                                                
+ /*  S001831O.REGDATOO        =  F_FELT_PIC_CHAR6(UFS.REGDATO); */              
+     S001831O.REGDATOO        =  KONV_HÅMD_ÅMD(DATO_2000);                      
+     S001831O.TERMIDO         =  DIV_PARAM_OMR.TERMINAL_NR;                     
+     S001831O.FNRO            =  F_FELT_PIC_CHAR11(UFS.FNR);                    
+     S001831O.UFMÅO           =  KONV_HÅMD_MÅ(UFS.UFT_ÅMD);                     
+                                                                                
+     /* FEILMELDINGER MARKERING AV FELT(ATTRIBUTTENE)  */                       
+     S001831O.DUMMYA            = '_';                                          
+                                                                                
+     /*DERSOM FEIL FRA BEHANDLE-TRANS OVERFØRES FEIL HER, ...... */             
+     IF ^ FRA_CICS   THEN                                                       
+        DO;                                                                     
+           IF FEIL_MELD_NR > 0  THEN                                            
+              CALL SKRIV_FEIL(FEIL_MELD_NR);                                    
+              FEIL_MELD_NR   = 0;                                               
+        END;                                                                    
+     S001831O.REGDATOA        = DFHBMASK;                                       
+     S001831O.TERMIDA         = DFHBMASK;                                       
+                                                                                
+     IF UFS.FNRNR    =  0 THEN                                                  
+        S001831O.FNRA = DFHBMUNN;                                               
+     ELSE                                                                       
+        DO;                                                                     
+           S001831O.FNRA  = DFHUNINT;                                           
+           S001831I.FNRL  = CURSOR_POS;                                         
+           IF UFS.FNRNR  ^= 999 THEN                                            
+              CALL SKRIV_FEIL(UFS.FNRNR);                                       
+        END;                                                                    
+                                                                                
+     IF UFS.UFT_ÅMDNR   =  0 THEN                                               
+        S001831O.UFMÅA  = DFHBMUNN;                                             
+     ELSE                                                                       
+        DO;                                                                     
+           S001831O.UFMÅA  = DFHUNINT;                                          
+           S001831I.UFMÅL  = CURSOR_POS;                                        
+           IF UFS.UFT_ÅMDNR^= 999 THEN                                          
+              CALL SKRIV_FEIL(UFS.UFT_ÅMDNR);                                   
+        END;                                                                    
+  END OVERFØR_SØKER_TIL_MAP;                                                    
+                                                                                
+  OVERFØR_MAP_TIL_SØKER: PROC;                                                  
+                                                                                
+      IF S001831I.FNRL       > 0  THEN                                          
+         UFS.FNR             = S001831I.FNRI ;                                  
+      IF S001831I.UFMÅL      > 0  THEN                                          
+         UFS.UFT_ÅMD         =  KONV_MÅ_HÅMD(S001831I.UFMÅI);;                  
+  END OVERFØR_MAP_TIL_SØKER;                                                    
+                                                                                
+                                                                                
+  UTGANG: PROC;                                                                 
+    IF  FRA_CICS THEN                                                           
+        EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                   
+    ELSE                                                                        
+        EXEC CICS RETURN;                                                       
+  END UTGANG;                                                                   
+                                                                                
+  FEILBEH:                                                                      
+                                                                                
+     EXEC CICS HANDLE CONDITION ERROR(ABEND);                                   
+                                                                                
+     PROGRAM_ID = 'R0011831';                                                   
+                                                                                
+     ALLOCATE S001831O;                                                         
+                                                                                
+     S001831O.MELDING2O =                                                       
+              'F E I L  H A R  O P P S T Å T T ! ! !.';                         
+                                                                                
+     S001831O.MELDING3O =                                                       
+              'EIBRCODE : ' !! UNSPEC(EIBRCODE);                                
+                                                                                
+     S001831O.MELDING4O =                                                       
+          'EIBFN    : ' !! UNSPEC(EIBFN) !! '. FEILKODE : ' !! FEILKODE         
+                                         !! '. DATASETT : ' !! DSNAVN;          
+                                                                                
+     S001831O.MELDING5O =                                                       
+                   'PROGRAMNAVN :  ' !! PROGRAM_ID    !!                        
+                   '.INGEN OPPDATERING ER BLITT UTFØRT.';                       
+                                                                                
+     S001831O.MELDING6O =                                                       
+                   'TA UTSKRIFT!!!. TRYKK DERETTER "ENTER".';                   
+                                                                                
+                                                                                
+     EXEC CICS SEND MAP('S001831')                                              
+                                                 MAPSET('S001833');             
+                                                                                
+     EXEC CICS RECEIVE MAP('S001831')                                           
+                                    MAPSET('S001833') SET(BMSMAPBR);            
+                                                                                
+                                                                                
+     EXEC CICS SYNCPOINT ROLLBACK;                                              
+                                                                                
+                                                                                
+     TERMINERINGS_IND = 'F';                                                    
+                                                                                
+     TRANSKODE  = 'R041';                                                       
+                                                                                
+     CALL UTGANG;                                                               
+                                                                                
+  ABEND:                                                                        
+     EXEC CICS ABEND ABCODE(FEIL);                                              
+                                                                                
+                                                                                
+  PF2:                                                                          
+     TERMINERINGS_IND   = 'F';                                                  
+                                                                                
+     S001831O.MELDING6O =                                                       
+      'NBNBNBNBNB***    TRANSAKSJONEN ER FORKASTET.    ***NBNBNBNBNB';          
+                                                                                
+     EXEC CICS SEND MAP('S001831') MAPSET('S001833')                            
+                                                  DATAONLY;                     
+     /* DUMMY SEND-KALL.                              */                        
+                                                                                
+     EXEC CICS SEND MAP('S001831')                                              
+                           MAPSET('S001833');                                   
+                                                                                
+     EXEC CICS DELAY INTERVAL(005);                                             
+                                                                                
+                                                                                
+     TRANSKODE = 'R183';                                                        
+     CALL UTGANG;                                                               
+                                                                                
+  %PAGE;                                                                        
+       %INCLUDE R0011833;               /*KONTROLL UF SØKER*/                   
+  %PAGE;                                                                        
+       %INCLUDE R0019902;               /*  FINNE KJØNN     */                  
+  %PAGE;                                                                        
+       %INCLUDE R0019904;               /* FØDSELSNUMMERKONTROLL */             
+  %PAGE;                                                                        
+       %INCLUDE R0019905;               /* BEREGNER ALDER */                    
+  %PAGE;                                                                        
+       %INCLUDE R0019910;               /* NUMERISK KONTROLL */                 
+  %PAGE;                                                                        
+       %INCLUDE R0019911;               /*  DATO KONTROLL  */                   
+ /*AGE;                                                                         
+      %INCLUDE R0019913; 2000-3           F_SNU_DATO                */          
+  %PAGE;                                                                        
+       %INCLUDE R0019944;               /* SKRIV_FEIL       */                  
+  %PAGE;                                                                        
+       %INCLUDE R0019912;/* KONVERTERING CHAR ==> PIC / PIC ==> CHAR */         
+  %PAGE;                                                                        
+       %INCLUDE R0019988;/* KONV_HÅMD_ÅMD   2000-3                   */         
+  %PAGE;                                                                        
+       %INCLUDE R0019989;/* KONV_HÅMD_MÅ    2000-3                   */         
+  %PAGE;                                                                        
+       %INCLUDE R0019984;/* KONV_MÅ_HÅMD    2000-3                   */         
+  %PAGE;                                                                        
+       %INCLUDE R0019983;/* KONV_ÅMD_HÅMD   2000-3                   */         
+  %PAGE;                                                                        
+       %INCLUDE R0019995;/* KONV_FNR11_FNR132000-3                   */         
+    END R00118;                                                                 
+                                                                                

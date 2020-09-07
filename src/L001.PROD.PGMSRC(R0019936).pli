@@ -1,0 +1,139 @@
+ /*   SIST ENDRET PÅ PROD   2003.03.19  8.46.30 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.03.20 13.23.06 AV   JDA7339          */        
+ /*       SIST ENDRET 04/05-98 13.31.39 AV   JDA7339                  */        
+ /*       SIST ENDRET 12/01-98 14.42.48 AV   SPA7339                  */        
+ /*       SIST ENDRET 28/09-82 08.20.59 AV   FARVIK                   */        
+ /* **************************************************************** */         
+ /* IDENTIFIKASJON:                                                  */         
+ /*     R0019936 - PROSEDYRE I PLI                                   */         
+ /*     PROGRAMMERER: GEIR, MARS 1982                                */         
+ /* HENSIKT:                                                         */         
+ /*     TILKNYTNINGSKODE ENDRES TIL ' '. SIVILSTAND ENDRES TIL S.    */         
+ /*     DERSOM EKTEFELLEN HAR EN OPPHøRT UFØREPERIODE, SÅ            */         
+ /*     SETTES STATUS_KODE_HIST = 'X' OG PENSJONSTYPE1 = U           */         
+ /* PROGRAMTILKNYTNING:                                              */         
+ /*     PROSEDYREN INCLUDES I R0011440 (SOM INCLUDES I 1420)         */         
+ /* BRUK:                                                            */         
+ /*     CALL OPPHØR_KOBLING_SKILTE(IND1,IND2)                        */         
+ /*                                                                  */         
+ /* **************************************************************** */         
+ OPPHØR_KOBLING_SKILTE:                                                         
+   PROC (IND1,IND2);                                                            
+   DCL                                                                          
+      I         FIXED      BIN (15),                                            
+      IND1      FIXED      BIN (15),                                            
+      IND2      FIXED      BIN (15);                                            
+                                                                                
+ /* 21.1.91. HL : IKKE OVERFØRING AV TRYGDETID : */                             
+                                                                                
+      B02.TT_GARANTI(IND1) = 0;                                                 
+      B02.TT_GARANTI(IND2) = 0;                                                 
+                                                                                
+      B02.EK_INNT_OVER_2G     (IND1) = ' ';                                     
+      B02.EK_INNT_OVER_2G     (IND2) = ' ';                                     
+  /* FELTENE NEDENFOR VAR IKKE BLANKET - 20030206 HL : */                       
+      B02.RED_GP_3_2_5        (IND1) = ' ';                                     
+      B02.RED_GP_3_2_5        (IND2) = ' ';                                     
+      B02.GP_REDUKSJON_KODE   (IND1) = ' ';                                     
+      B02.GP_REDUKSJON_KODE   (IND2) = ' ';                                     
+                                                                                
+ /* **************************************************************** */         
+ /* SØKERS PENSJONSSTATUS                                            */         
+ /* **************************************************************** */         
+      B02.SIVILSTAND(IND1)    = 'S';                                            
+      IF B01.PENSJONSTYPE2(IND1) ^= 'N' THEN            /*AFP*/                 
+         B02.PENSJONSTYPE2(IND1) = 'P';                                         
+ /* **************************************************************** */         
+ /* FINN TILKNYTNINGSSEGMENT TIL EKTEFELLEN                          */         
+ /* **************************************************************** */         
+      DO I = 1 TO 13 WHILE (B02.TILKN.FNR_TILKN(IND1,I) > 0);                   
+         IF B02.FNR_TILKN(IND1,I) = B02.FNR(IND2) THEN                          
+            DO;                                                                 
+               DO J = I TO 13 WHILE (                                           
+                                   B02.FNR_TILKN(IND1,J+1) > 0);                
+                  B02.TILKN.TILKNYTNINGSKODE(IND1,J) =                          
+                      B02.TILKN.TILKNYTNINGSKODE(IND1,J+1);                     
+                  B02.TILKN.FT_FØR_91(IND1,J) =                                 
+                      B02.TILKN.FT_FØR_91(IND1,J+1);                            
+                  B02.FNR_TILKN(IND1,J) =                                       
+                                         B02.FNR_TILKN(IND1,J+1);               
+                  B02.TILKN.TILKNYTNINGSKODE(IND1,J+1) = ' ';                   
+                  B02.TILKN.FT_FØR_91(IND1,J+1)        = ' ';                   
+                  B02.FNR_TILKN(IND1,J+1)              = 0;                     
+               END;                                                             
+               IF I = J THEN                                                    
+                  DO;                                                           
+                    B02.TILKN.TILKNYTNINGSKODE(IND1,J) = ' ';                   
+                    B02.FNR_TILKN(IND1,J)              = 0;                     
+                  END;                                                          
+               I = 13;                                                          
+            END;                                                                
+      END;                                                                      
+ /* **************************************************************** */         
+ /* EKTEFELLENS PENSJONSSTATUS                                       */         
+ /* **************************************************************** */         
+      B02.SIVILSTAND(IND2) = 'S';                                               
+ /* **************************************************************** */         
+ /* DERSOM EKTEFELLEN ER PENSJONIST                                  */         
+ /* **************************************************************** */         
+      SELECT (B02.PENSJONSTYPE1(IND2));                                         
+         WHEN ('A','U','Y')                                                     
+               B02.PENSJONSTYPE2(IND2) = 'P';                                   
+         WHEN ('K')                                                             
+            IF B02.PENSJONSTYPE2(IND2) ^= 'N' THEN                              
+               B02.PENSJONSTYPE2(IND2) = 'P';                                   
+ /* **************************************************************** */         
+ /* ELLERS ER PENSJONSTYPE1 = F ELLER G                              */         
+ /* **************************************************************** */         
+         WHEN ('F','G')                                                         
+                                                                                
+            DO;                                                                 
+               B02.PENSJONSTYPE2(IND2)    = ' ';                                
+                                                                                
+ /* 27.2.85 HL : NÅR DET ER EN UFØREHISTORIKK, SÅ SKAL               */         
+ /*              STATUS_KODE_HIST VÆRE 'X',PT1 = 'U' OG PT2 = ' '    */         
+                                                                                
+               IF B01.UFT_ÅMD(IND2,1) > 0           THEN                        
+                                                                                
+                  DO;                                                           
+                     B02.STATUS_KODE_HIST(IND2) = 'X';                          
+                     B02.PENSJONSTYPE1   (IND2) = 'U';                          
+                     B02.PENSJONSTYPE2   (IND2) = ' ';                          
+                  END;                                                          
+                                                                                
+               ELSE                                                             
+                                                                                
+ /* HIT 27.2.85 HL                                                   */         
+                                                                                
+                  B02.STATUS_KODE_HIST(IND2) = 'O';                             
+            END;                                                                
+         OTHERWISE                                                              
+            DO;                                                                 
+            END;                                                                
+      END;                                                                      
+ /* **************************************************************** */         
+ /* FINN TILKNYTNINGSSEGMENT TIL SØKER                               */         
+ /* **************************************************************** */         
+    DO I = 1 TO 13 WHILE (B01.FNR_TILKN(IND2,I) > 0);                           
+          DO;                                                                   
+             IF B01.FNR_TILKN(IND2,I) = B01.FNR(IND1) THEN                      
+              DO;                                                               
+                DO J = I TO 13 WHILE (                                          
+                                   B02.FNR_TILKN(IND2,J+1) > 0);                
+                   B02.TILKN.TILKNYTNINGSKODE(IND2,J) =                         
+                                  B02.TILKN.TILKNYTNINGSKODE(IND2,J+1);         
+                   B02.FNR_TILKN(IND2,J) =                                      
+                                               B02.FNR_TILKN(IND2,J+1);         
+                   B02.TILKN.TILKNYTNINGSKODE(IND2,J+1) = ' ';                  
+                   B02.FNR_TILKN(IND2,J+1)              = 0;                    
+                END;                                                            
+                IF I = J THEN                                                   
+                   DO;                                                          
+                      B02.TILKN.TILKNYTNINGSKODE(IND2,J) = ' ';                 
+                      B02.FNR_TILKN(IND2,J)              = 0;                   
+                   END;                                                         
+                I = 13;                                                         
+              END;                                                              
+          END;                                                                  
+    END;                                                                        
+   END OPPHØR_KOBLING_SKILTE;                                                   

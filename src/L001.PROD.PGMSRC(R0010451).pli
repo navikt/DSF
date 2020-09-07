@@ -1,0 +1,619 @@
+ /*   SIST ENDRET PÅ PROD   2007.07.09  8.18.11 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ TEST   2007.05.02 12.07.35 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2006.05.10 13.04.05 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.03.24  8.04.20 AV   SPA2970          */        
+ /*       SIST ENDRET 06/05-98 10.06.46 AV   JDA7339                  */        
+ /*       SIST ENDRET 14/01-98 15.18.36 AV   SPA7339                  */        
+ /******************************************************************* */        
+ /*IDENTIFIKASJON:                                                    */        
+ /************************                                            */        
+ /*  PROGRAM-IDENT : R0010451 -  FJERN SISTE TRANS -   SUBPROGRAM     */        
+ /*  PROGRAM-SPRÅK : PLI                                              */        
+ /*  PROGRAMMERER  : JAN HARALD KRISTENSEN                            */        
+ /*  PROGRAMMET BLE LAGET  :                                          */        
+ /*  ENDRINGERSDATO :                                                 */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */        
+ /******************************************************************* */        
+ /*HENSIKT:                                                           */        
+ /************                                                        */        
+ /*  SUB-PROGRAM I DELSYSTEMET FJERNING.                              */        
+ /*  VIS_MEG_SISTE_TRANS:                                             */        
+ /*    RUTINEN LESER SISTE OG NEST-SISTE STATUS INN I B01 OG B00      */        
+ /*    RUTINEN LESER SISTE TRANS I TRANSHISTORIKKEN                   */        
+ /*  MAPS_UT_ST:                                                      */        
+ /*    RUTINEN SKRIVER SISTE OG NEST_SISTE STATUS TIL SKJERMEN        */        
+ /*  LOW_VALUES_TIL_MAP:                                              */        
+ /*    ???????????                                                    */        
+ /*  MAPUT_STATUS:                                                    */        
+ /*    ???????????                                                    */        
+ /*  HENT_SVAR_OG_BEKREFT                                             */        
+ /*    RUTINEN BLIR CALLET I R0010450                                 */        
+ /*    RUTINEN FOR Å HENTE SVAR OG BEKREFTELSE PÅ FJERNING            */        
+ /*  FJERN_SISTE_TRANS                                                */        
+ /*    RUTINEN OMGJØR N-SISTE STATUS TIL SISTE OG SKRIVER UT PÅ       */        
+ /*    BASEN VED R0015401                                             */        
+ /*                                                                   */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /******************************************************************* */        
+ /*  PROCEDUREN VIS_MEG_SISTE_TRANS:                                  */        
+ /*    RUTINEN BLIR CALLET I R0010450.                                */        
+ /*    R0013101 LINKES FOR Å LESE SISTE/NEST-SISTE STATUS             */        
+ /*    FORBEREDE_TRANS(R0010452) CALLES FOR Å LESE FØRSTE TRANS       */        
+ /*    R0010411 LINKES FOR Å BYGGE OPP TRANS_LISTE OG FNR_ARRAY       */        
+ /*  PROCEDUREN MAPS_UT_ST:                                           */        
+ /*    RUTINEN BLIR CALLET I R0010450                                 */        
+ /*    CALLER LOW_VALUES_TIL_MAP(CALLES I R0010451)                   */        
+ /*    CALLER MAPUT_STATUS(CALLES I R0010451)                         */        
+ /*  PROCEDUREN HENT_SVAR_OG_BEKREFT:                                 */        
+ /*    RUTINEN BLIR CALLET I R0010450                                 */        
+ /*  PROCEDUREN FJERN_SISTE_TRANS:                                    */        
+ /*    RUTINEN BLIR CALLET I R0010450                                 */        
+ /*    R0015501 LINKES FOR Å FJERNE SISTE TRANS                       */        
+ /*    R0014901 LINKES FOR Å KJØRE AUTOHENDELSE-BEREGNING             */        
+ /*    R0015401 LINKES FOR Å SKRIVE SISTE STATUS                      */        
+ /*    R0010412 LINKES FOR Å LISTE UT FJERNET TRANS                   */        
+ /******************************************************************* */        
+ /*                                                                   */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /*************************                                           */        
+ /*  PO/PE-BASEN:                                                     */        
+ /*               LESES,TRANSER FJERNES,NY STATUS SKRIVES             */        
+ /*    ER DETTE NØDVENDIG????                                         */        
+ /*  **DDNAVN,TYPE I/O DATASETTOPPLYSNINGER,PSB-NAVN **               */        
+ /*                                                                   */        
+ /******************************************************************* */        
+ /*FEILMELDINGER:                                                     */        
+ /*********************                                               */        
+ /*  'PERSONEN ER REGISTRERT SOM DØD, FJERNING BARE TILLATT VIA....   */        
+ /*   FJERN ALLE'                                                     */        
+ /*  'PERSONEN ER TILKN. EN DØD SOM PEKER UTENFOR FAMILIEN, PRØV..    */        
+ /*   FJERN ALLE'                                                     */        
+ /*  'PERSONEN MED FNR ...... HAR IKKE SISTE-STATUS'                  */        
+ /*                                                                   */        
+ /* ****************************************************************  */        
+ /*  VISER SISTE TRANSAKSJON                                          */        
+ /* ****************************************************************  */        
+                                                                                
+ VIS_MEG_SISTE_TRANS: PROC;                                                     
+                                                                                
+   DCL                                                                          
+          GJEMME_BLANKETTYPE    CHAR(2),                                        
+          GJEMME_VIRKDATO       PIC'(8)9',                                      
+          WORK_IND              BIT(1) ,                                        
+          NS                    BIT(1)   INIT ('0'B),                           
+          SS                    BIT(1)   INIT ('1'B),                           
+          SISTE_TRANS_FUNNET    BIT(1)   INIT ('0'B);                           
+   DCL    W_DATO                PIC '(8)9' INIT (0);                            
+   DCL    CHAR_8                CHAR (8);                                       
+                                                                                
+  /*------------------------------------------------------------------*/        
+  /*  EKSEKVERINGEN BEGYNNER HER.                                     */        
+  /*------------------------------------------------------------------*/        
+                                                                                
+   MAX_ANTALL_TRANS             =   5;                                          
+                                                                                
+   W_DATO                       = DIV_PARAM_OMR.DATO_2000;                      
+ /* ENDRET TILBAKE - SE REMEDY 2791*/                                           
+   DAGENS_DATO_PLUSS2_ÅMD       =  (W_DATO + 200)    ;                          
+   IF DAGENS_DATO_PLUSS2_M      >   12 THEN                                     
+      DO;                                                                       
+         DAGENS_DATO_PLUSS2_M   =   DAGENS_DATO_PLUSS2_M - 12;                  
+         DAGENS_DATO_PLUSS2_Å   =   DAGENS_DATO_PLUSS2_Å + 1;                   
+      END;                                                                      
+  /*                                                                            
+   DAGENS_DATO_PLUSS2_ÅMD       =  (W_DATO + 600)    ;                          
+   IF DAGENS_DATO_PLUSS2_M      >   12 THEN                                     
+      DO;                                                                       
+         DAGENS_DATO_PLUSS2_M   =   DAGENS_DATO_PLUSS2_M - 12;                  
+         DAGENS_DATO_PLUSS2_Å   =   DAGENS_DATO_PLUSS2_Å + 1;                   
+      END;      ************** */                                               
+                                                                                
+   GJEMME_VIRKDATO           =   TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;              
+   GJEMME_BLANKETTYPE           =   TRANS_OPPL_OMR.BLANKETTYPE;                 
+   TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =  DAGENS_DATO_PLUSS2_ÅMD ;                 
+   TRANS_OPPL_OMR.FØDSNUMMER        =  FNR_SØKER ;                              
+                                                                                
+   TRANS_OPPL_OMR.BLANKETTYPE   =  'O1';          /* FOR Å SETTE DØD */         
+   DIV_PARAM_OMR.ØNSKET_STATUS  =  ' ';           /* INIT 3101       */         
+                                                                                
+   /*-----------------------------------------------------------------*/        
+   /* OPPRETT-STATUS-FOR-FAMILIEN                                     */        
+   /*-----------------------------------------------------------------*/        
+                                                                                
+   EXEC CICS LINK PROGRAM ('R0013101') COMMAREA(KOM_OMR);                       
+                                                                                
+   IF FEIL_MELD_NR   =  0    THEN                                               
+      DO;                                                                       
+         DO I  = 1 TO  14;                                                      
+                                                                                
+            IF B01.RF0PERSN.FNR        (I)  =  FNR_SØKER    &                   
+               B01.STATUS.VIRK_DATO_ÅMD (I) >  0            THEN                
+               DO;                                                              
+                  SØKER_IND_SS              =  I ;                              
+                  I                         =  14;                              
+               END;                                                             
+         END;                                                                   
+                                                                                
+         IF SØKER_IND_SS                = 0     THEN                            
+            DO;                                                                 
+               KOM_OMR.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);         
+               KOM_OMR.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);              
+                                                                                
+               CALL FORBEREDE_TRANS;                                            
+                                                                                
+               B01.FNR(14)              = 0; /* RYDDE OPP ETTER 5201 */         
+                                                                                
+               IF TRANS_OPPL_OMR.BLANKETTYPE = 'O1' THEN                        
+                  DO;                                                           
+                     MAP_MELDING =                                              
+                        'PERSONEN ER REGISTRERT SOM DØD, FJERNING BARE'         
+                        !! ' TILLATT VIA FJERN ALLE';                           
+                     FEIL        = '1'B;                                        
+                     GOTO SLUTT        ;                                        
+                  END;                                                          
+               ELSE IF FEIL  !  FATAL_FEIL THEN    GOTO SLUTT;                  
+                                                                                
+              /*-----------------------------------------------------*/         
+              /* BYGG-TRANS-LISTE, DVS LES SISTE TRANS               */         
+              /*-----------------------------------------------------*/         
+                                                                                
+               ANTALL_TRANS_I_TRANS_LISTE = 1;                                  
+                                                                                
+               EXEC CICS LINK PROGRAM ('R0010411'   ) COMMAREA                  
+                                      (LOKAL_KOM_OMR);                          
+            END;                                                                
+                                                                                
+         ELSE                                                                   
+            SELECT  (B01.STATUS.STATUS_KODE(SØKER_IND_SS));                     
+                                                                                
+               /*----------------------------------------------------*/         
+               /* SISTE_STATUS                                       */         
+               /* HVIS PERSON ER DØD , SKAL FJERNING AVVISES         */         
+               /*----------------------------------------------------*/         
+               WHEN ('S')                                                       
+                  DO;                                                           
+                     IF B01.PENSJONSTYPE1(SØKER_IND_SS) = 'D' THEN              
+                        DO;                                                     
+                          MAP_MELDING = 'PERSONEN ER REGISTRERT '  !!           
+                                        'SOM DØD, FJERNING BARE '  !!           
+                                        'TILLATT VIA FJERN ALLE.'    ;          
+                          FEIL = '1'B;                                          
+                          GOTO SLUTT;                                           
+                        END;                                                    
+                     ELSE                                                       
+                        DO I = 1 TO 13;                                         
+                           IF B01.TILKNYTNINGSKODE(SØKER_IND_SS,I) =            
+                                                            'D' THEN            
+                                                                                
+                              DO;                                               
+                                 DO J = 1 TO 14 UNTIL(B01.FNR_TILKN(            
+                                          SØKER_IND_SS,I) = B01.FNR(J));        
+                                 END;                                           
+                                                                                
+                                 DO K = 1 TO 13 WHILE                           
+                                               (B01.FNR_TILKN(J,K) > 0);        
+                                                                                
+                                    IF B01.FNR_TILKN(J,K) ^=                    
+                                       B01.FNR(SØKER_IND_SS) THEN               
+                                       DO;                                      
+                                          MAP_MELDING =                         
+                                             'PERSONEN ER TILKN.  ' !!          
+                                             'EN DØD,SOM PEKER UT ' !!          
+                                             'ENFOR FAMILIEN,PRØV ' !!          
+                                             'FJERN ALLE';                      
+                                          FEIL = '1'B;                          
+                                          GOTO SLUTT;                           
+                                       END;                                     
+                                 END;                                           
+                              END;                                              
+                        END;              /*  DO I = 1 TO 13;   */              
+                                                                                
+                                                                                
+                  PIC_8DEF = B01.STATUS.VIRK_DATO_ÅMD(SØKER_IND_SS);            
+                                                                                
+                  PIC_8.MND  = PIC_8.MND  - 1;   /* MINUS 1 MND    */           
+                                                                                
+                  IF PIC_8.MND = 0   THEN                                       
+                     DO;                                                        
+                        PIC_8.ÅR = PIC_8.ÅR - 1;                                
+                        PIC_8.MND = 12;                                         
+                     END;                                                       
+                     /*                                                         
+                                                                                
+                  IF MOD(PIC_4,100) = 0            THEN                         
+                     PIC_4          = PIC_4 - 88;   * -1 ÅR  +12MND */          
+                                                                                
+                  TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = PIC_8DEF;                  
+                  TRANS_OPPL_OMR.FØDSNUMMER    = FNR_SØKER;                     
+                  TRANS_OPPL_OMR.BLANKETTYPE   = 'O1';                          
+                  STATUS_TYPE_SS          = DIV_PARAM_OMR.STATUS_TYPE;          
+                                                                                
+                  /*--------------------------------------------------*/        
+                  /* SISTE_STATUS FLYTTES TIL B02                     */        
+                  /*--------------------------------------------------*/        
+                                                                                
+                  B02 = B01;                                                    
+                  B01 = '';                                                     
+                                                                                
+                  /*--------------------------------------------------*/        
+                  /* N.S STATUS OPPRETTES I B01.                      */        
+                  /*--------------------------------------------------*/        
+                                                                                
+                  DIV_PARAM_OMR.ØNSKET_STATUS  = ' ';                           
+                                                                                
+                  EXEC CICS LINK PROGRAM('R0013101') COMMAREA(KOM_OMR);         
+                                                                                
+                  /*--------------------------------------------------*/        
+                  /* SJEKKER OM TRANS.                                */        
+                  /*--------------------------------------------------*/        
+                                                                                
+                  IF DIV_PARAM_OMR.FEIL_MELD_NR    = 502   &                    
+                     STATUS_TYPE                   = 'C'   THEN                 
+                     DO;                                                        
+                        DIV_PARAM_OMR.FEIL_MELD_NR = 0;                         
+                        ANTALL_TRANS_I_TRANS_LISTE = 0;                         
+                    END;                                                        
+                                                                                
+                 IF DIV_PARAM_OMR.FEIL_MELD_NR     > 0     THEN                 
+                    DO;                                                         
+                       FATAL_FEIL                  = '1'B;                      
+                       GOTO SLUTT;                                              
+                    END;                                                        
+                                                                                
+                 DO I = 1 TO 14;                                                
+                                                                                
+                    IF B01.RF0PERSN.FNR        (I) =  FNR_SØKER   &             
+                       B01.STATUS.VIRK_DATO_ÅMD (I) >  0           THEN         
+                       DO;                                                      
+                          SØKER_IND_NS             =  I ;                       
+                          I                        =  14;                       
+                       END;                                                     
+                 END;                                                           
+                                                                                
+                 STATUS_TYPE_NS          = DIV_PARAM_OMR.STATUS_TYPE;           
+                                                                                
+                 /*---------------------------------------------------*/        
+                 /*   OPPRETTER TRANS - LISTE FOR SENERE UTMAPPING.   */        
+                 /*   BYGG OPP TRANS-LISTE                            */        
+                 /*---------------------------------------------------*/        
+                                                                                
+                 DO I = 1 TO  ANTALL_TRANS_I_TRANS_LISTE;                       
+                    KOM_OMR.TRANS_OPPL_PEKER =                                  
+                                             ADDR(TRANS_LISTE_LINJE(I));        
+                    KOM_OMR.TRANS_PEKER     = ADDR(TRANS_LISTE_LINJE.           
+                                                       VARIABEL_DEL(I));        
+                    EXEC CICS LINK PROGRAM   ('R0010411'    )                   
+                                   COMMAREA  ( LOKAL_KOM_OMR);                  
+                    TRANS_ANT               =  TRANS_ANT + 1 ;                  
+                 END;                                                           
+               END;                                                             
+                                                                                
+            WHEN('N')          /* NEST_SISTE_STATUS  */                         
+               DO;                                                              
+                 /*---------------------------------------------------*/        
+                 /*   INGEN SISTE STATUS FINNES. N.S. FINNES I B01    */        
+                 /*---------------------------------------------------*/        
+                                                                                
+                  MAP_MELDING = 'PERSONEN MED FØDSELSNUMMER ' !! PIC_11         
+                             !! ' HAR IKKE SISTE - STATUS.' ;                   
+                  FEIL = '1'B                               ;                   
+                  GOTO SLUTT                                ;                   
+               END;                                                             
+            OTHERWISE;   /* BLANK             */                                
+         END;            /* SELECT            */                                
+      END;               /* DO                */                                
+   ELSE                  /* FEIL_MELD_NR = 0  */                                
+      FATAL_FEIL = '1'B;                                                        
+                                                                                
+ SLUTT:                                                                         
+                                                                                
+                                                                                
+ END VIS_MEG_SISTE_TRANS;                                                       
+                                                                                
+                                                                                
+                                                                                
+  /* **************************************************************** */        
+  /*  PROCEDURE FOR Å SKRIVE SISTE_STATUS OG NEST_SISTE_STATUS        */        
+  /*   TIL SKJERMEN.                                                  */        
+  /* **************************************************************** */        
+                                                                                
+  MAPS_UT_ST:                                                                   
+     PROC;                                                                      
+                                                                                
+     DCL  I               FIXED BIN(15);                                        
+                                                                                
+                                                                                
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     IF SØKER_IND_NS              >  0                  THEN                    
+        DO;                                                                     
+           PIC_8DEF  =  B01.STATUS.VIRK_DATO_ÅMD   (SØKER_IND_NS);              
+           S0010E1O.VIRK_DATO_MÅO =  KONV_HÅMD_MÅ(PIC_8DEF);                    
+           S0010E1O.STATUSTYPEO   =  STATUS_TYPE_NS;                            
+        END;                                                                    
+                                                                                
+     EXEC CICS SEND MAP('S0010E1') MAPSET('S0010E3') ERASE ACCUM                
+                                                          PAGING;               
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     IF SØKER_IND_NS              > 0 THEN                                      
+        CALL MAPUT_STATUS('N');                                                 
+                                                                                
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     /**** HER SKAL TRANSENE UT    *****/                                       
+     EXEC CICS SEND MAP('S0010E3') MAPSET('S0010E3') ACCUM PAGING;              
+     DO I = ANTALL_TRANS_I_TRANS_LISTE TO 1 BY -1;                              
+        CALL LOW_VALUES_TIL_MAP;                                                
+        KOM_OMR.TRANS_OPPL_PEKER = TRANS_LISTE.TRANS_OPPL_PTR(I);               
+        S0010E4O.VIRK_DATO_MÅO   =                                              
+                 KONV_HÅMD_MÅ (TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD);               
+        S0010E4O.BL_TYPEO        = TRANS_OPPL_OMR.BLANKETTYPE;                  
+        S0010E4O.FNR_SØKERO      = TRANS_OPPL_OMR.FØDSNUMMER;                   
+        IF TRANS_LISTE.FNR_EK(I) > 0 THEN                                       
+           S0010E4O.FNR_EKTEFO   = TRANS_LISTE.FNR_EK(I);                       
+        S0010E4O.ANT_BARNO       = TRANS_LISTE.ANT_BARN(I);                     
+        EXEC CICS SEND MAP('S0010E4') MAPSET('S0010E3') ACCUM PAGING;           
+     END;                                                                       
+                                                                                
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     IF SØKER_IND_SS > 0 THEN                                                   
+        DO;                                                                     
+           PIC_8DEF = B02.STATUS.VIRK_DATO_ÅMD(SØKER_IND_SS);                   
+           S0010E5O.VIRK_DATO_MÅO = KONV_HÅMD_MÅ(PIC_8DEF);                     
+           S0010E5O.STATUSTYPEO   = STATUS_TYPE_SS;                             
+        END;                                                                    
+                                                                                
+     EXEC CICS SEND MAP('S0010E5') MAPSET('S0010E3') ACCUM PAGING;              
+                                                                                
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     IF SØKER_IND_SS > 0 THEN                                                   
+        CALL MAPUT_STATUS('S');                                                 
+                                                                                
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     /*****      TRAILER       *****/                                           
+     S0010E6O.MELDINGO = 'VENNLIGST IKKE LA DETTE BILDET STÅ LENGE DA'!!        
+                         ' DET OPPTAR STORE MASKIN-RESSURSER.';                 
+     EXEC CICS SEND MAP('S0010E6') MAPSET('S0010E3') ACCUM PAGING;              
+     EXEC CICS SEND PAGE RETAIN NOAUTOPAGE;                                     
+                                                                                
+     MAPUT_STATUS:                                                              
+        PROC(TYPE);                                                             
+        DCL                                                                     
+           TYPE CHAR(1);                                                        
+        DCL                                                                     
+            1 HUSK_B01,                                                         
+              %INCLUDE   P0019921;                                              
+                                                                                
+        IF TYPE = 'S' THEN                                                      
+           DO;                                                                  
+              HUSK_B01 = B01;                                                   
+              B01 = B02;                                                        
+           END;                                                                 
+                                                                                
+        DO I = 1 TO 14 ;                                                        
+           IF B01.RF0PERSN.FNR(I) > 0 THEN                                      
+              DO;                                                               
+                 IF I = 1 THEN                                                  
+                    S0010E2O.TEKSTO = 'FNR_MOR ';                               
+                 ELSE IF I = 2 THEN                                             
+                    S0010E2O.TEKSTO = 'FNR_FAR ';                               
+                 ELSE                                                           
+                    S0010E2O.TEKSTO = 'FNR_BARN';                               
+                 S0010E2O.FNR_STATUSO    = B01.RF0PERSN.FNR(I);                 
+                 S0010E2O.PT1O           = B01.STATUS.PENSJONSTYPE1(I);         
+                 S0010E2O.PT2O           = B01.STATUS.PENSJONSTYPE2(I);         
+                 S0010E2O.PT3O           = B01.STATUS.PENSJONSTYPE3(I);         
+                 S0010E2O.SIV_STANDO     = B01.SIVILSTAND(I);                   
+                 EXEC CICS SEND MAP('S0010E2') MAPSET('S0010E3')                
+                                                    ACCUM PAGING;               
+              END;                                                              
+        END;                                                                    
+                                                                                
+        IF TYPE = 'S' THEN                                                      
+           B01 = HUSK_B01;                                                      
+     END MAPUT_STATUS;                                                          
+  END MAPS_UT_ST;                                                               
+                                                                                
+  /* **************************************************************** */        
+  /*                                                                  */        
+  /*  PROCEDURE FOR Å HENTE SVAR OG BEKREFTELSE PÅ FJERNING           */        
+  /*                                                                  */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+  /*                                                                            
+  */                                                                            
+  HENT_SVAR_OG_BEKREFT:                                                         
+     PROC;                                                                      
+     EXEC CICS RECEIVE MAP('S0010E6') MAPSET('S0010E3') INTO (S0010E6I);        
+     IF STYREKODE = 'ST' & ANTALL_TRANS_I_TRANS_LISTE = 0 THEN                  
+        S0010E6O.MELDING1O = 'INGEN TRANSER, TA HARDCOPY SELV !  Nå !!';        
+     ELSE                                                                       
+        S0010E6O.MELDING1O = 'PF8 GIR LISTE AV FJERNEDE TRANSER' !!             
+                             ' PÅ PRINTER.';                                    
+     S0010E6O.MELDINGO  = 'BEKREFT FJERNING MED: B   VENNLIGST VæR ' !!         
+                         'SNAR DA DETTE OPPTAR STORE RESSURSER';                
+     EXEC CICS SEND    MAP('S0010E6') MAPSET('S0010E3');                        
+     EXEC CICS RECEIVE MAP('S0010E6') MAPSET('S0010E3') INTO (S0010E6I);        
+                                                                                
+  END HENT_SVAR_OG_BEKREFT;                                                     
+                                                                                
+                                                                                
+                                                                                
+  /* **************************************************************** */        
+  /*                                                                  */        
+  /*  PROCEDURE FOR Å OMGJØRE N-SISTE STATUS TIL SISTE OG SKRIVE UT   */        
+  /*  PÅ BASEN VED R0015401                                           */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+                                                                                
+  FJERN_SISTE_TRANS:                                                            
+     PROC;                                                                      
+                                                                                
+     DCL                                                                        
+       1 HJELP_B01,                                                             
+         %INCLUDE   P0019921;                                                   
+     DCL                                                                        
+       FUNNET_I_B01      BIT (1)     INIT('0'B);                                
+                                                                                
+     FNR_ARRAY              =  0;                                               
+ /*  NESTE_HENDELSE_DATO_ÅMD = DAGENS_DATO_PLUSS1_ÅMD;  */                      
+     NESTE_HENDELSE_DATO_ÅMD = DAGENS_DATO_PLUSS2_ÅMD;                          
+     KJØRINGS_TYPE          = 'O';                  /* FOR AUTOBER */           
+                                                                                
+     /*-------------------------------------------------------------*/          
+     /*  FJERNING AV SISTE TRANS                                    */          
+     /*-------------------------------------------------------------*/          
+                                                                                
+     FJERN_ALLE = '0'B;         /* INDIKERER BARE FJERNING AV SISTE */          
+                                                                                
+                                                                                
+     DO I = 1 TO ANTALL_TRANS_I_TRANS_LISTE;                                    
+                                                                                
+        KOM_OMR.TRANS_OPPL_PEKER = TRANS_LISTE.TRANS_OPPL_PTR(I);               
+        SEARCH_FNR               = TRANS_OPPL_OMR.FØDSNUMMER;                   
+                                                                                
+        EXEC CICS LINK PROGRAM ('R0015501') COMMAREA(LOKAL_KOM_OMR);            
+                                                                                
+                                                                                
+        IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                  
+           DO;                                                                  
+              FATAL_FEIL = '1'B;                                                
+              GOTO SLUTT;                                                       
+           END;                                                                 
+     END;                                                                       
+                                                                                
+     DO I = 1 TO 13;                                                            
+        /*----------------------------------------------------------*/          
+        /* DANN DE-AKTIV-TRANS TIL STATISTIKK                       */          
+        /*----------------------------------------------------------*/          
+                                                                                
+        IF B02.RF0PERSN.FNR(I) > 0 THEN                                         
+           DO;                                                                  
+              TRANS_OPPL_OMR.FØDSNUMMER = B02.RF0PERSN.FNR(I);                  
+              EXEC CICS LINK PROGRAM ('R0016301') COMMAREA(KOM_OMR);            
+                                                                                
+              IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                            
+                 DO;                                                            
+                    FATAL_FEIL = '1'B;                                          
+                    GOTO SLUTT;                                                 
+                 END;                                                           
+           END;                                                                 
+     END;                                                                       
+                                                                                
+     TRANS_OPPL_OMR.FØDSNUMMER = SEARCH_FNR;                                    
+                                                                                
+     HJELP_B01 = B01;  /* N-SISTE GJEMMES UNNA   */                             
+                                                                                
+     IF SØKER_IND_NS > 0 THEN                                                   
+        DO;                                                                     
+           /*-------------------------------------------------------*/          
+           /* GJEMME UNNA DE SOM HAR SISTE,MEN IKKE N-SISTE         */          
+           /*-------------------------------------------------------*/          
+                                                                                
+           K    = 14;                                                           
+           DO I = 1 TO 14;                                                      
+              IF B02.RF0PERSN.FNR(I) > 0 THEN                                   
+                 DO;                                                            
+                    DO J = 1 TO 14;                                             
+                       IF B02.RF0PERSN.FNR(I) = B01.RF0PERSN.FNR(J) THEN        
+                          FUNNET_I_B01 = '1'B;                                  
+                                                                                
+                       IF FUNNET_I_B01 THEN                                     
+                          LEAVE;                                                
+                    END;                                                        
+                                                                                
+                    IF ^FUNNET_I_B01 THEN                                       
+                       DO;                                                      
+                          FNR_ARRAY(K) = B02.RF0PERSN.FNR(I);                   
+                          K = K - 1;                                            
+                       END;                                                     
+                 END;                                                           
+                                                                                
+              FUNNET_I_B01 = '0'B;                                              
+           END;                                                                 
+                                                                                
+           /*-------------------------------------------------------*/          
+           /* AUTOHENDELSE BEREGNING                                */          
+           /*-------------------------------------------------------*/          
+                                                                                
+           B02 = B01 ;                        /* LIKT FØR AUTO    */            
+                                                                                
+         /*IF STYRINGS_OMR.BRUKERID ^= 'AUTO' THEN */                           
+              EXEC CICS LINK PROGRAM ('R0014901') COMMAREA(KOM_OMR);            
+                                                                                
+           /*-------------------------------------------------------*/          
+           /* LEGGE I B02 FOR FJERNING AV SISTE FOR DISSE PERSONER  */          
+           /*-------------------------------------------------------*/          
+                                                                                
+           DO I = 14 TO 1 BY -1     WHILE (FNR_ARRAY(I) > 0)         ;          
+              B02.RF0PERSN.FNR(I)        = FNR_ARRAY(I)              ;          
+              B02.STATUS.VIRK_DATO_ÅMD(I) = 0;                                  
+           END;                                                                 
+        END;                                                                    
+     ELSE                                                                       
+        DO I = 1 TO 14;                                                         
+           B02.STATUS.VIRK_DATO_ÅMD(I)   = 0;                                   
+        END;                                                                    
+                                                                                
+     B00   = HJELP_B01;                                                         
+                                                                                
+     DO I = 1 TO 14;                                                            
+        B00.STATUS.VIRK_DATO_ÅMD(I) = 0;                                        
+     END;                                                                       
+                                                                                
+     /*---------------------------------------------------------------*/        
+     /* SKRIV NY STATUS TIL BASE                                      */        
+     /*---------------------------------------------------------------*/        
+                                                                                
+     EXEC CICS LINK PROGRAM ('R0015401') COMMAREA(KOM_OMR);                     
+                                                                                
+     IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                     
+        DO;                                                                     
+           FATAL_FEIL = '1'B;                                                   
+           GOTO SLUTT;                                                          
+        END;                                                                    
+                                                                                
+     /*-------------------------------------------------------------*/          
+     /* GÅR IGJENNON B02  P.GR.A FNR OG TKNR TIL NORTRYGD           */          
+     /*-------------------------------------------------------------*/          
+    /*                                                                          
+     DO I = 1 TO 14                                                  ;          
+                                                                                
+        IF B01.TKNR (I)          >  0                             THEN          
+           DO;                                                                  
+              CALL P900_NOR_DATA (B02.FNR (I) , B02.TKNR (I) )       ;          
+                                                                                
+              IF DIV_PARAM_OMR.FEIL_MELD_NR >  0                  THEN          
+                 DO;                                                            
+                   FATAL_FEIL               = '1'B;                             
+                   GOTO SLUTT;                                                  
+                 END;                                                           
+           END;                                                                 
+     END;                                                                       
+     */                                                                         
+     /*---------------------------------------------------------------*/        
+     /*  UTLISTING AV FJERNEDE TRANSER . TRANS_LISTE TIL SKJERM       */        
+     /*---------------------------------------------------------------*/        
+                                                                                
+     IF ANTALL_TRANS_I_TRANS_LISTE > 0 THEN                                     
+        EXEC CICS LINK PROGRAM ('R0010412') COMMAREA(LOKAL_KOM_OMR);            
+     ELSE                                                                       
+        DO;                                                                     
+           MAP_MELDING = 'SISTE STATUS ER NÅ FJERNET, TRYKK ENTER !  ';         
+           EXEC CICS SEND TEXT FROM (MAP_MELDING) ACCUM PAGING ERASE            
+                                                  JUSTIFY(15);                  
+           EXEC CICS SEND PAGE RETAIN NOAUTOPAGE;                               
+        END;                                                                    
+                                                                                
+  SLUTT:                                                                        
+      IF DIV_PARAM_OMR.FEIL_MELD_NR = 0 &                                       
+         FATAL_FEIL = '0'B         THEN                                         
+            CALL SKRIV_BRUKER_ID;                                               
+                                                                                
+  END FJERN_SISTE_TRANS;                                                        
+                                                                                

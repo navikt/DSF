@@ -1,0 +1,1209 @@
+ /*   SIST ENDRET PÅ PROD   2007.08.13  8.05.44 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2004.03.23 16.16.09 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.03.23 14.08.18 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.03.16 14.00.05 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 13.30.26 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.31 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.15.11 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.10.30  8.56.04 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 12.35.08 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.44 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   1999.12.09  8.44.10 AV   JDA7339          */        
+ /*       SIST ENDRET 06/07-98 11.22.37 AV   JDA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0011003 - PROSEDYRE I PLI                                     */        
+ /*    PROGRAMMERER: JAN JULI 1981                                    */        
+ /* ***************************************************************** */        
+ /*ENDRINGSDATO : 29/2-84                                             */        
+ /*ENDRINGEN GJELDER: I VISSE TILFELLER HAR VI IKKE OPPLYSNINGER OM   */        
+ /*                   AVDØD MOR/FAR.   FELTKONTROLLENE ER NÅ TILPASSET*/        
+ /*                   DETTE. UOPPGITT FNR PÅ AVDØDE MÅ REGISTRERES MED*/        
+ /*                   FNR = 11111111111. TRYGDETIDEN REGNES BARE FOR  */        
+ /*                   SØKER.                                          */        
+ /*ENDRINGEN BLE UTFØRT AV KARIN                                      */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /*    PROSEDYREN FORETAR KONTROLL AV DATA FOR FB_SØKER (BESTÅR AV    */        
+ /*    BARNEDEL,OPPL. OM MOREN,OPPL.OM FAREN) FRA                     */        
+ /*    GRUNNBLANKETT FORELDRELØSE BARN.                               */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLING AV PENSJON FOR      */        
+ /*    FORELDRELØSE BARN                                              */        
+ /*    INCLUDES I  R0011001.                                          */        
+ /*BRUK:                                                              */        
+ /*    CALL KONTROLL_FB_SØKER(FEIL_I_FB_SØKER);                       */        
+ /*                                                                   */        
+ /*ENDRET: 13.04.88 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */        
+ /* ******                                                            */        
+ /*    INITIERER BRUKERID I FNR_REG MED CICS_IND FØR KONTROLL PÅ      */        
+ /*    OM FNR ER ENDRET (R0019906).                                   */        
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*   MODULEN KONTROLLERER FB_SØKER, OG RETURNERER                    */        
+ /*   MED FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RIKTIG              */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ KONTROLL_FB_SØKER:                                                             
+   PROC (FEIL_FUNNET);                                                          
+   DCL                                                                          
+      FEIL_FUNNET     BIT (1);                                                  
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+   DCL                                                                          
+      SUBSTR          BUILTIN;                                                  
+                                                                                
+   DCL                                                                          
+      ALDER           FIXED DEC (5),                                            
+      IÅR             FIXED BIN (15),                                           
+      J               FIXED BIN (15),                                           
+      ANT_BARN        FIXED BIN (15),                                           
+      TELL            FIXED BIN (15),                                           
+      TELLER          FIXED BIN (15),                                           
+      TELL_BARN       FIXED BIN (15),                                           
+      DAGENS_DATO_ÅMD PIC '(8)9',                                /*Y2K*/        
+      DAGENS_DATO_ÅM  DEF DAGENS_DATO_ÅMD PIC '(6)9',            /*Y2K*/        
+      DAGENS_DATO_Å   DEF DAGENS_DATO_ÅMD PIC '(4)9',            /*Y2K*/        
+      W_ÅMD           PIC '(8)9',                                /*Y2K*/        
+      W_HÅ            PIC '(4)9' DEF W_ÅMD POS(1),               /*Y2K*/        
+      W_HÅM           PIC '(6)9' DEF W_ÅMD POS(1),               /*Y2K*/        
+      W_Å             PIC '(2)9' DEF W_ÅMD POS(3),               /*Y2K*/        
+      W_ÅMD_CHAR      CHAR (8)   DEF W_ÅMD POS(1),               /*Y2K*/        
+      W_DIFF          DEC FIXED(5,0);                            /*Y2K*/        
+ /*  HJELPE DCL FOR Å SNU DATO                                       */         
+                                                                                
+   DCL  1 W_FNR13_M         PIC '(13)9',                                        
+        1  F_AARM DEF W_FNR13_M POS (5)         PIC'(4)9';                      
+                                                                                
+   DCL  1 W_FNR13_F         PIC '(13)9',                                        
+        1 F_AARF DEF W_FNR13_F POS (5)         PIC'(4)9';                       
+                                                                                
+   DCL                                                                          
+      1 W_FNR13           PIC '(13)9',                                          
+      1  W_FNR13_PIC    DEF W_FNR13,                             /*Y2K*/        
+       2 W_FNR13_DD     PIC '99',                                /*Y2K*/        
+       2 W_FNR13_MN     PIC '99',                                /*Y2K*/        
+       2 W_FNR13_HÅ     PIC '(4)9',                              /*Y2K*/        
+      1  W_FNR13_CH     DEF W_FNR13,                             /*Y2K*/        
+       2 W_FNR13_CH_DD  CHAR (2),                                /*Y2K*/        
+       2 W_FNR13_CH_MM  CHAR (2),                                /*Y2K*/        
+       2 W_FNR13_CH_HÅ  CHAR (4);                                /*Y2K*/        
+   DCL                                                                          
+      HJ_VIRK_DATO_ÅMD                             PIC '(8)9',   /*Y2K*/        
+      HJ_VIRK_DATO_ÅM DEF HJ_VIRK_DATO_ÅMD POS(1)  PIC '(6)9';   /*Y2K*/        
+   DCL                                                                          
+      HJ_DØDSDATO_ÅMD_M                             PIC '(8)9',  /*Y2K*/        
+      HJ_DØDSDATO_ÅM_M DEF HJ_DØDSDATO_ÅMD_M POS(1) PIC '(6)9',  /*Y2K*/        
+      HJ_DØDSDATO_Å_M  DEF HJ_DØDSDATO_ÅMD_M POS(1) PIC '(4)9',  /*Y2K*/        
+      HJ_DØDSDATO_M_M  DEF HJ_DØDSDATO_ÅMD_M POS(5) PIC '99',    /*Y2K*/        
+      HJ_DØDSDATO_D_M  DEF HJ_DØDSDATO_ÅMD_M POS(7) PIC '99',    /*Y2K*/        
+      HJ_DØDSDATO_ÅMD_F                             PIC '(8)9',  /*Y2K*/        
+      HJ_DØDSDATO_ÅM_F DEF HJ_DØDSDATO_ÅMD_F POS(1) PIC '(6)9',  /*Y2K*/        
+      HJ_DØDSDATO_Å_F  DEF HJ_DØDSDATO_ÅMD_F POS(1) PIC '(4)9',  /*Y2K*/        
+      HJ_DØDSDATO_M_F  DEF HJ_DØDSDATO_ÅMD_F POS(5) PIC '99',    /*Y2K*/        
+      HJ_DØDSDATO_D_F  DEF HJ_DØDSDATO_ÅMD_F POS(7) PIC '99';    /*Y2K*/        
+   DCL                                                                          
+      HJ_FNR                      PIC '(11)9',                                  
+      HJ_FNR_D                    PIC '99' DEF HJ_FNR POS(1),                   
+      HJ_FNR_M                    PIC '99' DEF HJ_FNR POS(3),                   
+      HJ_FNR_Å                    PIC '99' DEF HJ_FNR POS(5),                   
+                                                                                
+      FØDSELSDATO_ÅMD_F_B  PIC'(8)9',                            /*Y2K*/        
+                                                                                
+      FØDSELSDATO_ÅMD      PIC'(8)9',                            /*Y2K*/        
+      FØDSELSDATO_Å        PIC'(4)9' DEF FØDSELSDATO_ÅMD POS(1), /*Y2K*/        
+                                                                                
+ /* RETTET 110888 BF: FØLGENDE 2 FELT REDEFINERTE FRA POS(1)  */                
+                                                                                
+      FØDSELSDATO_M        PIC'99' DEF FØDSELSDATO_ÅMD POS(5),   /*Y2K*/        
+      FØDSELSDATO_D        PIC'99' DEF FØDSELSDATO_ÅMD POS(7);   /*Y2K*/        
+                                                                                
+   DCL 1 FNR_REG,                                                               
+         2 FNR1       FIXED DEC(11),                                            
+         2 FNR2       FIXED DEC(11),                                            
+         2 BRUKERID   CHAR     ( 4);                                            
+                                                                                
+   DCL FELT CHAR(15);                                                           
+                                                                                
+                                                                                
+                                                                                
+ /*LOVENDRING MED VIRKNING FRA 1.1.91 SP : */                                   
+  DIV_PARAM_OMR.REGN_1291 = ' ';                                                
+                                                                                
+  FNR_REG.BRUKERID     =  DIV_PARAM_OMR.CICS_IND;                               
+  FEIL_FUNNET          = '0'B;                                                  
+  ANT_FEIL_SKREVET     =  0;                                                    
+  TELL_BARN            =  0;                                                    
+  DAGENS_DATO_ÅMD      =  DATO_2000;                                            
+  W_FNR13_M            =  KONV_FNR11_FNR13(FNR_M);                              
+  W_FNR13_F            =  KONV_FNR11_FNR13(FNR_F);                              
+                                                                                
+ /*--------------------------------------------------------------*/             
+ /*  BARNEDELEN                                                  */             
+ /*--------------------------------------------------------------*/             
+                                                                                
+  IF F_FELT_PIC_CHAR11(BARN.FNR_B(1)) ^= (11)'0' THEN                           
+     DO;                                                                        
+        IF ^F_NUMERISK(VIRK_DATO_ÅMD) THEN                       /*Y2K*/        
+           DO;                                                                  
+              FEIL_FUNNET    = '1'B;                                            
+              VIRK_DATO_ÅMDNR = 200;                             /*Y2K*/        
+           END;                                                                 
+        ELSE                                                                    
+           IF ^ F_GYLDIG_DATO(VIRK_DATO_ÅMD) THEN                /*Y2K*/        
+              DO;                                                               
+                 FEIL_FUNNET    = '1'B;                                         
+                 VIRK_DATO_ÅMDNR = 9;                            /*Y2K*/        
+              END;                                                              
+           ELSE                                                                 
+              DO;                                                               
+                 HJ_VIRK_DATO_ÅMD = VIRK_DATO_ÅMD;               /*Y2K*/        
+                 IF VIRK_DATO_ÅMD > F_DAGS_DATO_PLUSS_1MND THEN  /*Y2K*/        
+                    DO;                                                         
+                       FEIL_FUNNET    = '1'B;                                   
+                       VIRK_DATO_ÅMDNR = 10;                     /*Y2K*/        
+                    END;                                                        
+              END;                                                              
+     END;                                                                       
+  ELSE                                                                          
+     DO;                                                                        
+        FEIL_FUNNET     = '1'B;                                                 
+        BARN.FNR_BNR(1) = 1;                                                    
+     END;                                                                       
+    /* ************************************************** */                    
+    /* KONTROLL AV ACF2 FOR TILLGANGE TIL TKNR            */                    
+    /*                                                    */                    
+          /* ************************************************** */              
+    BO_TKNR  = TKNR(1);                                                         
+                                                                                
+     IF ^FEIL_FUNNET  THEN                                                      
+      DO;                                                                       
+          CALL  KONTROLL_ACF2;                                                  
+          IF FEIL_MELD_NR    >  0  THEN                                         
+             DO;                                                                
+                FEIL_FUNNET = '1'B;                                             
+                IF FEIL_MELD_NR    =  0654  THEN                                
+                   FNR_BNR(1) =  FEIL_MELD_NR;                                  
+                ELSE                                                            
+                   TKNRNR(1)  = FEIL_MELD_NR;                                   
+             END;                                                               
+      END;                                                                      
+                                                                                
+  IF ^FEIL_FUNNET THEN                                                          
+      DO ANT_BARN = 1 TO 12 WHILE(F_FELT_PIC_CHAR11(BARN.FNR_B(ANT_BARN)        
+                                              ) ^= (11)'0');                    
+         KEY_PEKER        = ADDR(TKNR(ANT_BARN));                               
+         IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(BARN.FNR_B(ANT_BARN))) THEN          
+            DO;                                                                 
+               FEIL_FUNNET            = '1'B;                                   
+               BARN.FNR_BNR(ANT_BARN) = 200;                                    
+            END;                                                                
+         ELSE                                                                   
+            IF ^F_GYLDIG_FNR(BARN.FNR_B(ANT_BARN)) THEN                         
+               DO;                                                              
+                  FEIL_FUNNET            = '1'B;                                
+                  BARN.FNR_BNR(ANT_BARN) = 1;                                   
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  FNR_REG.FNR1 = BARN.FNR_B(ANT_BARN);                          
+                  EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);         
+                     IF FNR_REG.FNR2 > 0 THEN                                   
+                     DO;                                                        
+                        BARN.FNR_BNR(ANT_BARN) = 203;                           
+                        FNR_GML_B(ANT_BARN)    = FNR_REG.FNR1;                  
+                        BARN.FNR_B(ANT_BARN)   = FNR_REG.FNR2;                  
+                     END;                                                       
+                  IF ^FEIL_FUNNET THEN                                          
+                     DO;                                                        
+ /*Y2K*/             ALDER =F_ALDER(BARN.FNR_B(ANT_BARN),VIRK_DATO_ÅMD);        
+                        IF ALDER < 0 THEN                                       
+                           DO;                                                  
+                              FEIL_FUNNET            = '1'B;                    
+                              BARN.FNR_BNR(ANT_BARN) = 349;                     
+                           END;                                                 
+                        ELSE                                                    
+                           IF ALDER > 2000 THEN                                 
+                              IF YSKADE_TILLEGG_M ^= 'J' &                      
+                                 YSKADE_TILLEGG_F ^= 'J' THEN                   
+                                 DO;                                            
+                                    FEIL_FUNNET            = '1'B;              
+                                    BARN.FNR_BNR(ANT_BARN) = 228;               
+                                    VIRK_DATO_ÅMDNR        = 999;/*Y2K*/        
+                                 END;                                           
+                              ELSE                                              
+                                 IF ALDER > 2100 THEN                           
+                                    DO;                                         
+                                       FEIL_FUNNET            = '1'B;           
+                                       BARN.FNR_BNR(ANT_BARN) = 332;            
+                                       VIRK_DATO_ÅMDNR     = 999;/*Y2K*/        
+                                    END;                                        
+                     END;                                                       
+                  HJ_FNR        = BARN.FNR_B(1);                                
+                  W_FNR13       = KONV_FNR11_FNR13(HJ_FNR);      /*Y2K*/        
+                  FØDSELSDATO_Å = W_FNR13_HÅ;                    /*Y2K*/        
+                  FØDSELSDATO_M = W_FNR13_MN;                    /*Y2K*/        
+                  FØDSELSDATO_D = W_FNR13_DD;                    /*Y2K*/        
+                  IF ANT_BARN = 1 THEN                                          
+                     FØDSELSDATO_ÅMD_F_B = FØDSELSDATO_ÅMD;                     
+                  ELSE                                                          
+                     IF FØDSELSDATO_ÅMD_F_B < FØDSELSDATO_ÅMD THEN              
+                        DO;                                                     
+                           FEIL_FUNNET            = '1'B;                       
+                           BARN.FNR_BNR(ANT_BARN) = 349;                        
+                        END;                                                    
+               END;                                                             
+         IF F_FELT_PIC_CHAR11(BARN.FNR_B(ANT_BARN)) =                           
+                                          F_FELT_PIC_CHAR11(FNR_M) THEN         
+            DO;                                                                 
+               FEIL_FUNNET            = '1'B;                                   
+               BARN.FNR_BNR(ANT_BARN) = 165;                                    
+            END;                                                                
+         ELSE                                                                   
+            IF F_FELT_PIC_CHAR11(BARN.FNR_B(ANT_BARN)) =                        
+                                          F_FELT_PIC_CHAR11(FNR_F) THEN         
+               DO;                                                              
+                  FEIL_FUNNET            = '1'B;                                
+                  BARN.FNR_BNR(ANT_BARN) = 165;                                 
+               END;                                                             
+         IF NAVN_B(ANT_BARN)      = (25)' ' THEN                                
+            DO;                                                                 
+               FEIL_FUNNET        = '1'B;                                       
+               NAVN_BNR(ANT_BARN) = 2;                                          
+            END;                                                                
+         IF ^F_NUMERISK(F_FELT_PIC_CHAR4(TKNR(ANT_BARN))) THEN                  
+            DO;                                                                 
+               FEIL_FUNNET       = '1'B;                                        
+               TKNRNR(ANT_BARN)  = 200;                                         
+            END;                                                                
+         ELSE                                                                   
+            DO;                                                                 
+                  EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                    
+                  EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)            
+                                                     INTO(TK_RECL);             
+                  LEAVE;                                                        
+               NOTFND:                                                          
+                  FEIL_FUNNET      = '1'B;                                      
+                  TKNRNR(ANT_BARN) = 3;                                         
+            END;                                                                
+         TELL_BARN = TELL_BARN + 1;                                             
+      END;                                                                      
+                                                                                
+ /* SJEKKER OM ET AV BARNAS FØDSELSNUMMER ER SKREVET FLERE GANGER     */        
+                                                                                
+    IF ^FEIL_FUNNET THEN                                                        
+       ANT_BARN = TELL_BARN;                                                    
+       DO ANT_BARN = 1 TO TELL_BARN;                                            
+          DO TELL = ANT_BARN TO TELL_BARN;                                      
+             IF TELL ^= ANT_BARN THEN                                           
+                IF F_FELT_PIC_CHAR11(BARN.FNR_B(TELL)) =                        
+                            F_FELT_PIC_CHAR11(BARN.FNR_B(ANT_BARN)) THEN        
+                   DO;                                                          
+                      FEIL_FUNNET = '1'B;                                       
+                      BARN.FNR_BNR(ANT_BARN) = 124;                             
+                      BARN.FNR_BNR(TELL)     = 999;                             
+                   END;                                                         
+          END;                                                                  
+       END;                                                                     
+    IF VERIFY(SPRÅK,'NBE ') ^= 0 THEN                                           
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          SPRÅKNR     = 6;                                                      
+       END;                                                                     
+                                                                                
+ /*  HER SETTES VERDIER INN I MENY_OMR                               */         
+                                                                                
+   IF ^FEIL_FUNNET THEN                                                         
+      DO;                                                                       
+         FØDSNUMMER    = BARN.FNR_B(1);                                         
+         VIRKNINGSDATO_ÅMD = VIRK_DATO_ÅMD;                      /*Y2K*/        
+      END;                                                                      
+                                                                                
+                                                                                
+ /*  OPPLYSNINGER OM MOREN                                           */         
+ IF FNR_M ^= (11)'1' THEN                                                       
+   DO;                                                                          
+                                            /* MORENS FNR ER OPPGITT */         
+      IF ^FEIL_FUNNET THEN                                                      
+         DO;                                                                    
+            HJ_DØDSDATO_ÅMD_M = DØDSDATO_ÅMD_M;                  /*Y2K*/        
+                                                                                
+            IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(FNR_M)) THEN                      
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  FNR_MNR     = 200;                                            
+               END;                                                             
+            ELSE                                                                
+               IF ^F_GYLDIG_FNR(FNR_M) THEN                                     
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     FNR_MNR     = 1;                                           
+                  END;                                                          
+               ELSE                                                             
+                  DO;                                                           
+                                       /* MOREN FNR ER ET GYLDIG FNR */         
+                     FNR_REG.FNR1    = FNR_M;                                   
+                     EXEC CICS LINK PROGRAM('R0019906')                         
+                     COMMAREA(FNR_REG);                                         
+                     IF FNR_REG.FNR2 > 0 THEN                                   
+                        DO;                                                     
+                           FNR_MNR   = 203;                                     
+                           FNR_GML_M = FNR_REG.FNR1;                            
+                           FNR_M     = FNR_REG.FNR2;                            
+                        END;                                                    
+                     IF F_KJØNN(FNR_M) ^= 'K' THEN                              
+                        DO;                                                     
+                           FEIL_FUNNET = '1'B;                                  
+                           FNR_MNR     = 231;                                   
+                        END;                                                    
+                  END;                                                          
+                                                                                
+            IF NAVN_M         = (25)' ' THEN                                    
+                  DO;                                                           
+                     FEIL_FUNNET = '1'B;                                        
+                     NAVN_MNR    = 229;                                         
+                  END;                                                          
+  /*Y2K*/   IF ^ F_NUMERISK(F_FELT_PIC_CHAR8(DØDSDATO_ÅMD_M)) THEN              
+               DO;                                                              
+                  FEIL_FUNNET  = '1'B;                                          
+                  DØDSDATO_ÅMD_MNR = 200;                        /*Y2K*/        
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  IF DØDSDATO_ÅMD_M  = 0 THEN                    /*Y2K*/        
+                     DO;                                                        
+                        FEIL_FUNNET  = '1'B;                                    
+                        DØDSDATO_ÅMD_MNR = 115;                  /*Y2K*/        
+                     END;                                                       
+                  ELSE                                                          
+                     IF ^F_GYLDIG_DATO(DØDSDATO_ÅMD_M) THEN      /*Y2K*/        
+                        DO;                                                     
+                           FEIL_FUNNET  = '1'B;                                 
+                           DØDSDATO_ÅMD_MNR = 75;                /*Y2K*/        
+                        END;                                                    
+                  ELSE                                                          
+                     IF  HJ_DØDSDATO_D_M = 00 ! HJ_DØDSDATO_D_M = 99            
+                   THEN DO;                                                     
+                           FEIL_FUNNET  = '1'B;                                 
+                           DØDSDATO_ÅMD_MNR = 75;   /* JD 12.99    Y2K*/        
+                        END;                                                    
+                     ELSE                                                       
+                        DO;                                                     
+                           IF HJ_DØDSDATO_ÅMD_M >= DAGENS_DATO_ÅMD THEN         
+                              DO;                                               
+                                 FEIL_FUNNET  = '1'B;                           
+                                 DØDSDATO_ÅMD_MNR = 76;          /*Y2K*/        
+                              END;                                              
+                           ELSE DO;                                             
+                              W_ÅMD  =                           /*Y2K*/        
+                               F_DATO_ÅMD_PLUSS1(DØDSDATO_ÅMD_M);/*Y2K*/        
+                              IF (HJ_VIRK_DATO_ÅM < HJ_DØDSDATO_ÅM_M) !         
+                                                                                
+                                 (HJ_VIRK_DATO_ÅM < W_HÅM &      /*Y2K*/        
+                                  HJ_VIRK_DATO_ÅM > 199100) THEN /*Y2K*/        
+                                 DO;                                            
+                                    FEIL_FUNNET    = '1'B;                      
+                                    DØDSDATO_ÅMD_MNR = 77;       /*Y2K*/        
+                                 END;                                           
+                              ELSE DO;                           /*Y2K*/        
+                                 W_FNR13=KONV_FNR11_FNR13(FNR_M);/*Y2K*/        
+                                 W_ÅMD_CHAR =                    /*Y2K*/        
+                                      W_FNR13_CH_HÅ !!           /*Y2K*/        
+                                      W_FNR13_CH_MM !!                          
+                                      W_FNR13_CH_DD;                            
+                                 IF DØDSDATO_ÅMD_M <= W_ÅMD      /*Y2K*/        
+                                 THEN DO;                        /*Y2K*/        
+                                       FEIL_FUNNET  = '1'B;                     
+                                       DØDSDATO_ÅMD_MNR = 75;    /*Y2K*/        
+                                    END;                                        
+                              END;                               /*Y2K*/        
+                           END;                                  /*Y2K*/        
+                        END; /* END GYLDIG DØDSDATO      */                     
+               END;          /* END DØDSDATO ER NUMERISK */                     
+                                                                                
+            IF ^ (VILKÅR_8_4_3A_M = 'J' ! VILKÅR_8_4_3A_M = 'N' !               
+               VILKÅR_8_4_3A_M = ' ') THEN                                      
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  VILKÅR_8_4_3A_MNR = 45;                                       
+               END;                                                             
+            IF ^(OVERKOMP_M = 'N' ! OVERKOMP_M = 'J') &                         
+               F_AARM < 1937    THEN                                            
+               DO;                                                              
+                  FEIL_FUNNET  = '1'B;                                          
+                  OVERKOMP_MNR = 35;                                            
+               END;                                                             
+            IF ^(OVERKOMP_M = ' ') &                                            
+               F_AARM > 1936    THEN                                            
+               DO;                                                              
+                  FEIL_FUNNET  = '1'B;                                          
+                  OVERKOMP_MNR = 623;                                           
+               END;                                                             
+            IF ^ F_NUMERISK(F_FELT_PIC_CHAR2(TT_F67_M)) THEN     /*Y2K*/        
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  TT_F67_MNR  = 200;                                            
+               END;                                                             
+            IF ^ F_NUMERISK(F_FELT_PIC_CHAR2(TT_E66_Å_M)) THEN   /*Y2K*/        
+               DO;                                                              
+                 FEIL_FUNNET  = '1'B;                                           
+                 TT_E66_Å_MNR = 200;                                            
+               END;                                                             
+            IF ^ F_NUMERISK(F_FELT_PIC_CHAR2(TT_E66_M_M)) THEN   /*Y2K*/        
+               DO;                                                              
+                  FEIL_FUNNET  = '1'B;                                          
+                  TT_E66_M_MNR = 200;                                           
+               END;                                                             
+            IF ^ F_NUMERISK(F_FELT_PIC_CHAR7(PI_M)) THEN                        
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  PI_MNR      = 200;                                            
+               END;                                                             
+            IF ^ (YSKADE_TILLEGG_M = 'J' ! YSKADE_TILLEGG_M = ' ') THEN         
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  YSKADE_TILLEGG_MNR = 300;                                     
+               END;                                                             
+                                                                                
+            HJ_FNR      = MOR.FNR_M;                                            
+                                                                                
+            IF MOR.TT_F67_M   = 0       &                                       
+               MOR.TT_E66_Å_M = 0        &                                      
+               MOR.TT_E66_M_M = 0          THEN                                 
+               DO;                                                              
+                  W_FNR13 = KONV_FNR11_FNR13(HJ_FNR);            /*Y2K*/        
+                  W_DIFF = 1967 - (W_FNR13_HÅ + 16);             /*Y2K*/        
+                  IF W_DIFF < 0 THEN W_DIFF = 0;                 /*Y2K*/        
+                  MOR.TT_F67_M = W_DIFF;                         /*Y2K*/        
+                  IF MOR.TT_F67_M > 40 THEN                                     
+                     MOR.TT_F67_M = 40;                                         
+                  ELSE                                                          
+                     IF (W_FNR13_HÅ + 16) > 1967 THEN            /*Y2K*/        
+                        MOR.TT_F67_M = 0;                                       
+                  IF (W_FNR13_HÅ + 16) > 1967 THEN               /*Y2K*/        
+                     W_DIFF = HJ_DØDSDATO_Å_M - (W_FNR13_HÅ +16);/*Y2K*/        
+                  ELSE                                                          
+                     W_DIFF = HJ_DØDSDATO_Å_M - 1967;            /*Y2K*/        
+                  IF W_DIFF < 0 THEN W_DIFF = 0;                 /*Y2K*/        
+                  MOR.TT_E66_Å_M = W_DIFF;                       /*Y2K*/        
+                  MOR.TT_E66_M_M =  HJ_DØDSDATO_M_M;             /*Y2K*/        
+                                                                                
+               END;                                                             
+                                                                                
+                                                                                
+ /*LOVENDRING MED VIRKNING FRA 1.1.91 SP : */                                   
+             IF  HJ_VIRK_DATO_ÅM  > 19920000 &                   /*Y2K*/        
+                 HJ_DØDSDATO_ÅM_M < 19920000 THEN                /*Y2K*/        
+                                                                                
+                  DIV_PARAM_OMR.REGN_1291 = 'J';                                
+                                                                                
+                                                                                
+         END;  /* END ^ FEIL_FUNNET */                                          
+   END;                                                                         
+ ELSE                                                                           
+   DO;                                                                          
+                                                                                
+   /* FNR_MOR = 11111111111 DVS UOPPGITT */                                     
+   /* OG INGEN AV FELTENE TIL AVDØDE SKAL     */                                
+   /* VÆRE UTFYLT                             */                                
+                                                                                
+      IF NAVN_M            ^= (25)' ' !                                         
+         DØDSDATO_ÅMD_M      ^= 0 !                              /*Y2K*/        
+         VILKÅR_8_4_3A_M     ^= ' ' !                                           
+         PI_M                ^= 0 !                                             
+         YSKADE_TILLEGG_M    ^= ' ' !                                           
+         OVERKOMP_M          ^= ' ' !                                           
+         TT_F67_M            ^= 99 !                /* NULLET MED 99 */         
+         TT_E66_M_M          ^= 99 !                /* NULLET MED 99 */         
+         TT_E66_Å_M          ^= 99  THEN                                        
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            FNR_MNR          = 267;                                             
+            NAVN_MNR         = 999;                                             
+            DØDSDATO_ÅMD_MNR = 999;                              /*Y2K*/        
+            VILKÅR_8_4_3A_MNR   = 999;                                          
+            PI_MNR           = 999;                                             
+            YSKADE_TILLEGG_MNR = 999;                                           
+            OVERKOMP_MNR     = 999;                                             
+            TT_F67_MNR       = 999;                                             
+            TT_E66_M_MNR     = 999;                                             
+            TT_E66_Å_MNR     = 999;                                             
+         END;                                                                   
+   END;                   /* AVDØDES FNR = 11111111111, DVS UKJENT   */         
+                                                                                
+                                          /*  OPPLYSNINGER OM FAREN  */         
+                                                                                
+  IF FNR_F ^= (11)'1' THEN                                                      
+     DO;                                                                        
+                                            /* FARENS FNR ER OPPGITT */         
+        IF ^FEIL_FUNNET THEN                                                    
+           DO;                                                                  
+              HJ_DØDSDATO_ÅMD_F = DØDSDATO_ÅMD_F;                /*Y2K*/        
+              IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(FNR_F)) THEN                    
+                 DO;                                                            
+                    FEIL_FUNNET = '1'B;                                         
+                    FNR_FNR     = 200;                                          
+                 END;                                                           
+              ELSE                                                              
+                 IF ^F_GYLDIG_FNR(FNR_F) THEN                                   
+                    DO;                                                         
+                       FEIL_FUNNET = '1'B;                                      
+                       FNR_FNR     = 1;                                         
+                    END;                                                        
+                 ELSE                                                           
+                    DO;                                                         
+                       FNR_REG.FNR1 = FNR_F;                                    
+                       EXEC CICS LINK PROGRAM('R0019906')                       
+                            COMMAREA(FNR_REG);                                  
+                       IF FNR_REG.FNR2 > 0 THEN                                 
+                          DO;                                                   
+                             FNR_FNR   = 203;                                   
+                             FNR_GML_F = FNR_REG.FNR1;                          
+                             FNR_F     = FNR_REG.FNR2;                          
+                          END;                                                  
+                       IF F_KJØNN(FNR_F) ^= 'M' THEN                            
+                          DO;                                                   
+                             FEIL_FUNNET = '1'B;                                
+                             FNR_FNR     = 232;                                 
+                          END;                                                  
+                    END;                                                        
+              IF NAVN_F = (25)' ' THEN                                          
+                 DO;                                                            
+                    FEIL_FUNNET = '1'B;                                         
+                    NAVN_FNR    = 230;                                          
+                 END;                                                           
+ /*Y2K*/      IF ^ F_NUMERISK(F_FELT_PIC_CHAR8(DØDSDATO_ÅMD_F)) THEN            
+                 DO;                                                            
+                    FEIL_FUNNET  = '1'B;                                        
+                    DØDSDATO_ÅMD_FNR = 200;                      /*Y2K*/        
+                 END;                                                           
+              ELSE                                                              
+                 DO;                                                            
+                    IF DØDSDATO_ÅMD_F = 0 THEN                   /*Y2K*/        
+                       DO;                                                      
+                          FEIL_FUNNET  = '1'B;                                  
+                          DØDSDATO_ÅMD_FNR = 115;                /*Y2K*/        
+                       END;                                                     
+                    ELSE                                                        
+                       IF ^ F_GYLDIG_DATO(DØDSDATO_ÅMD_F) THEN   /*Y2K*/        
+                          DO;                                                   
+                             FEIL_FUNNET  = '1'B;                               
+                             DØDSDATO_ÅMD_FNR = 75;              /*Y2K*/        
+                          END;                                                  
+                     ELSE                                                       
+                        IF  HJ_DØDSDATO_D_F = 00 ! HJ_DØDSDATO_D_F = 99         
+                     THEN DO;                                                   
+                             FEIL_FUNNET  = '1'B;                               
+                             DØDSDATO_ÅMD_MNR = 75; /* JD 12.99    Y2K*/        
+                          END;                                                  
+                       ELSE                                                     
+                          DO;                                                   
+                             IF HJ_DØDSDATO_ÅMD_F >=             /*Y2K*/        
+                                DAGENS_DATO_ÅMD THEN                            
+                                DO;                                             
+                                   FEIL_FUNNET  = '1'B;                         
+                                   DØDSDATO_ÅMD_FNR = 76;        /*Y2K*/        
+                                END;                                            
+                             ELSE DO;                                           
+                              W_ÅMD  =                           /*Y2K*/        
+                               F_DATO_ÅMD_PLUSS1(DØDSDATO_ÅMD_F);/*Y2K*/        
+                              IF (HJ_VIRK_DATO_ÅM < HJ_DØDSDATO_ÅM_F) !         
+                                                                                
+                                 (HJ_VIRK_DATO_ÅM < W_HÅM &      /*Y2K*/        
+                                  HJ_VIRK_DATO_ÅM > 199100) THEN /*Y2K*/        
+                                                                                
+                                   DO;                                          
+                                      FEIL_FUNNET    = '1'B;                    
+                                      DØDSDATO_ÅMD_FNR = 77;     /*Y2K*/        
+                                      VIRK_DATO_ÅMDNR = 999;     /*Y2K*/        
+                                   END;                                         
+                               ELSE DO;                          /*Y2K*/        
+                                 W_FNR13=KONV_FNR11_FNR13(FNR_F);/*Y2K*/        
+                                 W_ÅMD_CHAR =                    /*Y2K*/        
+                                      W_FNR13_CH_HÅ !!           /*Y2K*/        
+                                      W_FNR13_CH_MM !!                          
+                                      W_FNR13_CH_DD;                            
+                                 IF DØDSDATO_ÅMD_F <= W_ÅMD      /*Y2K*/        
+                                 THEN DO;                        /*Y2K*/        
+                                         FEIL_FUNNET  = '1'B;                   
+                                         DØDSDATO_ÅMD_FNR = 75;  /*Y2K*/        
+                                         FNR_FNR      = 999;                    
+                                      END;                                      
+                               END;                              /*Y2K*/        
+                             END;                                /*Y2K*/        
+                          END;                                                  
+                 END;                                                           
+              IF ^ (VILKÅR_8_4_3A_F = 'J' ! VILKÅR_8_4_3A_F = 'N' !             
+                 VILKÅR_8_4_3A_F = ' ') THEN                                    
+                 DO;                                                            
+                    FEIL_FUNNET       = '1'B;                                   
+                    VILKÅR_8_4_3A_FNR = 45;                                     
+                 END;                                                           
+              IF ^(OVERKOMP_F = 'N' ! OVERKOMP_F = 'J') &                       
+                 F_AARF < 1937    THEN                                          
+                 DO;                                                            
+                    FEIL_FUNNET  = '1'B;                                        
+                    OVERKOMP_FNR = 35;                                          
+                 END;                                                           
+              IF ^(OVERKOMP_F = ' ') &                                          
+                 F_AARF > 1936    THEN                                          
+                 DO;                                                            
+                    FEIL_FUNNET  = '1'B;                                        
+                    OVERKOMP_FNR = 623;                                         
+                 END;                                                           
+              IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(TT_F67_F)) THEN                 
+                 DO;                                                            
+                    FEIL_FUNNET = '1'B;                                         
+                    TT_F67_FNR  = 200;                                          
+                 END;                                                           
+              IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(TT_E66_Å_F)) THEN               
+                 DO;                                                            
+                    FEIL_FUNNET  = '1'B;                                        
+                    TT_E66_Å_FNR = 200;                                         
+                 END;                                                           
+              IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(TT_E66_M_F)) THEN               
+                 DO;                                                            
+                   FEIL_FUNNET  = '1'B;                                         
+                   TT_E66_M_FNR = 200;                                          
+                 END;                                                           
+              IF ^ F_NUMERISK(F_FELT_PIC_CHAR7(PI_F)) THEN                      
+                 DO;                                                            
+                   FEIL_FUNNET = '1'B;                                          
+                   PI_FNR      = 200;                                           
+                 END;                                                           
+            DO J = 1 TO 4 UNTIL(F_FELT_PIC_CHAR4(VP_ÅR_F(J) = '0000'));         
+                 IF F_FELT_PIC_CHAR4(VP_ÅR_F(J)) = '0000' THEN                  
+                    DO TELLER = J TO 4;                                         
+                       VP_ÅR_F(TELLER) = 0;                                     
+                    END;                                                        
+            END;                                                                
+              DO IÅR = 1 TO 4 WHILE                                             
+                 (F_FELT_PIC_CHAR4(VP_ÅR_F(IÅR)) ^= '0000');                    
+                 IF ^F_NUMERISK(F_FELT_PIC_CHAR4(VP_ÅR_F(IÅR))) THEN            
+                    DO;                                                         
+                       FEIL_FUNNET    = '1'B;                                   
+                       VP_ÅR_FNR(IÅR) = 200;                                    
+                    END;                                                        
+                 ELSE                                                           
+                    IF ^(VP_ÅR_F(IÅR) > 1966 &                   /*Y2K*/        
+                         VP_ÅR_F(IÅR) <= DAGENS_DATO_Å) THEN                    
+                       DO;                                                      
+                          FEIL_FUNNET    = '1'B;                                
+                          VP_ÅR_FNR(IÅR) = 47;                                  
+                       END;                                                     
+              END;                                                              
+            IF ^ (YSKADE_TILLEGG_F = 'J' ! YSKADE_TILLEGG_F = ' ') THEN         
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  YSKADE_TILLEGG_FNR = 300;                                     
+               END;                                                             
+                                                                                
+              HJ_FNR      = FAR.FNR_F;                                          
+                                                                                
+                                                                                
+              IF FAR.TT_F67_F   = 0          &                                  
+                 FAR.TT_E66_Å_F = 0          &                                  
+                 FAR.TT_E66_M_F = 0              THEN                           
+                 DO;                                                            
+                    W_FNR13 = KONV_FNR11_FNR13(HJ_FNR);          /*Y2K*/        
+                    W_DIFF = 1967 - (W_FNR13_HÅ + 16);           /*Y2K*/        
+                    IF W_DIFF < 0 THEN W_DIFF = 0;               /*Y2K*/        
+                    FAR.TT_F67_F = W_DIFF;                       /*Y2K*/        
+                    IF FAR.TT_F67_F > 40 THEN                                   
+                       FAR.TT_F67_F = 40;                                       
+                    ELSE                                                        
+                       IF (W_FNR13_HÅ + 16) > 1967 THEN          /*Y2K*/        
+                          FAR.TT_F67_F = 0;                                     
+                    IF (W_FNR13_HÅ + 16) > 1967 THEN             /*Y2K*/        
+                       W_DIFF = HJ_DØDSDATO_Å_F-(W_FNR13_HÅ +16);/*Y2K*/        
+                    ELSE                                                        
+                       W_DIFF = HJ_DØDSDATO_Å_F - 1967;          /*Y2K*/        
+                    IF W_DIFF < 0 THEN W_DIFF = 0;               /*Y2K*/        
+                    FAR.TT_E66_Å_F = W_DIFF;                     /*Y2K*/        
+                    FAR.TT_E66_M_F =  HJ_DØDSDATO_M_F;           /*Y2K*/        
+                                                                                
+                 END;                                                           
+                                                                                
+                                                                                
+ /*LOVENDRING MED VIRKNING FRA 1.1.91 SP : */                                   
+             IF  HJ_VIRK_DATO_ÅM  > 19920000 &                   /*Y2K*/        
+                 HJ_DØDSDATO_ÅM_F < 19920000 THEN                /*Y2K*/        
+                                                                                
+                  DIV_PARAM_OMR.REGN_1291 = 'J';                                
+                                                                                
+                                                                                
+           END;   /* FEIL_FUNNET */                                             
+     END;         /* FNR-FAR OPPGITT */                                         
+  ELSE                                                                          
+     DO;                                                                        
+       /* FNR_FAR = 11111111111 DVS UOPPGITT   */                               
+       /* OG INGEN AV FELTENE TIL AVDØDE SKAL  */                               
+       /* VÆRE UTFYLT                          */                               
+                                                                                
+        IF NAVN_F             ^= (25)' ' !                                      
+            DØDSDATO_ÅMD_F      ^= 0 !                           /*Y2K*/        
+            VILKÅR_8_4_3A_F     ^= ' ' !                                        
+            PI_F                ^= 0 !                                          
+            OVERKOMP_F          ^= ' ' !                                        
+            YSKADE_TILLEGG_F    ^= ' ' !                                        
+            TT_F67_F            ^= 99 !             /* NULLET MED 99 */         
+            TT_E66_M_F          ^= 99 !             /* NULLET MED 99 */         
+            TT_E66_Å_F          ^= 99  THEN                                     
+            DO;                                                                 
+               FEIL_FUNNET = '1'B;                                              
+               FNR_FNR          = 267;                                          
+               NAVN_FNR         = 999;                                          
+               DØDSDATO_ÅMD_FNR = 999;                           /*Y2K*/        
+               VILKÅR_8_4_3A_FNR   = 999;                                       
+               PI_FNR           = 999;                                          
+               YSKADE_TILLEGG_FNR = 999;                                        
+               OVERKOMP_FNR     = 999;                                          
+               TT_F67_FNR       = 999;                                          
+               TT_E66_M_FNR     = 999;                                          
+               TT_E66_Å_FNR     = 999;                                          
+            END;                                                                
+     END; /* AVDØDES FNR = 11111111111, DVS UKJENT   */                         
+                                                                                
+ /* BLANKER ALLE OPPLYSN. SOM LIGGER ETTER DET SISTE FNR SOM ER UTFYLT*/        
+                                                                                
+ /*      DO I = 1 TO 12 UNTIL(F_FELT_PIC_CHAR11(BARN.FNR_B(I)) = '0');          
+            IF F_FELT_PIC_CHAR11(BARN.FNR_B(I))  = '0' THEN                     
+               DO TELLER = I TO 12;                                             
+                  BARN.FNR_B(TELLER)  = 0;                                      
+                  NAVN_B(TELLER)      = (25)' ';                                
+                  TKNR(TELLER)        = 0;                                      
+               END;                                                             
+         END;*/                                                                 
+                                                                                
+   END KONTROLL_FB_SØKER;                                                       
+                                                                                
+ %SKIP(2);                                                                      
+       /* *********************************************************** */        
+       /*                                                             */        
+       /* PROSEDYRE FOR KONTROLL AV YRKESSKADEOPPLYSNINGER FOR MOR    */        
+       /*                                                             */        
+       /* *********************************************************** */        
+                                                                                
+                                                                                
+       KONTROLL_FBY_MOR:                                                        
+         PROC (FEIL_FUNNET);                                                    
+                                                                                
+        DCL FEIL_FUNNET BIT (1);                                                
+                                                                                
+        DCL HJ_DØDSDATO_ÅMD                     PIC '(8)9',      /*Y2K*/        
+            HJ_DØDSDATO_ÅM DEF HJ_DØDSDATO_ÅMD  PIC '(6)9',      /*Y2K*/        
+            W_YST_ÅMD                           PIC '(8)9',      /*Y2K*/        
+            W_YST_ÅM DEF W_YST_ÅMD              PIC '(6)9',      /*Y2K*/        
+            W_VIRKDATO_ÅMD                      PIC '(8)9',      /*Y2K*/        
+            W_VIRKDATO_ÅM DEF W_VIRKDATO_ÅMD    PIC '(6)9';      /*Y2K*/        
+                                                                                
+        DCL 1 FNR_REG,                                                          
+              2 FNR1 FIXED DEC(11),                                             
+              2 FNR2 FIXED DEC(11);                                             
+                                                                                
+        HJ_DØDSDATO_ÅMD = MOR.DØDSDATO_ÅMD_M;                    /*Y2K*/        
+                                                                                
+        ANT_FEIL_SKREVET = 0;                                                   
+        IF ^(FBY_MOR.VILKÅR_1_2_2A_M = 'J' !                                    
+             FBY_MOR.VILKÅR_1_2_2A_M = ' ') THEN                                
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_MOR.VILKÅR_1_2_2A_MNR = 301;                                  
+           END;                                                                 
+                                                                                
+                                                                                
+        IF ^(FBY_MOR.VILKÅR_1_2_2B_M = 'J' !                                    
+             FBY_MOR.VILKÅR_1_2_2B_M = ' ') THEN                                
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_MOR.VILKÅR_1_2_2B_MNR = 302;                                  
+           END;                                                                 
+                                                                                
+        IF ^F_NUMERISK(FBY_MOR.YST_ÅMD_M) THEN                   /*Y2K*/        
+           DO;                                                                  
+              FEIL_FUNNET    = '1'B;                                            
+              FBY_MOR.YST_ÅMD_MNR = 200;                         /*Y2K*/        
+           END;                                                                 
+        ELSE                                                                    
+           DO;                                                                  
+              IF ^F_GYLDIG_DATO(FBY_MOR.YST_ÅMD_M) THEN          /*Y2K*/        
+                 DO;                                                            
+                    FEIL_FUNNET    = '1'B;                                      
+                    FBY_MOR.YST_ÅMD_MNR = 304;                   /*Y2K*/        
+                 END;                                                           
+              ELSE                                                              
+                 IF FBY_MOR.YST_ÅMD_M < 19710100 THEN            /*Y2K*/        
+                    DO;                                                         
+                       FEIL_FUNNET    = '1'B;                                   
+                       FBY_MOR.YST_ÅMD_MNR = 305;                /*Y2K*/        
+                    END;                                                        
+           END;                                                                 
+                                                                                
+        IF ^(FBY_MOR.YSYKDOM_M = 'J' ! FBY_MOR.YSYKDOM_M = ' ') THEN            
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_MOR.YSYKDOM_MNR = 306;                                        
+           END;                                                                 
+                                                                                
+        IF F_FELT_PIC_CHAR3(FBY_MOR.YUG_M) ^= '000' THEN                        
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_MOR.YUG_MNR = 333;                                            
+           END;                                                                 
+                                                                                
+        IF FBY_MOR.KAP_11_7_UTLØST_M ^= ' ' THEN                                
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_MOR.KAP_11_7_UTLØST_MNR = 333;                                
+           END;                                                                 
+                                                                                
+        IF VERIFY(FBY_MOR.YRKE11_M,'FMUEVSA') ^= 0 THEN                         
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_MOR.YRKE11_MNR = 309 ;                                        
+           END;                                                                 
+                                                                                
+        IF ^F_NUMERISK(F_FELT_PIC_CHAR7(FBY_MOR.AÅI_M)) THEN                    
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_MOR.AÅI_MNR = 200 ;                                           
+           END;                                                                 
+                                                                                
+        IF F_FELT_PIC_CHAR11(FBY_MOR.FNR_EK_M) ^= (11) '0' THEN                 
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_MOR.FNR_EK_MNR = 333;                                         
+           END;                                                                 
+        IF F_FELT_PIC_CHAR11(FBY_MOR.FNR_SAMBOER_M) ^= (11) '0' THEN            
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_MOR.FNR_SAMBOER_MNR = 333;                                    
+           END;                                                                 
+                                                                                
+        IF F_FELT_PIC_CHAR11(FBY_MOR.FNR_Y_BARN_M) ^= (11)'0' THEN              
+           IF ^F_NUMERISK                                                       
+               (F_FELT_PIC_CHAR11(FBY_MOR.FNR_Y_BARN_M)) THEN                   
+              DO;                                                               
+                 FEIL_FUNNET = '1'B;                                            
+                 FBY_MOR.FNR_Y_BARN_MNR = 200;                                  
+              END;                                                              
+           ELSE                                                                 
+              IF ^F_GYLDIG_FNR(FBY_MOR.FNR_Y_BARN_M) THEN                       
+                 DO;                                                            
+                    FEIL_FUNNET = '1'B;                                         
+                    FBY_MOR.FNR_Y_BARN_MNR = 1;                                 
+                 END;                                                           
+              ELSE                                                              
+                 DO;                                                            
+                    FNR_REG.FNR1 = FBY_MOR.FNR_Y_BARN_M;                        
+                    EXEC CICS LINK PROGRAM ('R0019906')                         
+                                   COMMAREA( FNR_REG  );                        
+                    IF FNR_REG.FNR2 > 0 THEN                                    
+                       DO;                                                      
+                          FBY_MOR.FNR_Y_BARN_MNR = 203;                         
+                          FBY_MOR.FNR_GML_Y_BARN_M =                            
+                                         FBY_MOR.FNR_Y_BARN_M;                  
+                          FBY_MOR.FNR_Y_BARN_M = FNR_REG.FNR2;                  
+                       END;                                                     
+                 END;                                                           
+                                                                                
+        IF FBY_MOR.PLEIEBARN_M ^= ' ' &                                         
+           FBY_MOR.PLEIEBARN_M ^= 'J' THEN                                      
+           DO;                                                                  
+              FEIL_FUNNET         = '1'B;                                       
+              FBY_MOR.PLEIEBARN_MNR = 330 ;                                     
+           END;                                                                 
+                                                                                
+        IF ^FEIL_FUNNET THEN                                                    
+           DO;                                                                  
+              W_YST_ÅMD = FBY_MOR.YST_ÅMD_M;                     /*Y2K*/        
+              W_VIRKDATO_ÅMD = VIRK_DATO_ÅMD;                    /*Y2K*/        
+              IF W_YST_ÅM > W_VIRKDATO_ÅM !                      /*Y2K*/        
+                 W_YST_ÅM > HJ_DØDSDATO_ÅM  THEN                 /*Y2K*/        
+                 DO;                                                            
+                                                                                
+                    /* ****************************************** */            
+                    /* FEIL,YSKADETIDSPUNKTET > VIRK ELLER        */            
+                    /* DØDSDATO PÅ KAP.10-BLANKETTEN.             */            
+                    /* ****************************************** */            
+                                                                                
+                    FEIL_FUNNET    = '1'B;                                      
+                    FBY_MOR.YST_ÅMD_MNR = 328 ;                  /*Y2K*/        
+                 END;                                                           
+                                                                                
+                                                                                
+                                                                                
+              IF (FBY_MOR.YRKE11_M = 'F' !                                      
+                  FBY_MOR.YRKE11_M = 'V' !                                      
+                  FBY_MOR.YRKE11_M = 'U' !                                      
+                  FBY_MOR.YRKE11_M = 'E' ) &                                    
+                  FBY_MOR.AÅI_M  ^= 9999999 THEN                                
+                 DO;                                                            
+                                                                                
+        /* ********************************************************** */        
+        /* KODE F = FISKER. KODE V = ELEV. INNTEKT SKAL IKKE OPPGIS   */        
+        /* FOR DISSE.                                                 */        
+        /* ********************************************************** */        
+                                                                                
+                    FEIL_FUNNET     = '1'B;                                     
+                    FBY_MOR.AÅI_MNR =  314;                                     
+                    FBY_MOR.YRKE11_MNR = 999;                                   
+                 END;                                                           
+              ELSE                                                              
+                 IF FBY_MOR.AÅI_M = 9999999 THEN                                
+                    DO;                                                         
+                                                                                
+        /* ********************************************************** */        
+        /* INNTEKT SKAL REGISTRERES FOR ALLE ANDRE KODER.             */        
+        /* ********************************************************** */        
+                                                                                
+                       FEIL_FUNNET     = '1'B;                                  
+                       FBY_MOR.AÅI_MNR =  316;                                  
+                       FBY_MOR.YRKE11_MNR = 999;                                
+                    END;                                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+              IF ^(FBY_MOR.VILKÅR_1_2_2A_M = ' ' !                              
+                   FBY_MOR.VILKÅR_1_2_2B_M = ' ' ) &                            
+                   MOR.TT_F67_M    = 0          &                               
+                   MOR.TT_E66_M_M  = 0          &                               
+                   MOR.TT_E66_Å_M  = 0             THEN                         
+                 DO;                                                            
+                                                                                
+        /* ********************************************************** */        
+        /* VILKÅR 1-2-2 ER UTFYLT.  PERSONEN ER DA IKKE BOSATT I      */        
+        /* NORGE, MEN TT ER IKKE UTFYLT.                              */        
+        /* BLANKETTEN AVVISES.                                        */        
+        /* ********************************************************** */        
+                                                                                
+                    FEIL_FUNNET         = '1'B;                                 
+                    FBY_MOR.VILKÅR_1_2_2A_MNR = 318 ;                           
+                    FBY_MOR.VILKÅR_1_2_2B_MNR = 999 ;                           
+                 END;                                                           
+              IF FBY_MOR.FNR_Y_BARN_M ^= FNR_B(1) THEN                          
+                 DO;                                                            
+                    FEIL_FUNNET         = '1'B;                                 
+                    FBY_MOR.FNR_Y_BARN_MNR = 334 ;                              
+                 END;                                                           
+           END;                                                                 
+         END KONTROLL_FBY_MOR;                                                  
+                                                                                
+ %SKIP(2);                                                                      
+       /* *********************************************************** */        
+       /*                                                             */        
+       /* PROSEDYRE FOR KONTROLL AV YRKESSKADEOPPLYSNINGER FOR FAR    */        
+       /*                                                             */        
+       /* *********************************************************** */        
+                                                                                
+                                                                                
+       KONTROLL_FBY_FAR:                                                        
+         PROC (FEIL_FUNNET);                                                    
+                                                                                
+         DCL                                                                    
+            FEIL_FUNNET BIT (1);                                                
+                                                                                
+        DCL HJ_DØDSDATO_ÅMD                     PIC '(8)9',      /*Y2K*/        
+            HJ_DØDSDATO_ÅM DEF HJ_DØDSDATO_ÅMD  PIC '(6)9',      /*Y2K*/        
+            W_YST_ÅMD                           PIC '(8)9',      /*Y2K*/        
+            W_YST_ÅM DEF W_YST_ÅMD              PIC '(6)9',      /*Y2K*/        
+            W_VIRKDATO_ÅMD                      PIC '(8)9',      /*Y2K*/        
+            W_VIRKDATO_ÅM DEF W_VIRKDATO_ÅMD    PIC '(6)9';      /*Y2K*/        
+                                                                                
+        DCL 1 FNR_REG,                                                          
+              2 FNR1 FIXED DEC(11),                                             
+              2 FNR2 FIXED DEC(11);                                             
+                                                                                
+        HJ_DØDSDATO_ÅMD = FAR.DØDSDATO_ÅMD_F;                    /*Y2K*/        
+                                                                                
+        ANT_FEIL_SKREVET = 0;                                                   
+        IF ^(FBY_FAR.VILKÅR_1_2_2A_F = 'J' !                                    
+             FBY_FAR.VILKÅR_1_2_2A_F = ' ') THEN                                
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_FAR.VILKÅR_1_2_2A_FNR = 301;                                  
+           END;                                                                 
+                                                                                
+                                                                                
+        IF ^(FBY_FAR.VILKÅR_1_2_2B_F = 'J' !                                    
+             FBY_FAR.VILKÅR_1_2_2B_F = ' ') THEN                                
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_FAR.VILKÅR_1_2_2B_FNR = 302;                                  
+           END;                                                                 
+                                                                                
+        IF ^F_NUMERISK(F_FELT_PIC_CHAR8(FBY_FAR.YST_ÅMD_F)) THEN /*Y2K*/        
+           DO;                                                                  
+              FEIL_FUNNET    = '1'B;                                            
+              FBY_FAR.YST_ÅMD_FNR = 200;                         /*Y2K*/        
+           END;                                                                 
+        ELSE                                                                    
+           DO;                                                                  
+              IF ^F_GYLDIG_DATO(FBY_FAR.YST_ÅMD_F) THEN          /*Y2K*/        
+                 DO;                                                            
+                    FEIL_FUNNET    = '1'B;                                      
+                    FBY_FAR.YST_ÅMD_FNR = 304;                   /*Y2K*/        
+                 END;                                                           
+              ELSE                                                              
+                 IF FBY_FAR.YST_ÅMD_F < 19710100 THEN            /*Y2K*/        
+                    DO;                                                         
+                       FEIL_FUNNET    = '1'B;                                   
+                       FBY_FAR.YST_ÅMD_FNR = 305;                /*Y2K*/        
+                    END;                                                        
+           END;                                                                 
+                                                                                
+        IF ^(FBY_FAR.YSYKDOM_F = 'J' ! FBY_FAR.YSYKDOM_F = ' ') THEN            
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_FAR.YSYKDOM_FNR = 306;                                        
+           END;                                                                 
+                                                                                
+        IF F_FELT_PIC_CHAR3(FBY_FAR.YUG_F) ^= '000' THEN                        
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_FAR.YUG_FNR = 333;                                            
+           END;                                                                 
+                                                                                
+        IF FBY_FAR.KAP_11_7_UTLØST_F ^= ' ' THEN                                
+           DO;                                                                  
+              FEIL_FUNNET   ='1'B;                                              
+              FBY_FAR.KAP_11_7_UTLØST_FNR = 333;                                
+           END;                                                                 
+                                                                                
+        IF VERIFY(FBY_FAR.YRKE11_F,'FMUEVSA') ^= 0 THEN                         
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_FAR.YRKE11_FNR = 309 ;                                        
+           END;                                                                 
+                                                                                
+        IF ^F_NUMERISK(F_FELT_PIC_CHAR7(FBY_FAR.AÅI_F)) THEN                    
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_FAR.AÅI_FNR = 200 ;                                           
+           END;                                                                 
+                                                                                
+        IF F_FELT_PIC_CHAR11(FBY_FAR.FNR_EK_F) ^= (11) '0' THEN                 
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_FAR.FNR_EK_FNR = 333;                                         
+           END;                                                                 
+        IF F_FELT_PIC_CHAR11(FBY_FAR.FNR_SAMBOER_F) ^= (11) '0' THEN            
+           DO;                                                                  
+              FEIL_FUNNET = '1'B;                                               
+              FBY_FAR.FNR_SAMBOER_FNR = 333;                                    
+           END;                                                                 
+                                                                                
+        IF F_FELT_PIC_CHAR11(FBY_FAR.FNR_Y_BARN_F) ^= (11)'0' THEN              
+           IF ^F_NUMERISK                                                       
+               (F_FELT_PIC_CHAR11(FBY_FAR.FNR_Y_BARN_F)) THEN                   
+              DO;                                                               
+                 FEIL_FUNNET = '1'B;                                            
+                 FBY_FAR.FNR_Y_BARN_FNR = 200;                                  
+              END;                                                              
+           ELSE                                                                 
+              IF ^F_GYLDIG_FNR(FBY_FAR.FNR_Y_BARN_F) THEN                       
+                 DO;                                                            
+                    FEIL_FUNNET = '1'B;                                         
+                    FBY_FAR.FNR_Y_BARN_FNR = 1;                                 
+                 END;                                                           
+              ELSE                                                              
+                 DO;                                                            
+                    FNR_REG.FNR1 = FBY_FAR.FNR_Y_BARN_F;                        
+                    EXEC CICS LINK PROGRAM ('R0019906')                         
+                                   COMMAREA( FNR_REG  );                        
+                    IF FNR_REG.FNR2 > 0 THEN                                    
+                       DO;                                                      
+                          FBY_FAR.FNR_Y_BARN_FNR = 203;                         
+                          FBY_FAR.FNR_GML_Y_BARN_F =                            
+                                         FBY_FAR.FNR_Y_BARN_F;                  
+                          FBY_FAR.FNR_Y_BARN_F = FNR_REG.FNR2;                  
+                       END;                                                     
+                 END;                                                           
+                                                                                
+        IF FBY_FAR.PLEIEBARN_F ^= ' ' &                                         
+           FBY_FAR.PLEIEBARN_F ^= 'J' THEN                                      
+           DO;                                                                  
+              FEIL_FUNNET         = '1'B;                                       
+              FBY_FAR.PLEIEBARN_FNR = 330 ;                                     
+           END;                                                                 
+                                                                                
+        IF ^FEIL_FUNNET THEN                                                    
+           DO;                                                                  
+              W_YST_ÅMD = FBY_FAR.YST_ÅMD_F;                     /*Y2K*/        
+              W_VIRKDATO_ÅMD = VIRK_DATO_ÅMD;                    /*Y2K*/        
+              IF W_YST_ÅM > W_VIRKDATO_ÅM !                      /*Y2K*/        
+                 W_YST_ÅM > HJ_DØDSDATO_ÅM THEN                  /*Y2K*/        
+                 DO;                                                            
+                                                                                
+                    /* ****************************************** */            
+                    /* FEIL,YSKADETIDSPUNKTET > VIRK ELLER        */            
+                    /* DØDSDATO PÅ KAP.10-BLANKETTEN.             */            
+                    /* ****************************************** */            
+                                                                                
+                    FEIL_FUNNET    = '1'B;                                      
+                    FBY_FAR.YST_ÅMD_FNR = 328 ;                  /*Y2K*/        
+                 END;                                                           
+                                                                                
+                                                                                
+                                                                                
+              IF (FBY_FAR.YRKE11_F = 'F' !                                      
+                  FBY_FAR.YRKE11_F = 'V' !                                      
+                  FBY_FAR.YRKE11_F = 'U' !                                      
+                  FBY_FAR.YRKE11_F = 'E' ) &                                    
+                  FBY_FAR.AÅI_F  ^= 9999999 THEN                                
+                 DO;                                                            
+                                                                                
+        /* ********************************************************** */        
+        /* KODE F = FISKER. KODE V = ELEV. INNTEKT SKAL IKKE OPPGIS   */        
+        /* FOR DISSE.                                                 */        
+        /* ********************************************************** */        
+                                                                                
+                    FEIL_FUNNET     = '1'B;                                     
+                    FBY_FAR.AÅI_FNR =  314;                                     
+                    FBY_FAR.YRKE11_FNR = 999;                                   
+                 END;                                                           
+              ELSE                                                              
+                 IF FBY_FAR.AÅI_F = 9999999 THEN                                
+                    DO;                                                         
+                                                                                
+        /* ********************************************************** */        
+        /* INNTEKT SKAL REGISTRERES FOR ALLE ANDRE KODER.             */        
+        /* ********************************************************** */        
+                                                                                
+                       FEIL_FUNNET     = '1'B;                                  
+                       FBY_FAR.AÅI_FNR =  316;                                  
+                       FBY_FAR.YRKE11_FNR = 999;                                
+                    END;                                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+              IF ^(FBY_FAR.VILKÅR_1_2_2A_F = ' ' !                              
+                   FBY_FAR.VILKÅR_1_2_2B_F = ' ' ) &                            
+                   FAR.TT_F67_F    = 0          &                               
+                   FAR.TT_E66_M_F  = 0          &                               
+                   FAR.TT_E66_Å_F  = 0             THEN                         
+                 DO;                                                            
+                                                                                
+        /* ********************************************************** */        
+        /* VILKÅR 1-2-2 ER UTFYLT.  PERSONEN ER DA IKKE BOSATT I      */        
+        /* NORGE, MEN TT ER IKKE UTFYLT.                              */        
+        /* BLANKETTEN AVVISES.                                        */        
+        /* ********************************************************** */        
+                                                                                
+                    FEIL_FUNNET         = '1'B;                                 
+                    FBY_FAR.VILKÅR_1_2_2A_FNR = 318 ;                           
+                    FBY_FAR.VILKÅR_1_2_2B_FNR = 999 ;                           
+                 END;                                                           
+              IF FBY_FAR.FNR_Y_BARN_F ^= FNR_B(1) THEN                          
+                 DO;                                                            
+                    FEIL_FUNNET         = '1'B;                                 
+                    FBY_FAR.FNR_Y_BARN_FNR = 334 ;                              
+                 END;                                                           
+           END;                                                                 
+         END KONTROLL_FBY_FAR;                                                  

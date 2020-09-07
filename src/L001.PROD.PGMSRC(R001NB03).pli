@@ -1,0 +1,446 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.06 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.14.43 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 12.34.25 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.06.20 13.30.33 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.12 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   1999.12.09  8.44.07 AV   JDA7339          */        
+ /*       SIST ENDRET 06/07-98 10.30.52 AV   JDA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R001NB03 - PROSEDYRE I PLI                                     */        
+ /*    PROGRAMMERER: R.FARVIK DATA-UTVIKLING AS, DES-90               */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /*    PROSEDYREN FORETAR KONTROLL AV DATA FOR ETTERLATTE BARN        */        
+ /*    - EN AV FORELDRENE DØD                                         */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLINGEN AV ETTTERLATTE    */        
+ /*    BARN - EN AV FORELDRENE DØD                                    */        
+ /*BRUK:                                                              */        
+ /*    CALL KONTROLL_ETTERLATTE_BARN_EN(FEI_I_ETTERLATTE_BARN_EN);    */        
+ /* ***************************************************************** */        
+ %PAGE;                /*   */                                                  
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*    MODULEN KONTROLLERER ETTERLATTE_BARN_EN OG RETURNERER MED      */        
+ /*    FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RIKTIG                 */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+  KONTROLL_ETTERLATTE_BARN_EN:                                                  
+    PROC (FEIL_FUNNET);                                                         
+    DCL                                                                         
+       FEIL_FUNNET            BIT (1),                                          
+       DAGENS_DATO_ÅMD        PIC '(8)9';                        /*Y2K*/        
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+    DCL                                                                         
+       ALDER                  FIXED DEC (5);                                    
+    DCL                                                                         
+       HJ_VIRK_DATO_ÅMD PIC '(8)9',                              /*Y2K*/        
+       HJ_VIRK_DATO_ÅM  DEF HJ_VIRK_DATO_ÅMD POS(1) PIC '(6)9',  /*Y2K*/        
+       HI_VIRK_DATO_ÅMD PIC '(8)9',                              /*Y2K*/        
+       HI_VIRK_DATO_ÅM  DEF HI_VIRK_DATO_ÅMD POS(1) PIC '(6)9';  /*Y2K*/        
+    DCL                                                                         
+       HJ_DØDSDATO_ÅMD  PIC '(8)9',                              /*Y2K*/        
+       HJ_DØDSDATO_ÅM   PIC '(6)9' DEF HJ_DØDSDATO_ÅMD POS(1),   /*Y2K*/        
+       HJ_DØDSDATO_D    PIC '(2)9' DEF HJ_DØDSDATO_ÅMD POS(7);   /*Y2K*/        
+ /* HJELPEVARIABLE FOR Å SNU DATO I BARN FØDSELSNUMMER                */        
+                                                                                
+    DCL                                                                         
+       HJ_FNR                 PIC'(11)9',                                       
+       HJ_FNR_DMÅ             PIC '(6)9' DEF HJ_FNR POS(1),                     
+       FØDSELSDATO_ÅMD_F_B    PIC'(8)9',                                        
+       FØDSELSDATO_ÅMD        PIC '(8)9',                                       
+       FØDSELSDATO_Å          PIC '9999' DEF FØDSELSDATO_ÅMD POS(1),            
+       FØDSELSDATO_M          PIC '99' DEF FØDSELSDATO_ÅMD POS(5),              
+       FØDSELSDATO_D          PIC '99' DEF FØDSELSDATO_ÅMD POS(7);              
+    DCL                                                                         
+       (I,J)                  FIXED BIN(15);                                    
+    DCL                                                                         
+       1 FNR_REG,                                                               
+         2 FNR1               FIXED DEC(11),                                    
+         2 FNR2               FIXED DEC(11),                                    
+         2 BRUKERID           CHAR     ( 4);                                    
+ %PAGE;                                                                         
+                                                                                
+                           /*LOVENDRING MED VIRKNING FRA 1.1.91 SP : */         
+      DIV_PARAM_OMR.REGN_1291 = ' ';                                            
+                                                                                
+       FNR_REG.BRUKERID       = DIV_PARAM_OMR.CICS_IND;                         
+       ANT_FEIL_SKREVET       = 0;                                              
+       FEIL_FUNNET            = '0'B;                                           
+       DAGENS_DATO_ÅMD        = DATO_2000;                       /*Y2K*/        
+          HJ_VIRK_DATO_ÅMD = B6B.VIRK_DATO_ÅMD;                  /*Y2K*/        
+          HJ_DØDSDATO_ÅMD = B6B.DØDSDATO_ÅMD;                    /*Y2K*/        
+                                                                                
+       DO I = 1 TO 10 WHILE (F_FELT_PIC_CHAR11(B6B.TAB.FNR_BARN(I)) ^=          
+                                                               (11)'0');        
+          KEY_PEKER = ADDR(B6B.TAB.TKNR(I));                                    
+          IF ^F_NUMERISK(F_FELT_PIC_CHAR11(B6B.TAB.FNR_BARN(I))) THEN           
+             DO;                                                                
+                FEIL_FUNNET           = '1'B;                                   
+                B6B.TAB.FNR_BARNNR(I) = 200;                                    
+             END;                                                               
+          ELSE                                                                  
+             IF ^F_GYLDIG_FNR(B6B.TAB.FNR_BARN(I)) THEN                         
+                DO;                                                             
+                   FEIL_FUNNET           = '1'B;                                
+                   B6B.TAB.FNR_BARNNR(I) = 1;                                   
+                END;                                                            
+             ELSE                                                               
+                DO;                                                             
+                   FNR_REG.FNR1 = B6B.TAB.FNR_BARN(I);                          
+                   EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);        
+                   IF FNR_REG.FNR2 > 0 THEN                                     
+                      DO;                                                       
+                         B6B.TAB.FNR_GML_BARN(I) = B6B.TAB.FNR_BARN(I);         
+                         B6B.TAB.FNR_BARN(I) = FNR_REG.FNR2;                    
+                         B6B.TAB.FNR_BARNNR(I) = 203;                           
+                      END;                                                      
+                END;                                                            
+          IF B6B.TAB.NAVN_BARN(I)      = (25)' ' THEN                           
+             DO;                                                                
+                FEIL_FUNNET            = '1'B;                                  
+                B6B.TAB.NAVN_BARNNR(I) = 2;                                     
+             END;                                                               
+          IF ^F_NUMERISK(F_FELT_PIC_CHAR4(B6B.TAB.TKNR(I))) THEN                
+             DO;                                                                
+                FEIL_FUNNET             = '1'B;                                 
+                B6B.TAB.TKNR(I)         = 200;                                  
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                   
+                   EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)           
+                                                      INTO(TK_RECL);            
+                    LEAVE;                                                      
+                                                                                
+                NOTFND:                                                         
+                    FEIL_FUNNET       = '1'B;                                   
+                    B6B.TAB.TKNRNR(I) = 3;                                      
+             END;                                                               
+       END;                                                                     
+                                                                                
+    /* ************************************************** */                    
+    /* KONTROLL AV ACF2 FOR TILLGANGE TIL TKNR            */                    
+    /*                                                    */                    
+          /* ************************************************** */              
+    BO_TKNR  = TKNR(1);                                                         
+    IF ^FEIL_FUNNET   THEN                                                      
+     DO;                                                                        
+         CALL  KONTROLL_ACF2;                                                   
+         IF FEIL_MELD_NR    >  0  THEN                                          
+            DO;                                                                 
+               FEIL_FUNNET = '1'B;                                              
+               IF FEIL_MELD_NR    =  0654  THEN                                 
+                  FNR_BARNNR(1) = FEIL_MELD_NR;                                 
+               ELSE                                                             
+                  TKNRNR(1)     = FEIL_MELD_NR;                                 
+            END;                                                                
+     END;                                                                       
+                                                                                
+                                                                                
+                                                                                
+       IF VERIFY(B6B.SPRÅK,'NB ') ^= 0 THEN                                     
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.SPRÅKNR = 6;                                                   
+          END;                                                                  
+       IF VERIFY(B6B.KT,'J ') ^= 0 THEN                                         
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.KTNR    = 194;                                                 
+          END;                                                                  
+       IF ^F_NUMERISK(F_FELT_PIC_CHAR8(B6B.VIRK_DATO_ÅMD)) THEN  /*Y2K*/        
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.VIRK_DATO_ÅMDNR = 200;                          /*Y2K*/        
+          END;                                                                  
+       ELSE                                                                     
+          IF ^F_GYLDIG_DATO(B6B.VIRK_DATO_ÅMD) THEN              /*Y2K*/        
+             DO;                                                                
+                FEIL_FUNNET        = '1'B;                                      
+                B6B.VIRK_DATO_ÅMDNR = 9;                         /*Y2K*/        
+             END;                                                               
+       IF HJ_VIRK_DATO_ÅM < 199101 THEN                          /*Y2K*/        
+           DO;                                                                  
+              FEIL_FUNNET        = '1'B;                                        
+              B6B.VIRK_DATO_ÅMDNR = 364;                         /*Y2K*/        
+           END;                                                                 
+       IF VERIFY(B6B.BEREG_RED_TT,'JN ') ^= 0 THEN                              
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.BEREG_RED_TTNR    = 369;                                       
+          END;                                                                  
+       IF ^F_NUMERISK(F_FELT_PIC_CHAR2(B6B.TT_REDUSERT)) THEN                   
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.TT_REDUSERTNR = 200;                                           
+          END;                                                                  
+       IF VERIFY(B6B.KONVENSJON,'JN ') ^= 0 THEN                                
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.KONVENSJONNR      = 356;                                       
+          END;                                                                  
+       IF VERIFY(B6B.PENSJONSTRYGDET,'JN ') ^= 0 THEN                           
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.PENSJONSTRYGDETNR = 354;                                       
+          END;                                                                  
+       IF VERIFY(B6B.MINST_20ÅR,'JN ') ^= 0 THEN                                
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             B6B.MINST_20ÅRNR = 355;                                            
+          END;                                                                  
+                       /* HER SETTES VERDIER INN I TRANS_OPPL_OMR     */        
+                                                                                
+       FØDSNUMMER    = B6B.TAB.FNR_BARN(1);                                     
+       VIRKNINGSDATO_ÅMD = B6B.VIRK_DATO_ÅMD;                    /*Y2K*/        
+                                                                                
+       IF F_FELT_PIC_CHAR11(B6B.FNR_DØD) ^= (11)'0' THEN                        
+          DO;                                                                   
+             IF ^F_NUMERISK(F_FELT_PIC_CHAR11(B6B.FNR_DØD)) THEN                
+                DO;                                                             
+                   FEIL_FUNNET   = '1'B;                                        
+                   B6B.FNR_DØDNR = 200;                                         
+                END;                                                            
+             ELSE                                                               
+                IF B6B.FNR_DØD ^= (11)'1' THEN                                  
+                   DO;                                                          
+                   /* AVDØDES FNR ER ET VANLIG FNR */                           
+                      IF ^F_GYLDIG_FNR(B6B.FNR_DØD) THEN                        
+                         DO;                                                    
+                            FEIL_FUNNET   = '1'B;                               
+                            B6B.FNR_DØDNR = 1;                                  
+                         END;                                                   
+                      ELSE                                                      
+                         DO;                                                    
+                            FNR_REG.FNR1 = B6B.FNR_DØD;                         
+                            EXEC CICS LINK PROGRAM('R0019906')                  
+                                           COMMAREA(FNR_REG);                   
+                            IF FNR_REG.FNR2 > 0 THEN                            
+                               DO;                                              
+                                  B6B.FNR_GML_DØD = B6B.FNR_DØD;                
+                                  B6B.FNR_DØD     = FNR_REG.FNR2;               
+                                  B6B.FNR_DØDNR   = 203;                        
+                               END;                                             
+                         END;                                                   
+                      IF F_FELT_PIC_CHAR8(B6B.DØDSDATO_ÅMD)      /*Y2K*/        
+                                                     ^= (8)'0'   /*Y2K*/        
+                      THEN DO;                                   /*Y2K*/        
+                            IF ^F_NUMERISK(F_FELT_PIC_CHAR8      /*Y2K*/        
+                                            (B6B.DØDSDATO_ÅMD))  /*Y2K*/        
+                            THEN DO;                                            
+                                  FEIL_FUNNET    = '1'B;                        
+                                  B6B.DØDSDATO_ÅMDNR = 200;      /*Y2K*/        
+                               END;                                             
+                            ELSE                                                
+                               IF ^F_GYLDIG_DATO                 /*Y2K*/        
+                                            (B6B.DØDSDATO_ÅMD)   /*Y2K*/        
+                               THEN DO;                                         
+                                     FEIL_FUNNET    = '1'B;                     
+                                     B6B.DØDSDATO_ÅMDNR = 75;    /*Y2K*/        
+                                  END;                                          
+                         END;                                                   
+                                                                                
+                      IF VERIFY(B6B.VILKÅR_8_4_3A,'JN ') ^= 0 THEN              
+                         DO;                                                    
+                            FEIL_FUNNET = '1'B;                                 
+                            B6B.VILKÅR_8_4_3ANR = 194;                          
+                         END;                                                   
+                      IF ^F_NUMERISK(F_FELT_PIC_CHAR4            /*Y2K*/        
+                                        (B6B.VP_ÅR_DØD(1))) THEN                
+                         DO;                                                    
+                            FEIL_FUNNET    = '1'B;                              
+                            B6B.VP_ÅR_DØDNR(1) = 200;                           
+                         END;                                                   
+                                                                                
+                      IF ^F_NUMERISK(F_FELT_PIC_CHAR4            /*Y2K*/        
+                                        (B6B.VP_ÅR_DØD(2))) THEN                
+                         DO;                                                    
+                            FEIL_FUNNET    = '1'B;                              
+                            B6B.VP_ÅR_DØDNR(2) = 200;                           
+                         END;                                                   
+                                                                                
+                      IF ^F_NUMERISK(F_FELT_PIC_CHAR4            /*Y2K*/        
+                                        (B6B.VP_ÅR_DØD(3))) THEN                
+                         DO;                                                    
+                            FEIL_FUNNET    = '1'B;                              
+                            B6B.VP_ÅR_DØDNR(3) = 200;                           
+                         END;                                                   
+                                                                                
+                      IF ^F_NUMERISK(F_FELT_PIC_CHAR7                           
+                                        (B6B.PI_DØD)) THEN                      
+                         DO;                                                    
+                            FEIL_FUNNET    = '1'B;                              
+                            B6B.PI_DØDNR = 200;                                 
+                         END;                                                   
+                                                                                
+                                /* SJEKKE AT ENTEN ALLE OPPLYSNINGER OM         
+                                         AVDØDE ELLER INGEN ER UTFYLT */        
+                                                                                
+                      IF ^((F_FELT_PIC_CHAR11(B6B.FNR_DØD)   = (11)'0' &        
+                            B6B.NAVN_DØD                     = (25)' ' !        
+                            F_FELT_PIC_CHAR11(B6B.FNR_DØD)  ^= (11)'0' &        
+                            B6B.NAVN_DØD                    ^= (25)' ' &        
+                            F_FELT_PIC_CHAR8(B6B.DØDSDATO_ÅMD)   /*Y2K*/        
+                                              ^= (8)'0')) THEN   /*Y2K*/        
+                         DO;                                                    
+                            FEIL_FUNNET    = '1'B;                              
+                            B6B.FNR_DØDNR  = 204;                               
+                            B6B.NAVN_DØDNR = 999;                               
+                            B6B.DØDSDATO_ÅMDNR = 999;            /*Y2K*/        
+                         END;                                                   
+                                                                                
+                   END;   /* AVDØDE ER ET VANLIG FNR */                         
+                ELSE                                                            
+                   DO;                                                          
+                            /* UOPPGITT AVDØD - FNR = 11111111111    */         
+                           /* OG INGEN AV FELTENE TIL AVDØDE SKAL   */          
+                            /* VÆRE UTFYLT                           */         
+                      IF B6B.DØDSDATO_ÅMD   ^= 0       &         /*Y2K*/        
+                         B6B.NAVN_DØD       ^= (25)' ' THEN                     
+                         DO;                                                    
+                            FEIL_FUNNET    = '1'B;                              
+                            B6B.FNR_DØDNR  = 267;                               
+                            B6B.NAVN_DØDNR = 999;                               
+                            B6B.DØDSDATO_ÅMDNR = 999;            /*Y2K*/        
+                            B6B.VILKÅR_8_4_3ANR = 999;                          
+                            B6B.VP_ÅR_DØDNR(1) = 999;                           
+                            B6B.VP_ÅR_DØDNR(2) = 999;                           
+                            B6B.VP_ÅR_DØDNR(3) = 999;                           
+                            B6B.PI_DØDNR       = 999;                           
+                         END;                                                   
+                   END;                                                         
+          END;                                    /* AVDØDES FNR > 0 */         
+       ELSE                                                                     
+          DO;                            /* FEIL - AVDØDES FNR = 0   */         
+             FEIL_FUNNET    = '1'B;                                             
+             B6B.FNR_DØDNR  = 201;                                              
+             B6B.NAVN_DØDNR = 999;                                              
+             B6B.DØDSDATO_ÅMDNR = 999;                           /*Y2K*/        
+             B6B.VILKÅR_8_4_3ANR = 999;                                         
+             B6B.VP_ÅR_DØDNR(1) = 999;                                          
+             B6B.VP_ÅR_DØDNR(2) = 999;                                          
+             B6B.VP_ÅR_DØDNR(3) = 999;                                          
+             B6B.PI_DØDNR       = 999;                                          
+          END;                                                                  
+                                                                                
+                                                                                
+ /* HER GÅR EN INN I TABELLEN OG BLANKER ALT SOM LIGGER ETTER DET     */        
+ /* SISTE FNR SOM ER UTFYLT                                           */        
+                                                                                
+       DO I = 1 TO 10 UNTIL(B6B.TAB.FNR_BARN(I)  = 0);                          
+        IF B6B.TAB.FNR_BARN(I)                 = 0 THEN                         
+           DO J                                = I TO 10;                       
+              B6B.TAB.FNR_BARN(J)              = 0;                             
+              B6B.TAB.NAVN_BARN(J)             = (25)' ';                       
+              B6B.TAB.TKNR(J)                  = 0;                             
+           END;                                                                 
+       END;                                                                     
+ %SKIP(2);              /*  */                                                  
+ /*    KRYSSKONTROLLER               */                                         
+ %SKIP;                                                                         
+    IF ^FEIL_FUNNET THEN                                                        
+       DO;                                                                      
+                                                                                
+                           /*LOVENDRING MED VIRKNING FRA 1.1.91 SP : */         
+          IF  HJ_VIRK_DATO_ÅM > 199200 &                         /*Y2K*/        
+              HJ_DØDSDATO_ÅM  < 199200    THEN                   /*Y2K*/        
+                                                                                
+          /*   DIV_PARAM_OMR.REGN_1291 = 'J';  TRUDE 160192 */                  
+               DIV_PARAM_OMR.REGN_1291 = ' ';                                   
+                                                                                
+                                                                                
+          IF  B6B.BEREG_RED_TT = 'J' &                                          
+              B6B.TT_REDUSERT  = 00  THEN                                       
+              DO;                                                               
+                 FEIL_FUNNET = '1'B;                                            
+                 B6B.BEREG_RED_TTNR    = 380;                                   
+                 B6B.TT_REDUSERTNR     = 999;                                   
+              END;                                                              
+          DO I         = 1 TO 10 WHILE (B6B.TAB.FNR_BARN(I) ^= 0);              
+            ALDER=F_ALDER(B6B.TAB.FNR_BARN(I),B6B.VIRK_DATO_ÅMD);/*Y2K*/        
+             IF ALDER > 1800 THEN                                               
+                DO;                                                             
+                   FEIL_FUNNET     = '1'B;                                      
+                   B6B.TAB.FNR_BARNNR(I) = 348;                                 
+                   B6B.VIRK_DATO_ÅMDNR = 999;                    /*Y2K*/        
+                END;                                                            
+             ELSE                                                               
+                IF ALDER < 0 THEN                                               
+                   DO;                                                          
+                      FEIL_FUNNET           = '1'B;                             
+                      B6B.TAB.FNR_BARNNR(I) = 349;                              
+                      B6B.VIRK_DATO_ÅMDNR   = 999;               /*Y2K*/        
+                   END;                                                         
+                                                                                
+             HJ_FNR        = B6B.TAB.FNR_BARN(I);                               
+             FØDSELSDATO_ÅMD = KONV_DMÅ_HÅMD(HJ_FNR_DMÅ);                       
+                                                                                
+            IF I = 1 THEN                                                       
+               FØDSELSDATO_ÅMD_F_B = FØDSELSDATO_ÅMD;                           
+            ELSE                                                                
+               IF FØDSELSDATO_ÅMD_F_B < FØDSELSDATO_ÅMD THEN                    
+                  DO;                                                           
+                     FEIL_FUNNET           = '1'B;                              
+                     B6B.TAB.FNR_BARNNR(I) = 162;                               
+                  END;                                                          
+          END;                                                                  
+ /* TESTER OM NOEN BARNEFØDSELSNUMMER ER LIKE                         */        
+                                                                                
+     IF ^ FEIL_FUNNET THEN                                                      
+        DO I = 1 TO 10 WHILE(B6B.TAB.FNR_BARN(I) > 0);                          
+           DO J = I TO 10 WHILE (B6B.TAB.FNR_BARN(J) > 0);                      
+              IF J ^= I THEN                                                    
+                 IF B6B.TAB.FNR_BARN(I) = B6B.TAB.FNR_BARN(J) THEN              
+                    DO;                                                         
+                       FEIL_FUNNET              = '1'B;                         
+                       B6B.TAB.FNR_BARNNR(I)    = 124;                          
+                       B6B.TAB.FNR_BARNNR(J)    = 999;                          
+                    END;                                                        
+           END;                                                                 
+        END;                                                                    
+                                                                                
+     IF HJ_VIRK_DATO_ÅM > F_DAGS_DATO_PLUSS_1MND THEN            /*Y2K*/        
+        DO;                                                                     
+           FEIL_FUNNET        = '1'B;                                           
+           B6B.VIRK_DATO_ÅMDNR = 10;                             /*Y2K*/        
+        END;                                                                    
+                                                                                
+     IF B6B.FNR_DØD ^= (11)'1' THEN                                             
+        DO;                                                                     
+          HI_VIRK_DATO_ÅMD = F_DATO_ÅMD_PLUSS1(HJ_DØDSDATO_ÅMD); /*Y2K*/        
+          IF (HJ_VIRK_DATO_ÅM < HJ_DØDSDATO_ÅM  &                               
+ /*HL*/        HJ_VIRK_DATO_ÅM < 199100)          !              /*Y2K*/        
+              (HJ_VIRK_DATO_ÅM < HI_VIRK_DATO_ÅM  &              /*Y2K*/        
+               HJ_VIRK_DATO_ÅM > 199100)           THEN          /*Y2K*/        
+              DO;                                                               
+                 FEIL_FUNNET        = '1'B;                                     
+                 B6B.VIRK_DATO_ÅMDNR = 77;                       /*Y2K*/        
+                 B6B.DØDSDATO_ÅMDNR = 999;                       /*Y2K*/        
+              END;                                                              
+           IF DAGENS_DATO_ÅMD < HJ_DØDSDATO_ÅMD THEN             /*Y2K*/        
+              DO;                                                               
+                 FEIL_FUNNET    = '1'B;                                         
+                 B6B.DØDSDATO_ÅMDNR = 76;                        /*Y2K*/        
+              END;                                                              
+ /* DØDSDATO DAG MÅ VAERE UTFYLLT  JD 12.99 */                                  
+           IF HJ_DØDSDATO_D = 00!HJ_DØDSDATO_D = 99 THEN        /* Y2K*/        
+              DO;                                                               
+                 FEIL_FUNNET    = '1'B;                                         
+                 B6B.DØDSDATO_ÅMDNR = 75;                        /*Y2K*/        
+              END;                                                              
+        END;                                                                    
+ /* DERSOM FØRSTE BARNE_FNR = 0 ER INGENTING I TABELLEN UTFYLT        */        
+                                                                                
+     IF B6B.TAB.FNR_BARN(1) = 0 THEN                                            
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           B6B.TAB.FNR_BARNNR(1) = 164;                                         
+        END;                                                                    
+   END; /* FOR ^FEIL_FUNNET            */                                       
+   END KONTROLL_ETTERLATTE_BARN_EN;                                             

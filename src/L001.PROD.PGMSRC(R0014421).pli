@@ -1,0 +1,386 @@
+ /*   SIST ENDRET PÅ PROD   2006.10.11  8.33.45 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2004.06.18 12.24.01 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.05.03 12.32.06 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2003.06.26  8.33.56 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2003.03.14 10.49.33 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.03.14 10.36.52 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2002.05.29 12.18.52 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.05.22 11.40.22 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.04.18 12.21.34 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2001.03.06  9.59.28 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.07.07 13.00.43 AV   JDA7339          */        
+ /*       SIST ENDRET 29/03-99 13.39.03 AV   JDA7339                  */        
+ /*       SIST ENDRET 29/03-99 13.37.22 AV   JDA7339                  */        
+ /*       SIST ENDRET 09/06-98 08.48.42 AV   SPA7339                  */        
+ /*       SIST ENDRET 27/05-98 09.51.21 AV   RFA9991                  */        
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0014421 - BEREGN_GP_UFØR - PROSEDYRE I PLI.                  */        
+ /*     PROGRAMMERER: TOM JØRGENSEN, JULI 82.                         */        
+ /* HENSIKT                                                           */        
+ /*     OPPDATERE B02.UFØRPENS.GP OG B02.TT_ANV.                      */        
+ /*     EKTEFELLENS TRYGDETIDER REGNES ALLTID PÅ NYTT HER, SELV OM    */        
+ /*     DET IKKE ER NØDVENDIG.                                        */        
+ /* PROGRAMTILKNYTNING                                                */        
+ /*     PROSEDYREN BLIR INKLUDERT I R0014401 - BEREGN_UFØREPENSJON.   */        
+ /* YRKESSKADE : ENDRET - HL -                                        */        
+ /* ***************************************************************** */        
+ BEREGN_GP_UP:PROC;                                                             
+                                                                                
+    DCL                                                                         
+        RUNDING         DEC FIXED(3)   INIT(5),                                 
+        TT_EGEN_GML     DEC FIXED(5)   INIT(0),                                 
+        W_GP_FRADRAG    DEC FIXED(9,3) INIT(0),                                 
+        W_GP_PROSENT    DEC FIXED(9,4) INIT(0),   /*200402 HL*/                 
+        HJELP_MND       DEC FIXED(5)   INIT(0);                                 
+    DCL                                                                         
+        W_UFT_ÅMD       PIC '(8)9',                                             
+        W_FNR           PIC '(11)9';                                            
+                                                                                
+    /* == START UNDERMODUL 4421 ===================================== */        
+    W_GP_PROSENT = REST_PROSENT * FAKTOR;    /*200402 HL*/                      
+    W_GP_PROSENT = W_GP_PROSENT / 100;                                          
+    W_GP_PROSENT = 1 - W_GP_PROSENT;                                            
+    IF (W_GP_PROSENT < GP_PROSENT) THEN                                         
+       W_GP_PROSENT = GP_PROSENT;                                               
+                                                                                
+    W_FNR     = B02.FNR(BER_SØ_IND);                                            
+    W_UFT_ÅMD =B02.UFØRHIST.UFT_ÅMD(BER_SØ_IND,1);                              
+    IF (W_UFT_ÅMD < 19910000)    THEN                                           
+       RUNDING = 11;                                                            
+    ELSE                                                                        
+       RUNDING = 5;                                                             
+                                                                                
+    IF (B02.SPESOPPL.TT_FAKTISK(BER_SØ_IND) = 'J') THEN                         
+       B02.TT_FRAMT(BER_SØ_IND) = 0; /*HL 090694 */                             
+                                                                                
+   /* REMEDY 65 : IKKE FRAMTIDIG VED KONVENSJON */                              
+  /*IF (B02.SPESOPPL.TT_KONVENSJON_ÅR(BER_SØ_IND) > 0) THEN                     
+       B02.TT_FRAMT(BER_SØ_IND) = 0; */ /*MH 151203 */                          
+   /* VED BARE TT_FRAMT, IKKE TT FØR OG ETTER, MEN TT_16_66 = 0 */              
+   /* FIKK VEDK. GRATIS 11 MND TRYGDETID HER.    TRUDE 030595   */              
+                                                                                
+   /* BLIR FEIL NÅR VED UFT = 16ÅRS DAG            TRUDE 090595   */            
+                                                                                
+    IF (B02.STATUS.TT_FØR_1967(BER_SØ_IND)  = 0   &                             
+        B02.TT_ETTER_1966(BER_SØ_IND)       = 0   ) &                           
+       (F_ALDER(W_FNR,W_UFT_ÅMD)           ^= 1600) THEN                        
+    /* (W_UFT_ÅM   ^= (W_FNR_ÅM + 1600))     THEN    /* 2000 */                 
+       TT_EGEN = 0;                                                             
+    ELSE                                                                        
+       TT_EGEN = B02.STATUS.TT_FØR_1967(BER_SØ_IND) +                           
+                (B02.TT_ETTER_1966(BER_SØ_IND) +                                
+                 B02.TT_FRAMT(BER_SØ_IND) + 11) / 12;                           
+                                                                                
+ /*TILLEGG 200208 HL :                                                          
+                                                                                
+    IF B02.TT_16_66(BER_SØ_IND) > 0         THEN                                
+       TT_EGEN =(B02.TT_16_66(BER_SØ_IND) +                                     
+                 (B02.TT_FRAMT(BER_SØ_IND) + RUNDING)) / 12;                    
+    HIT  HL */                                                                  
+                                                                                
+    IF (TT_EGEN > 39) THEN                                                      
+       TT_EGEN = 40;                                                            
+    ELSE                                                                        
+ /* IF (W_UFT_ÅMD < 19910000)    &        JFA 7.7.2005 R 1264 */                
+    IF (TT_EGEN > 0 &                     /*                  */                
+        TRANSTYPE = 2)    THEN   /*200103*/                                     
+ /*    DO;  /* FØRSTE UFØRETIDSSTIDSPUNKT FØR 1991 */                           
+       DO;  /* VIRK. FØR 1991   JFA                */                           
+          TT_EGEN_GML = B01.STATUS.TT_FØR_1967(BER_SØ_IND) +                    
+                       (B01.TT_ETTER_1966(BER_SØ_IND) +                         
+                        B01.TT_FRAMT(BER_SØ_IND) + 11) / 12;                    
+ /*TILLEGG 200208 HL : */                                                       
+                                                                                
+          IF B01.TT_16_66(BER_SØ_IND) > 0         THEN                          
+             TT_EGEN_GML = (B01.TT_16_66(BER_SØ_IND) +                          
+                (B01.TT_FRAMT(BER_SØ_IND) + 11)) / 12;                          
+ /* HIT  HL */                                                                  
+                                                                                
+          IF (TT_EGEN_GML > 39) THEN                                            
+             TT_EGEN_GML = 40;                                                  
+          IF (TT_EGEN < TT_EGEN_GML) THEN                                       
+             DO;  /* VI BRUKER DEN GAMLE TRYGDETIDEN */                         
+                 HJELP_MND =      ((TT_EGEN_GML - TT_EGEN) * 12);               
+                 /* BERGRENSNING SE SYSLOGG # 87 */                             
+                 B02.TT_FRAMT(BER_SØ_IND) = B02.TT_FRAMT(BER_SØ_IND) +          
+                                  HJELP_MND;                                    
+                 /* BERGRENSNING SE SYSLOGG # 87 */                             
+                 IF ( B02.TT_FRAMT(BER_SØ_IND)                                  
+                    + B02.TT_16_66(BER_SØ_IND)                                  
+                    > TT_EGEN_GML * 12) THEN                                    
+                    B02.TT_FRAMT(BER_SØ_IND) = TT_EGEN_GML * 12                 
+                                             - B02.TT_16_66(BER_SØ_IND);        
+                 IF (B02.TT_FRAMT(BER_SØ_IND) > 480) THEN                       
+                    B02.TT_FRAMT(BER_SØ_IND) = 480;                             
+                 TT_EGEN = B02.STATUS.TT_FØR_1967(BER_SØ_IND) +                 
+                           (B02.TT_ETTER_1966(BER_SØ_IND) +                     
+                            B02.TT_FRAMT(BER_SØ_IND) + 11) / 12;                
+                                                                                
+             END; /* VI BRUKER DEN GAMLE TRYGDETIDEN */                         
+          IF (TT_EGEN > 39) THEN                                                
+             TT_EGEN = 40;                                                      
+      END; /* FØRSTE UFØRETIDSSTIDSPUNKT FØR 1991 */                            
+                                                                                
+   IF (B02.TT_GARANTI(BER_SØ_IND) < TT_EGEN) THEN                               
+      B02.TT_GARANTI(BER_SØ_IND) = TT_EGEN;                                     
+        /* TRUDE TIL HIT */                                                     
+                                                                                
+   IF (B02.PENSJONSTYPE2(BER_SØ_IND) = 'S') THEN                                
+      DO; /* ER EKTEFELLENS TT STØRST ?*/                                       
+       /*IF   02.TT_16_66(BER_SØ_IND) =  0     &                                
+             B02.TT_16_66(BER_EK_IND) =  0     )     ! 9903 */                  
+   /* MARTIN 11.01.2001 FOR TEST */                                             
+         IF (B02.VIRK_DATO_ÅMD(BER_SØ_IND) < 19910000  &                        
+             B02.PENSJONSRETT_FØR_91(BER_SØ_IND) = 'J' &                        
+             B02.PENSJONSRETT_FØR_91(BER_EK_IND) = 'J' ) THEN                   
+            TT_EK = B02.STATUS.TT_FØR_1967(BER_EK_IND) +                        
+                 (B02.TT_ETTER_1966(BER_EK_IND) +                               
+                 B02.TT_FRAMT(BER_EK_IND) + 11) / 12 +                          
+                 B02.STATUS.TT_67_TIL_70(BER_EK_IND);                           
+   /* MARTIN 11.01.2001 FOR TEST                                                
+             B02.PENSJONSRETT_FØR_91(BER_SØ_IND) = 'J' &                        
+             B02.PENSJONSRETT_FØR_91(BER_EK_IND) = 'J' THEN                     
+            TT_EK = B02.STATUS.TT_FØR_1967(BER_EK_IND) +                        
+                 (B02.TT_ETTER_1966(BER_EK_IND) +                               
+                 B02.TT_FRAMT(BER_EK_IND) + 11) / 12 +                          
+                 B02.STATUS.TT_67_TIL_70(BER_EK_IND);                           
+    */   ELSE                                                                   
+            TT_EK = 0;                                                          
+                                                                                
+         IF (TT_EK > 39) THEN                                                   
+            TT_EK = 40;                                                         
+                                                                                
+         IF B02.PENSJONSTYPE1(BER_EK_IND) = 'K'  THEN                           
+            B02.TT_ANV(BER_SØ_IND) = TT_EGEN;                                   
+         ELSE                                                                   
+            DO;  /* HAR IKKE AFP */                                             
+               IF (TT_EGEN > TT_EK) THEN                                        
+                  B02.TT_ANV(BER_SØ_IND) = TT_EGEN;                             
+               ELSE                                                             
+                  DO; /* EKTEFELLENS TRYGDETID ER STØRST */                     
+                     B02.TT_ANV(BER_SØ_IND) = TT_EK;                            
+                     B02.TT_GARANTI(BER_SØ_IND) = TT_EK;                        
+                  END; /* EKTEFELLENS TRYGDETID ER STØRST */                    
+            END; /* HAR IKKE AFP */                                             
+                    /* IKKE OVERFØRING AV TT ETTER 010191,TRUDE 9090*/          
+                                                                                
+                     /*--------------------------------------------*/           
+                     /*-NB. IKKE OVERFØRING AV TT MELLOM EKTEFELLER*/           
+                     /*-ETTER 01.91 TRUDE.OKT.90-------------------*/           
+                     /*--------------------------------------------*/           
+                                                                                
+       IF B02.TT_16_66(BER_SØ_IND) >  0 THEN                                    
+          DO;                                            /*NY0191*/             
+             IF B02.UFØRPENS.VILKÅR_8_4_3A(BER_SØ_IND) = 'J' !  /*TS*/          
+                B02.BOSATT(BER_SØ_IND)  = 000 THEN      /*080794*/              
+                /*W_BOSATT              = 'J' THEN   FULLT TT  */               
+              DO;                                                               
+                B02.TT_ANV(BER_SØ_IND)       =                                  
+                      (B02.TT_16_66(BER_SØ_IND) +                               
+                       B02.TT_FRAMT(BER_SØ_IND) + 6) / 12;                      
+              END;                                                              
+                                                                                
+             ELSE           /* IKKE MEDREGNING AV FREMTIDIGE ÅR */              
+                B02.TT_ANV(BER_SØ_IND) =                                        
+                           (B02.TT_16_66(BER_SØ_IND) + 6) / 12;                 
+             IF B02.TT_ANV(BER_SØ_IND) > 40    THEN                             
+                B02.TT_ANV(BER_SØ_IND) = 40;                                    
+                                                                                
+                                                                                
+                        /*VED ENDRING MÅ VI OPPBEVARE TT:,TRUDE 0392 */         
+             IF B02.TT_GARANTI(BER_SØ_IND) < B02.TT_ANV(BER_SØ_IND)             
+                                                          THEN                  
+                B02.TT_GARANTI(BER_SØ_IND) = B02.TT_ANV(BER_SØ_IND);            
+          END;  /*TIL HIT  NY0191*/                                             
+                                                                                
+      END;  /* END PÅ SAMMENSTØTSBEREGNING AV TT */                             
+                                                                                
+   ELSE     /* IKKE SAMMENSTØTSBEREGNING */                                     
+     DO;  /* IKKE SAMMENSTØTSBEREGNING */                                       
+       IF (B02.TT_KONVENSJON_ÅR(BER_SØ_IND) = 0) THEN                           
+          DO;  /* IKKE KONVENSJONSSAK - TRYGDETID */                            
+             IF B02.TT_16_66(BER_SØ_IND) = 0 THEN                               
+                B02.TT_ANV(BER_SØ_IND)   = TT_EGEN;                             
+             ELSE                                                               
+                B02.TT_ANV(BER_SØ_IND) =                                        
+                             (B02.TT_16_66(BER_SØ_IND) +                        
+                              B02.TT_FRAMT(BER_SØ_IND) + 6) / 12;               
+             IF B02.TT_ANV(BER_SØ_IND) > 40    THEN                             
+                B02.TT_ANV(BER_SØ_IND) = 40;                                    
+             /* HL 200202 : */                                                  
+             IF TRANSTYPE = 2 THEN /* GB UFØREPENSJON */                        
+                B02.TT_GARANTI(BER_SØ_IND) = B02.TT_ANV(BER_SØ_IND);            
+          END; /* IKKE KONVENSJONSSAK - TRYGDETID */                            
+       ELSE                                                                     
+          DO;  /* TRYGDETIDEN E. KONVENSJON - OPPGIS I TRANS */                 
+             B02.TT_ANV(BER_SØ_IND) = B02.TT_KONVENSJON_ÅR(BER_SØ_IND);         
+           IF B02.TT_GARANTI(BER_SØ_IND) > B02.TT_ANV(BER_SØ_IND) THEN          
+                B02.TT_GARANTI(BER_SØ_IND) = B02.TT_ANV(BER_SØ_IND);            
+          END; /* TRYGDETIDEN E. KONVENSJON - OPPGIS I TRANS */                 
+     END; /* IKKE SAMMENSTØTSBEREGNING */                                       
+                                                                                
+   IF (B02.TT_GARANTI(BER_SØ_IND) > B02.TT_ANV(BER_SØ_IND)) THEN                
+      B02.TT_ANV(BER_SØ_IND) = B02.TT_GARANTI(BER_SØ_IND);                      
+   /*                                                                           
+   IF (TT_KONVENSJON > 0) THEN                 /*NY0191*/                       
+   IF (B02.SPESOPPL.TT_KONVENSJON_ÅR(BER_SØ_IND)>0) THEN                        
+      DO;         /*ENDRET 200208 - HL*/                                        
+  /*     IF (INDEX = BER_SØ_IND) THEN                                           
+            DO;                                                                 
+               IF TT_KONVENSJON >  40 THEN                                      
+                  TT_KONVENSJON   = 40;                                         
+               B02.TT_16_66(BER_SØ_IND) = TT_KONVENSJON * 12;                   
+               B02.TT_ANV(BER_SØ_IND)        = TT_KONVENSJON;                   
+            END;         */                                                     
+         IF B02.SPESOPPL.TT_KONVENSJON_ÅR(BER_SØ_IND) > 40  THEN                
+             B02.TT_ANV(BER_SØ_IND)        = 40;                                
+         ELSE                                                                   
+            B02.TT_ANV(BER_SØ_IND)        =                                     
+               B02.SPESOPPL.TT_KONVENSJON_ÅR(BER_SØ_IND);                       
+         IF B02.TT_GARANTI(BER_SØ_IND) > B02.TT_ANV(BER_SØ_IND) THEN            
+            B02.TT_GARANTI(BER_SØ_IND) = B02.TT_ANV(BER_SØ_IND);                
+      END;                                                                      
+  ELSE                                                                          
+  IF B02.KONVENSJON(BER_SØ_IND) = 'J'           THEN                            
+    DO;                             /* TRUDE 0991*/                             
+      IF B02.TT_16_66(BER_SØ_IND)  = 0 THEN                                     
+         B02.TT_ANV(BER_SØ_IND)    = TT_EGEN;                                   
+      ELSE                                                                      
+         B02.TT_ANV(BER_SØ_IND) =  B02.TT_16_66(BER_SØ_IND) / 12;               
+                                                                                
+           /* DENNE TESTEN VAR GLEMT   , TRUDE 180292 */                        
+      IF B02.TT_ANV(BER_SØ_IND) > 40    THEN                                    
+         B02.TT_ANV(BER_SØ_IND) = 40;                                           
+    END;                            /* TRUDE TIL HIT 0991 */                    
+                                                           /*NY0191*/           
+    /*--------------------------------------------------------------*/          
+    /*FRAVIK- FLYKTN FULL TT ER GLEMT. TRUDE 240992                 */          
+    /*--------------------------------------------------------------*/          
+                                                                                
+       IF B02.FRAVIK_FLYKTN(BER_SØ_IND)   = 'J'  THEN                           
+          B02.TT_ANV(BER_SØ_IND)          = 40;                                 
+                                                                                
+                     /* HIT 240992 TRUDE */                                     
+ /*******     FJERNET : HL 090694 ******* :                                     
+                                                                                
+       IF (B02.VIRK_DATO_ÅM(BER_SØ_IND) >  9100  &                              
+           TRANS_OPPL_OMR.BLANKETTYPE ^= 'U3'    &                              
+           B02.TT_ANV(BER_SØ_IND)    < 20 ) THEN                                
+         DO;                                                                    
+           IF  B02.KONVENSJON(BER_SØ_IND)    ^=  'J' &                          
+               B02.UFØRPENS.PÅ(BER_SØ_IND)    =   0  &                          
+               B02.BOSATT     (BER_SØ_IND)    >   0  &                          
+               B02.PENSJONSTYPE1(BER_SØ_IND) ^= 'Y'  THEN                       
+  L100:        DO;                                                              
+                   FEIL_VED_LABEL    = '100';                                   
+                   FEIL_MELD_NR      = 1805;                                    
+                   GO TO L999;                                                  
+                END;                                                            
+         END;                                  *************** */               
+                       /*--------------------------------------------*/         
+                       /*DERSOM ANTALL POENGÅR > TT_ANV, SKAL DETTE--*/         
+                       /*BRUKES I TT_ANV. TRUDE 0990   --------------*/         
+                       /*--------------------------------------------*/         
+                                                                                
+        IF B02.UFØRPENS.PÅ(BER_SØ_IND) > B02.TT_ANV(BER_SØ_IND) THEN            
+           B02.TT_ANV(BER_SØ_IND) = B02.UFØRPENS.PÅ(BER_SØ_IND);                
+                                            /* TIL HIT TRUDE */                 
+                                                                                
+                                                                                
+        /*ENDRET 0994 HL : */                                                   
+                                                                                
+        IF B02.TT_PÅ(BER_SØ_IND) = 'J'     THEN                                 
+           B02.TT_ANV(BER_SØ_IND) = B02.UFØRPENS.PÅ(BER_SØ_IND);                
+                                                                                
+        IF (B02.TT_KONVENSJON_ÅR(BER_SØ_IND) > 0 ) THEN                         
+           B02.TT_ANV(BER_SØ_IND) = B02.TT_KONVENSJON_ÅR(BER_SØ_IND);           
+        /*FAKTOR ER EKTEFELLENS UFØREGRAD, ELLER 100 DERSOM */                  
+        /*EKTEFELLEN ER ALDERS- ELLER AFP-PENSJONIST        */                  
+        /*UFGRAD ER UFØRPENS.UFG - YRKEPENS.YUG             */                  
+                                                                                
+        IF B02.PENSJON_FØR_9802(BER_SØ_IND) ^= 'J'       THEN                   
+          DO;                                                                   
+            IF B02.SIVILSTAND(BER_SØ_IND) = 'V'   &                             
+              (B02.PENSJONSTYPE2(BER_EK_IND) = 'P'  !                           
+               B02.PENSJONSTYPE2(BER_EK_IND) = 'S'  )        THEN               
+               DO;                                                              
+                  W_GP = GP_PROSENT;                                            
+                  DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'V';               
+                  B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = 'Y';               
+               END;                                                             
+            ELSE                                                                
+            IF B02.EK_INNT_OVER_2G(BER_SØ_IND)   = 'J'   &                      
+               B02.PENSJONSTYPE2(BER_SØ_IND)    ^= 'S'   &                      
+              (B02.SIVILSTAND      (BER_SØ_IND)  = 'G' !                        
+               B02.SIVILSTAND      (BER_SØ_IND)  = 'P' )  THEN                  
+               DO;                                                              
+                  W_GP = GP_PROSENT;                                            
+                  DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'J';               
+                  B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = 'I';               
+               END;                                                             
+            ELSE                                                                
+            IF B02.EK_INNT_OVER_2G(BER_SØ_IND)   = 'J'   &                      
+               B02.PENSJONSTYPE2(BER_SØ_IND)    ^= 'S'   &                      
+              (B02.SIVILSTAND      (BER_SØ_IND)  = 'W'   !                      
+               B02.SIVILSTAND      (BER_SØ_IND)  = 'V'  )   THEN                
+               DO;                                                              
+                  W_GP = GP_PROSENT;                                            
+                  DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'J';               
+                  B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = 'Z';               
+               END;                                                             
+            ELSE                                                                
+ /* SAMBOERE 200106 HL : */                                                     
+            IF B02.RED_GP_3_2_5(BER_SØ_IND) = 'J'   THEN                        
+               DO;                                                              
+                  W_GP = GP_PROSENT;                                            
+                  DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'X';               
+                  B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = 'X';               
+               END;                                                             
+            ELSE                                                                
+                  W_GP         = W_GP_PROSENT;                                  
+          END;                                                                  
+        ELSE                                                                    
+                  W_GP         = W_GP_PROSENT;                                  
+                                                                                
+  /*YRKE_GP ER FLYTTET FRA 4401 OG HIT - 9804 */                                
+                                                                                
+         Y_GP         = W_GP * G;                                               
+         Y_GP         = Y_GP * B02.YRKEPENS.YUG(BER_SØ_IND)/100;                
+         IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'A' THEN                            
+ /*9804*/   DIV_PERIODE.ATTFØRING_GP_ÅRSBELØP = Y_GP + 0.5;                     
+         B02.YRKEPENS.GP(BER_SØ_IND) = Y_GP/12 + 0.5;                           
+         YP_GP_DEC                   = Y_GP/12;   /*TRUDE 210292*/              
+                                                                                
+        W_GP      = W_GP * UFGRAD / 100;                                        
+                                                                                
+        B02.UFØRPENS.GP(BER_SØ_IND) = G * W_GP * B02.TT_ANV(BER_SØ_IND)/        
+                                      (40 * 12) + 0.5;                          
+                                                                                
+        UP_GP_DEC    = G * W_GP * B02.TT_ANV(BER_SØ_IND)/                       
+                       (40 * 12); /*TRUDE 210292*/                              
+                   /* 'J' IKKE_GP  TRUDE 0391 */                                
+                                                                                
+                                                                                
+      IF B02.IKKE_GP(BER_SØ_IND)   = 'J' THEN                                   
+         B02.UFØRPENS.GP(BER_SØ_IND)  = 0;                                      
+                                         /* TIL HIT TRUDE */                    
+                                                                                
+                                                                                
+      IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'A' THEN                               
+ /*VANLIGE ATTFØRINGSPENGER OPPBEVARES I DIV_PERIODE*/                          
+ /*9804*/  DIV_PERIODE.ATTFØRING_GP_ÅRSBELØP =                                  
+           DIV_PERIODE.ATTFØRING_GP_ÅRSBELØP + (G * W_GP *                      
+                      B02.TT_ANV(BER_SØ_IND) / 40)   + 0.5;                     
+                                                                                
+  /*IKKE TT_GARANTI TIL DEN SOM IKKE HAR RETT TIL FOLKETRYGD:*/                 
+                                                                                
+      IF  B02.BEREGN_FOLKETRYGD(BER_SØ_IND) = 'N'    THEN                       
+         /* REMEDY 370 - BLE FEIL V. KONVERTERING TIL AP */                     
+   /*     B02.NORDISK_KONVENSJON(BER_SØ_IND) = 'J' ) THEN   */                  
+         B02.TT_GARANTI(BER_SØ_IND) = 0;                                        
+                                                                                
+  L999:                                                                         
+ END BEREGN_GP_UP;                                                              

@@ -1,0 +1,390 @@
+ /*   SIST ENDRET PÅ PROD   2008.05.31 11.10.58 AV   SPA2990          */        
+ /*   SIST ENDRET PÅ PROD   2006.07.18 11.36.18 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.04.24  9.42.24 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ QASS   2006.04.19 12.10.39 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.03.24  8.43.44 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2005.06.24 12.44.05 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.04.26 12.54.16 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.12.17 13.57.57 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 12.58.57 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.11.02  8.21.10 AV   HLA2970          */        
+ /*       SIST ENDRET 25/08-99 08.56.58 AV   JDA7339                  */        
+ /*       SIST ENDRET 22/06-98 10.21.51 AV   JDA7339                  */        
+ /*       SIST ENDRET 17/06-98 09.54.56 AV   RFA9991                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0014128 - BEREGN_POENG_AÅI_AVDØD                             */        
+ /*     PROGRAMMERER: HERMAN LARSSEN                                  */        
+ /* HENSIKT                                                           */        
+ /*                                                                   */        
+ /*  1. REGNER UT OG OPPDATERER POENGTALLET  YRKEHIST.PAÅ FOR AVDØDE  */        
+ /*     (POENGTALLET UT FRA DEN ANTATTE ÅRLIGE ARBEIDSINNTEKTEN       */        
+ /*      PÅ SKADETIDSPUNKTET),                                        */        
+ /*      EVT BEREGNET UT FRA LOVREGLER FOR SPESIELLE YRKESGRUPPER.    */        
+ /*                                                                   */        
+ /*  2.  OPPDATERER EVT NY YRKEPENS.YUG                               */        
+ /*                                                                   */        
+ /*  3.  SETTER FORELØPIG YPT_KODE (KAN BLI ENDRET I ????)            */        
+ /*                                                                   */        
+ /*  4.  OPPDATERER YPT                                               */        
+ /*                                                                   */        
+ /* PROGRAMTILKNYTNING                                                */        
+ /*     PROSEDYREN BLIR INKLUDERT I R0014101, 4301, 4501              */        
+ /* ***************************************************************** */        
+ BEREGN_POENG_AÅI_AVDØD:                                                        
+  PROC;                                                                         
+                                                                                
+                                                                                
+    /*WORKING STORAGE*/                                                         
+                                                                                
+    DCL 1      W1,                                                              
+                                                                                
+          2    ALDER                    PIC '(8)9',       /*Y2K*/               
+          2    FNR_PIC11                PIC '(11)9',                            
+          2    FNR_PIC13                PIC '(13)9',      /*Y2K*/               
+          2    GAMMEL_GRAD              FIXED DEC     (3) INIT(0),              
+          2    GV                       FIXED DEC     (7) INIT(0),              
+          2    G_YST                    FIXED DEC     (7) INIT(0),              
+          2    INNTEKT                  FIXED DEC     (7) INIT(0),              
+          2    POENG                    FIXED DEC   (5,2) INIT(0),              
+          2    POENG92                  FIXED DEC   (5,2) INIT(0),              
+          2    POENG1                   FIXED DEC   (5,2) INIT(0),              
+          2    POENG2                   FIXED DEC   (5,2) INIT(0),              
+          2    POENG3                   FIXED DEC   (5,2) INIT(0),              
+          2    POENG_GRUNNLAG           FIXED DEC     (7) INIT(0),              
+          2    POENG_GRUNNLAG92         FIXED DEC     (7) INIT(0),              
+          2    PÅ_FØR92                 FIXED DEC     (3) INIT(0),              
+          2    SYTTI                    FIXED DEC     (3) INIT (70),            
+          2    NITTIEN                  FIXED DEC     (3) INIT (91),            
+          2    UFØRGRAD                 FIXED DEC     (3) INIT(0),              
+          2    YHIST_IND                FIXED BIN    (15),                      
+          2    YPT_KODE                      CHAR     (1) INIT(' '),            
+          2    YST_ÅM                         PIC  '999999',  /*Y2K*/           
+          2    YST_ÅMD                   FIXED DEC    (9),   /*Y2K*/            
+          2    ÅRET                     FIXED DEC     (5);   /*Y2K*/            
+                                                                                
+    DCL        YST_Å DEF W1.YST_ÅM POS (1)    PIC    '9999';  /*Y2K*/           
+                                                                                
+    DCL        YST_M DEF W1.YST_ÅM POS (5)    PIC    '99';    /*Y2K*/           
+                                                                                
+    DCL        VIRK_ÅMD                     FIXED DEC (9);   /*Y2K*/            
+    DCL        ATTEN                        FIXED DEC (5);                      
+    DCL        NITTEN                       FIXED DEC (5);                      
+    DCL        TYVE                         FIXED DEC (5);                      
+    DCL        FNR_ÅR DEF FNR_PIC11 POS(5)         PIC '99';                    
+    DCL        FNR_ÅR13 DEF FNR_PIC13 POS(5)       PIC '9999';                  
+    DCL        POENG_IND (3)                FIXED DEC (5,2);                    
+                                                                                
+ /*PROGRAMMET BEGYNNER HER:*/                                                   
+                                                                                
+  FNR_PIC11 = B02.FNR(BER_EK_IND);                                              
+  FNR_PIC13 = KONV_FNR11_FNR13((B02.FNR(BER_EK_IND)));                          
+                                                                                
+ /* ************************************************************ */             
+ /*   FINN INDEX FOR SISTE YRKEHIST (MED OPPHØRSDATO = DØDSM + 1 */             
+ /* ************************************************************ */             
+                                                                                
+  DO YHIST_IND = 1 TO 10  WHILE (B02.YRKEHIST.OPPH_DATO_ÅMD                     
+                                      (BER_EK_IND,YHIST_IND) > 0);              
+  END;                                                                          
+                                                                                
+  YHIST_IND = YHIST_IND -1 ;                                                    
+                                                                                
+                                                                                
+ /* ************************************************************ */             
+ /*   FINN SISTE UFØREGRAD FØR DØDSFALLET                        */             
+ /* ************************************************************ */             
+                                                                                
+  DO I = 1 TO 7; /* 5 -> 7  9803 HL */                                          
+                                                                                
+     IF B02.UFØRHIST.OPPHØRSDATO_ÅMD(BER_EK_IND,I) = 0 THEN                     
+        I = 7;                                                                  
+     ELSE                                                                       
+     IF B02.UFØRHIST.OPPHØRSDATO_ÅMD(BER_EK_IND,I) =                            
+          B02.YRKEHIST.OPPH_DATO_ÅMD(BER_EK_IND,YHIST_IND)  THEN                
+             DO;                                                                
+                /*AVDØDE VAR UFØR PÅ DØDSTIDSPUNKTET*/                          
+                                                                                
+                UFØRGRAD = B02.UFØRHIST.UFG(BER_EK_IND,I);                      
+           /*   DO J = 1 TO 12;    1 TIL 12 2.4.04 JFA */                       
+                DO J = 1 TO HBOUND(B02.UFØRGRAD,3);                             
+                   IF B02.UFØRGRAD.UFG_ØVRIGE(BER_EK_IND,I,J) = 0 THEN          
+                      J = HBOUND(B02.UFØRGRAD,3); /*JFA*/                       
+                   ELSE                                                         
+                      UFØRGRAD = B02.UFG_ØVRIGE(BER_EK_IND,I,J);                
+                END;                                                            
+                I = 7;                                                          
+             END;                                                               
+  END;                                                                          
+                                                                                
+ /* ************************************************************ */             
+ /*   HVIS GAMMEL UFØRGRAD VAR 100, SKAL B02 IKKE OPPDATERES     */             
+ /* ************************************************************ */             
+                                                                                
+  IF UFØRGRAD  = 100             THEN                                           
+     GOTO RETUR;                                                                
+                                                                                
+ /* ************************************************************ */             
+ /*   OPPGRADERING AV YRKEPENS.YUG                               */             
+ /* ************************************************************ */             
+                                                                                
+   B02.YRKEPENS.YUG(BER_EK_IND) = 100 - B02.UFØRPENS.UFG(BER_EK_IND);           
+                                                                                
+ /* ************************************************************ */             
+ /*   HVIS DET IKKE ER NY SKADE, SKAL IKKE PAÅ/YPT OPPDATERES    */             
+ /* ************************************************************ */             
+                                                                                
+  IF B02.YRKEHIST.YUG_ØVRIGE(BER_EK_IND,YHIST_IND,1) > 0   THEN                 
+     GOTO RETUR;                                                                
+                                                                                
+ /* ************************************************************ */             
+ /* FINN GRUNNBELØP PÅ SKADETIDSPUNKT                            */             
+ /* ************************************************************ */             
+                                                                                
+                                                                                
+    W1.YST_ÅM = B02.YST_ÅMD(BER_EK_IND,YHIST_IND) / 100;  /*200111*/            
+    YST_ÅMD   = B02.YST_ÅMD(BER_EK_IND,YHIST_IND) + 01;   /*Y2K*/               
+                                                                                
+                                                                                
+    DO J = 1 TO 65;                                                             
+                                                                                
+       IF YST_ÅMD         >= PERIODE_START_ÅMD(J) &                             
+          YST_ÅMD         <= PERIODE_SLUTT_ÅMD(J) THEN                          
+                                                                                
+          DO;                                                                   
+             G_YST             = G_TAB_PERIODE.GRUNNBELØP(J);                   
+             J                 = 99;                                            
+          END;                                                                  
+                                                                                
+    END;                                                                        
+                                                                                
+  POENG_GRUNNLAG = B02.YRKEHIST.AÅI(BER_EK_IND,YHIST_IND);                      
+  POENG_GRUNNLAG92 = POENG_GRUNNLAG;                                            
+                                                                                
+                                                                                
+  IF POENG_GRUNNLAG   > (G_YST * 12)      THEN                                  
+     POENG_GRUNNLAG   = G_YST * 12;                                             
+                                                                                
+  IF POENG_GRUNNLAG   > (G_YST * 8)       THEN                                  
+     POENG_GRUNNLAG   = (G_YST * 8) +                                           
+                        ((POENG_GRUNNLAG - (G_YST*8)) / 3) + 0.5;               
+                                                                                
+  IF POENG_GRUNNLAG   > G_YST   THEN                                            
+     POENG = (POENG_GRUNNLAG - G_YST) / G_YST + 0.005;                          
+  ELSE                                                                          
+     POENG = 0;                                                                 
+                                                                                
+                                                                                
+    IF YST_ÅMD   > 19920000              THEN    /*Y2K*/                        
+       DO;                                                                      
+          IF FNR_ÅR13  > 1940                THEN                               
+             B02.YRKEPENS.PÅ(BER_EK_IND) = 40;                                  
+          ELSE                                                                  
+             B02.YRKEPENS.PÅ(BER_EK_IND) = FNR_ÅR;                              
+                                                                                
+          IF FNR_ÅR13 > 1975 THEN                                               
+             DO;                                                                
+                PÅ_FØR92 = 0;                                                   
+                B02.YRKEPENS.PÅ_ETTER91(BER_EK_IND) = 40;                       
+             END;                                                               
+          ELSE                                                                  
+          DO;                                                                   
+             PÅ_FØR92 = 1975 - FNR_ÅR13;                                        
+             IF PÅ_FØR92 > 25 THEN                                              
+                PÅ_FØR92 = 25;                                                  
+             IF PÅ_FØR92 <  B02.YRKEPENS.PÅ(BER_EK_IND)    THEN                 
+                B02.YRKEPENS.PÅ_ETTER91(BER_EK_IND) =                           
+                      B02.YRKEPENS.PÅ(BER_EK_IND) - PÅ_FØR92;                   
+          END;                                                                  
+                                                                                
+          IF POENG_GRUNNLAG92 > (G_YST * 12)      THEN                          
+             POENG_GRUNNLAG92 = G_YST * 12;                                     
+                                                                                
+          IF POENG_GRUNNLAG92 > (G_YST * 6)       THEN                          
+             POENG_GRUNNLAG92 = (G_YST * 6) +                                   
+            ((POENG_GRUNNLAG92 - (G_YST*6)) / 3) + 0.5;                         
+                                                                                
+          IF POENG_GRUNNLAG92 > G_YST   THEN                                    
+             POENG92 = (POENG_GRUNNLAG92 - G_YST) / G_YST + 0.005;              
+          ELSE                                                                  
+             POENG92 = 0;                                                       
+                                                                                
+          IF PÅ_FØR92 < 20 THEN                                                 
+             POENG = (POENG * PÅ_FØR92 + POENG92 * (20 - PÅ_FØR92))             
+                     / 20 + 0.005;                                              
+       END;                                                                     
+                                                                                
+    W1.YPT_KODE  = 'A';                                                         
+                                                                                
+    SELECT (B02.YRKE11(BER_EK_IND,YHIST_IND));                                  
+                                                                                
+       WHEN ('F')                                                               
+                                                                                
+    /*KAP 11-11 NR 1   FISKERE, FANGSTMENN MV  */                               
+                                                                                
+          DO;                                                                   
+                                                                                
+             W1.YPT_KODE  = 'Y';                                                
+                                                                                
+     /* FISKERE FÅR ALLTID YPT_KODE = 'Y' - POENG SKAL BEREGNES */              
+     /* PÅ GRUNNLAG AV YRKE, OG IKKE PÅ GRUNNLAG AV AÅI         */              
+                                                                                
+             YST_ÅMD   = B02.YRKEHIST.YST_ÅMD(BER_EK_IND,YHIST_IND);            
+                                                                                
+ /* ************************************************************ */             
+ /* VI SKAL NÅ FINNE ET GJENNOMSNITT AV INNTEKTENE I DE SISTE    */             
+ /* 3 ÅR FØR SKADEÅRET.  FØR 1971 REGNES MED MAX 7.00 I POENG    */             
+ /* ************************************************************ */             
+                                                                                
+             DO I = 1 TO 3;                                                     
+                POENG_IND (I) = 0;                                              
+                ÅRET    = YST_Å - I;                                            
+                                                                                
+                INNTEKT = B02.PI(BER_EK_IND,ÅRET);  /*200504*/                  
+                                                                                
+                GV      = GV_TAB_ARRAY.G_V(ÅRET);                               
+                                                                                
+                IF INNTEKT > (GV * 12)        THEN                              
+                                                                                
+                   INNTEKT = GV * 12;                                           
+                                                                                
+                IF INNTEKT > (GV * 6)  &                                        
+                   ÅRET > NITTIEN          THEN                                 
+                      INNTEKT = GV*6 + ((INNTEKT - (GV*6)) / 3) + 0.5;          
+                ELSE                                                            
+                IF INNTEKT > (GV * 8)         THEN                              
+                                                                                
+                   IF ÅRET > SYTTI            THEN                              
+                                                                                
+                      INNTEKT = GV*8 + ((INNTEKT - (GV*8)) / 3) + 0.5;          
+                                                                                
+                ELSE                                                            
+                   INNTEKT = GV * 8;                                            
+                                                                                
+                POENG_IND(I) = (INNTEKT - GV) / GV + 0.005;                     
+                                                                                
+                IF POENG_IND (I) < 0 THEN POENG_IND(I) = 0;                     
+                                                                                
+             END; /*DO I = 1 TO 3*/                                             
+                                                                                
+                                                                                
+             POENG = (POENG_IND (1)  + POENG_IND (2)                            
+                      + POENG_IND (3)) / 3 + 0.005;                             
+                                                                                
+                                                                                
+             IF POENG < 0.5   THEN                                              
+                                                                                
+                POENG = 0.5;                                                    
+                                                                                
+                                                                                
+          END;                                                                  
+                                                                                
+       WHEN ('M')                                                               
+                                                                                
+    /*KAP 11-11 NR 2   MILITÆRPERSON MV        */                               
+                                                                                
+          DO;                                                                   
+                                                                                
+             IF POENG < 2 THEN                                                  
+                                                                                
+                DO;                                                             
+                   POENG = 2;                                                   
+                   W1.YPT_KODE  = 'Y';                                          
+                END;                                                            
+                                                                                
+          END;                                                                  
+                                                                                
+       WHEN ('U','E')                                                           
+                                                                                
+    /*KAP 11-11 NR 3   UNGDOM, ELEV MV         */                               
+                                                                                
+          DO;                                                                   
+                                                                                
+             IF POENG < 1 THEN                                                  
+                                                                                
+                DO;                                                             
+                   POENG = 1;                                                   
+                   W1.YPT_KODE  = 'Y';                                          
+                END;                                                            
+                                                                                
+          END;                                                                  
+                                                                                
+       WHEN ('V')                                                               
+                                                                                
+    /*KAP 11-11 NR 3   ELEV UTEN YRKESUTDANNING   */                            
+                                                                                
+          DO;                                                                   
+                                                                                
+ /*LOVENDRING FRA 1.1.91 HL   */                                                
+                                                                                
+             VIRK_ÅMD    = B02.VIRK_DATO_ÅMD(BER_EK_IND);                       
+                                                                                
+             IF VIRK_ÅMD    > 19910000      THEN        /*Y2K*/                 
+                DO;                                                             
+                   ATTEN  = 1801;                                               
+                   NITTEN = 1901;                                               
+                   TYVE   = 2001;                                               
+                END;                                                            
+             ELSE                                                               
+                DO;                                                             
+                   ATTEN  = 1800;                                               
+                   NITTEN = 1900;                                               
+                   TYVE   = 2000;                                               
+                END;                                                            
+                                                                                
+             ALDER = F_ALDER(FNR_PIC11,(VIRK_ÅMD));                             
+                                                                                
+             IF ALDER < ATTEN      THEN;                                        
+                                                                                
+             ELSE                                                               
+             IF ALDER < NITTEN  THEN                                            
+                DO;                                                             
+                   IF POENG  < 1  THEN                                          
+                                                                                
+                      DO;                                                       
+                         POENG  = 1;                                            
+                         W1.YPT_KODE  = 'Y';                                    
+                      END;                                                      
+                END;                                                            
+                                                                                
+             ELSE                                                               
+             IF ALDER < TYVE  THEN                                              
+                DO;                                                             
+                   IF POENG  < 1.5  THEN                                        
+                                                                                
+                      DO;                                                       
+                         POENG  = 1.5;                                          
+                         W1.YPT_KODE  = 'Y';                                    
+                      END;                                                      
+                END;                                                            
+                                                                                
+             ELSE     /*ALDER ER NÅ OVER TYVE */                                
+                IF POENG  < 2  THEN                                             
+                   DO;                                                          
+                      POENG =  2;                                               
+                      W1.YPT_KODE = 'Y';                                        
+                   END;                                                         
+          END;                                                                  
+                                                                                
+       OTHERWISE;                                                               
+                                                                                
+          END;                                                                  
+                                                                                
+       B02.PAÅ (BER_EK_IND,YHIST_IND) = POENG + 0.005;                          
+                                                                                
+  /* ************************************************************* */           
+  /* HVIS NYTT POENGTALL ER STØRST, SKAL OPPDATERING SKJE          */           
+  /* ************************************************************* */           
+                                                                                
+       IF B02.PAÅ(BER_EK_IND,YHIST_IND) >                                       
+          B02.YRKEPENS.YPT(BER_EK_IND)            THEN                          
+          DO;                                                                   
+             B02.YRKEPENS.YPT(BER_EK_IND) =                                     
+                B02.PAÅ(BER_EK_IND,YHIST_IND);                                  
+             B02.YRKEPENS.YPT_KODE (BER_EK_IND) = W1.YPT_KODE;                  
+          END;                                                                  
+                                                                                
+ RETUR:                                                                         
+                                                                                
+ END BEREGN_POENG_AÅI_AVDØD;                                                    
+                                                                                

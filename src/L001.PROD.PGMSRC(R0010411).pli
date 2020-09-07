@@ -1,0 +1,653 @@
+ /*   SIST ENDRET PÅ PROD   2006.05.10 13.06.08 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.03.24  8.04.43 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2005.12.02 14.25.01 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.12.02 14.13.21 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.12.17 14.38.39 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.14 11.59.13 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.03.16 14.01.00 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 13.47.06 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.02.27 13.05.13 AV   JDA2970          */        
+ /*       SIST ENDRET 09/06-98 08.42.10 AV   SPA7339                  */        
+ /*       SIST ENDRET 04/05-98 14.16.57 AV   JDA7339                  */        
+ /*       SIST ENDRET 08/12-97 12.27.05 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R0010411  - BYGG_TRANS_LISTE - HOVEDPROGRAM      */        
+ /*  PROGRAM-SPRÅK : PLI       - CICS                                 */        
+ /*  PROGRAMMERER  : KRISTENSEN                                       */        
+ /*  PROGRAMMET BLE LAGET : DESEMBER 1982                             */        
+ /*  ENDRINGSDATO : 18.01.89                                          */        
+ /*  ENDRINGEN GJELDER: YRKESSKADE / AFP.                             */        
+ /*  ENDRINGEN BLE UTFØRT AV : TRUDE                                  */        
+ /*  ENDRINGSDATO : 30.08.89                                          */        
+ /*  ENDRINGEN GJELDER: UNGE UFØRE FØR 1967                           */        
+ /*  ENDRINGEN BLE UTFØRT AV : TRUDE                                  */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*    LEGGER EN LEST TRANSAKSJON INN I 'TRANS_LISTE'                 */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*    PROGRAMMET BLIR LINKET FRA FORESPØRSEL- R0010410 OG            */        
+ /*                           FRA ENDRINGER  - R0010450               */        
+ /*    BRUK :         EXEC CICS LINK                                  */        
+ /*                   PROGRAM('R0010411) COMMAREA(LOKAL_KOM_OMR)      */        
+ /*    PROGRAMMETS TRANSKODE ER 'F41C'.                               */        
+ /*    FUNKSJONER SOM BRUKES :                                        */        
+ /*                   R0019913  F_SNU_DATO                            */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*  DET BLIR IKKE BRUKT NOEN DATASETT I DETTE PROGRAMMET             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*                                                                   */        
+ /*  PROGRAMMET GIR INGEN FEILMELDINGER                               */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ R001A41: PROC(LOKAL_KOM_PTR) OPTIONS (MAIN);                                   
+ %PAGE;                                                                         
+ %INCLUDE P0019906;  /* TRANS-OPPL-OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+                                                                                
+ %INCLUDE P0019908; /*  KOM-OMRÅDE (BASED) */                                   
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0019910;  /* STYRINGS - OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019912;  /* DIV-PARAM-OMRÅDE(BASED)   */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019913;  /* LOKAL - KOM_OMR (BASED)   */                            
+ %PAGE;                                                                         
+                                                                                
+                                                                                
+ DCL                                                                            
+    (I,J,K)                FIXED BIN(15),                                       
+    W_FNR                  FIXED DEC(11),                                       
+    COMMAREA_PEKER         PTR,                                                 
+    LOKAL_KOM_PTR          PTR,                                                 
+    TRANS_OPPL_CHAR_TIL    CHAR(48)   BASED (TRANS_OPPL_PTR(I)),                
+    TRANS_OPPL_CHAR_FRA    CHAR(48)   BASED (TRANS_OPPL_PEKER ),                
+    TRANS_CHAR_TIL         CHAR(1400) BASED (TRANS_PTR     (I)),                
+    TRANS_CHAR_FRA         CHAR(1400) BASED (TRANS_PEKER      ),                
+    NULL                   BUILTIN,                                             
+    STG                    BUILTIN,                                             
+    ADDR                   BUILTIN,                                             
+    SUBSTR                 BUILTIN;                                             
+                                                                                
+                                                                                
+    COMMAREA_PEKER = HOVED_KOM_OMR_PTR;                                         
+    LOKAL_KOM_PTR = ADDR(LOKAL_KOM_OMR);                                        
+                                                                                
+    /* FINNE HVILKEN PLASS I LISTEN DEN AKTUELLE TRANS SKAL INN PÅ  */          
+    /* SORTERER PÅ VIRKNINGSDATOEN .                                */          
+    DO I = 1 TO 40 WHILE (TRANS_OPPL_PTR(I) ^= NULL);                           
+       IF (TRANS_OPPL_PTR(I) -> VIRKNINGSDATO_ÅMD) <                            
+          (TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD) THEN                               
+          LEAVE;                                                                
+    END;                                                                        
+                                                                                
+                                                                                
+    /* FLYTTE DE SOM LIGGER BAK ETT HAKK NEDOVER                    */          
+    IF TRANS_OPPL_PTR(I) ^= NULL THEN                                           
+       DO J = TRANS_ANT TO I BY -1;   /* TRANS_ANT MÅ VÆRE ØKT FØR  */          
+          TRANS_LISTE(J) = TRANS_LISTE(J - 1);                                  
+       END;                                                                     
+                                                                                
+    /* OPPRETTER NY GENERASJON AV TRANS_OPPL_OMR OG FLYTTER DATA DIT */         
+    EXEC CICS GETMAIN SET(TRANS_OPPL_PTR(I))LENGTH(STG(TRANS_OPPL_OMR));        
+    SUBSTR(TRANS_OPPL_CHAR_TIL,1,STG(TRANS_OPPL_OMR)) =                         
+                  SUBSTR(TRANS_OPPL_CHAR_FRA,1,STG(TRANS_OPPL_OMR));            
+                                                                                
+                                                                                
+    /* SETTER HOVEDPERSONENS FØDSELSNUMMER INN I FNR_ARRAY           */         
+    W_FNR = TRANS_OPPL_OMR.FØDSNUMMER;                                          
+    CALL BEHANDLE_FNR;                                                          
+                                                                                
+                                                                                
+    SELECT(TRANS_OPPL_OMR.BLANKETTYPE);                                         
+       WHEN('AP' )                                                              
+          CALL AP_PROC;                                                         
+       WHEN('A1' )                    /*  ENDRET AV SATISH 12.11.90  */         
+          CALL A1_PROC;                                                         
+       WHEN('AF')                                                               
+          CALL AF_PROC;                                                         
+       WHEN('KF')                                                               
+          CALL KF_PROC;                                                         
+       WHEN('UP')                                                               
+          CALL UP_PROC;                                                         
+       WHEN('U2')                                                               
+          CALL U2_PROC;                                                         
+       WHEN('U3')                                                               
+          CALL U3_PROC;                                                         
+       WHEN('US')                                                               
+          CALL US_PROC;                                                         
+       WHEN('EP')                                                               
+          CALL EP_PROC;                                                         
+       WHEN('E3')                                                               
+          CALL E3_PROC;                                                         
+       WHEN('EE')                                                               
+          CALL EE_PROC;                                                         
+       WHEN('EF')                                                               
+          CALL EF_PROC;                                                         
+       WHEN('E4')                                                               
+          CALL E4_PROC;                                                         
+       WHEN('FB')                                                               
+          CALL FB_PROC;                                                         
+       WHEN('BP')                                                               
+          CALL BP_PROC;                                                         
+       WHEN('B6')                                                               
+          CALL B6_PROC;                                                         
+       WHEN('FT')                                                               
+          CALL FT_PROC;                                                         
+       WHEN('F7')                                                               
+          CALL F7_PROC;                                                         
+       WHEN('FO')                                                               
+          CALL FO_PROC;                                                         
+       WHEN('E1')                                                               
+          CALL E1_PROC;                                                         
+       WHEN('EN')                                                               
+          CALL EN_PROC;                                                         
+       WHEN('E2')                                                               
+          CALL E2_PROC;                                                         
+       WHEN('O1')                                                               
+          CALL O1_PROC;                                                         
+       WHEN('O2')                                                               
+          CALL O2_PROC;                                                         
+       WHEN('UF')                                         /*UF*/                
+          CALL UF_PROC;                                                         
+       OTHERWISE;                                                               
+    END;       /*   SELECT     */                                               
+                                                                                
+                                                                                
+    /**********    SLUTT PÅ HOVEDSTYRING.                 ***********/          
+    EXEC CICS RETURN;                                                           
+                                                                                
+                                                                                
+    AP_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0010501;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.APS.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 12 WHILE(TRANS_OMR.APB.FNR_BARN(J) > 0);                 
+              W_FNR = TRANS_OMR.APB.FNR_BARN(J);                                
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = TRANS_OMR.APS.BT_ANT;                      
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.APS.FNR_EK;                      
+                                                                                
+    END AP_PROC;                                                                
+                                                            /*AFP*/             
+    A1_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001N501;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                              SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));          
+                                                                                
+           W_FNR = TRANS_OMR.A1S.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 12 WHILE(TRANS_OMR.A1B.FNR_BARN(J) > 0);                 
+              W_FNR = TRANS_OMR.A1B.FNR_BARN(J);                                
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = TRANS_OMR.A1S.BT_ANT;                      
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.A1S.FNR_EK;                      
+                                                                                
+    END A1_PROC;                                                                
+                                                            /*AFP*/             
+    AF_PROC:                                                /*AFP*/             
+       PROC;                                                /*AFP*/             
+       %INCLUDE P0011901;                                   /*AFP*/             
+                                                            /*AFP*/             
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))             /*AFP*/             
+                                  LENGTH (STG(TRANS_OMR));  /*AFP*/             
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =        /*AFP*/             
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                            /*AFP*/             
+           W_FNR = TRANS_OMR.AFP.FNR_EK;                    /*AFP*/             
+           IF W_FNR > 0 THEN                                /*AFP*/             
+              CALL BEHANDLE_FNR;                            /*AFP*/             
+                                                            /*AFP*/             
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.AFP.FNR_EK;  /*AFP*/             
+                                                            /*AFP*/             
+    END AF_PROC;                                            /*AFP*/             
+                                                                                
+                                                            /*AFP*/             
+    KF_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001UJ01;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.KFP.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.KFP.FNR_EK;                      
+                                                                                
+    END KF_PROC;                                                                
+                                                                                
+                                                              /*UF*/            
+    UF_PROC:                                                  /*UF*/            
+       PROC;                                                  /*UF*/            
+       %INCLUDE P0011831;                                     /*UF*/            
+                                                              /*UF*/            
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))               /*UF*/            
+                                  LENGTH (STG(TRANS_OMR));    /*UF*/            
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =          /*UF*/            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                              /*UF*/            
+    END UF_PROC;                                              /*UF*/            
+                                                              /*UF*/            
+                                                                                
+    UP_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0010601;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.UPS.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 12 WHILE(TRANS_OMR.UPB.FNR_BARN(J) > 0);                 
+              W_FNR = TRANS_OMR.UPB.FNR_BARN(J);                                
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = TRANS_OMR.UPS.BT_ANT;                      
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.UPS.FNR_EK;                      
+                                                                                
+    END UP_PROC;                                                                
+                                                                                
+    U2_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001N601;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.U2S.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 12 WHILE(TRANS_OMR.U2B.FNR_BARN(J) > 0);                 
+              W_FNR = TRANS_OMR.U2B.FNR_BARN(J);                                
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = TRANS_OMR.U2S.BT_ANT;                      
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.U2S.FNR_EK;                      
+                                                                                
+    END U2_PROC;                                                                
+                                                                                
+    U3_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001U601;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+  /*  EXEC CICS ENTER TRACID(11) FROM(TRANS_OMR.U3S.FNR_EK);   */               
+           W_FNR = TRANS_OMR.U3S.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.U3S.FNR_EK;                      
+                                                                                
+    END U3_PROC;                                                                
+                                                                                
+    US_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0010701;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+    END US_PROC;                                                                
+                                                                                
+    EP_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0010801;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.EPS.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.EPS.FNR_EK;                      
+                                                                                
+    END EP_PROC;                                                                
+                                                                                
+    E3_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001N801;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.E3S.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.E3S.FNR_EK;                      
+                                                                                
+    END E3_PROC;                                                                
+                                                                                
+    EE_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001U801;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.EES.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.EES.FNR_EK;                      
+                                                                                
+    END EE_PROC;                                                                
+                                                                                
+    EF_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0010901;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+    END EF_PROC;                                                                
+                                                                                
+    E4_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001N901;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+    END E4_PROC;                                                                
+                                                                                
+    FB_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0011001;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.MOR.FNR_M;                                         
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           W_FNR = TRANS_OMR.FAR.FNR_F;                                         
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 12 WHILE(TRANS_OMR.BARN.FNR_B(J) > 0);                   
+              W_FNR = TRANS_OMR.BARN.FNR_B(J);                                  
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = J - 1;                                     
+                                                                                
+    END FB_PROC;                                                                
+                                                                                
+                                                                                
+    BP_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0011101;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.BPB.FNR_DØD;                                       
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 10 WHILE(TRANS_OMR.BPB.TAB.FNR_BARN(J) > 0);             
+              W_FNR = TRANS_OMR.BPB.TAB.FNR_BARN(J);                            
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = J - 1;                                     
+                                                                                
+    END BP_PROC;                                                                
+                                                                                
+    B6_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001NB01;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.B6B.FNR_DØD;                                       
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 10 WHILE(TRANS_OMR.B6B.TAB.FNR_BARN(J) > 0);             
+              W_FNR = TRANS_OMR.B6B.TAB.FNR_BARN(J);                            
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = J - 1;                                     
+                                                                                
+    END B6_PROC;                                                                
+                                                                                
+    FT_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0011201;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.FTS.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 8 WHILE(TRANS_OMR.FTB.FNR_BARN(J) > 0);                  
+              W_FNR = TRANS_OMR.FTB.FNR_BARN(J);                                
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = TRANS_OMR.FTS.BT_ANT;                      
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.FTS.FNR_EK;                      
+                                                                                
+    END FT_PROC;                                                                
+                                                                                
+    F7_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001NC01;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.F7S.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 12 WHILE(TRANS_OMR.F7B.FNR_BARN(J) > 0);                 
+              W_FNR = TRANS_OMR.F7B.FNR_BARN(J);                                
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = TRANS_OMR.F7S.BT_ANT;                      
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.F7S.FNR_EK;                      
+                                                                                
+    END F7_PROC;                                                                
+                                                                                
+    FO_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001UC01;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.FOS.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+           DO J = 1 TO 12 WHILE(TRANS_OMR.FOB.FNR_BARN(J) > 0);                 
+              W_FNR = TRANS_OMR.FOB.FNR_BARN(J);                                
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = TRANS_OMR.FOS.BT_ANT;                      
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.FOS.FNR_EK;                      
+                                                                                
+    END FO_PROC;                                                                
+                                                                                
+    E1_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0011401;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.E1S.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.E1S.FNR_EK;                      
+                                                                                
+    END E1_PROC;                                                                
+                                                                                
+    EN_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P001UE01;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.ENS.FNR_EK;                                        
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.ENS.FNR_EK;                      
+                                                                                
+    END EN_PROC;                                                                
+                                                                                
+    E2_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0011501;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+    END E2_PROC;                                                                
+                                                                                
+    O1_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0011601;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           W_FNR = TRANS_OMR.O1.FNR_EK;                                         
+           IF W_FNR > 0 THEN                                                    
+              CALL BEHANDLE_FNR;                                                
+                                                                                
+           TRANS_LISTE.FNR_EK  (I) = TRANS_OMR.O1.FNR_EK;                       
+                                                                                
+    END O1_PROC;                                                                
+                                                                                
+    O2_PROC:                                                                    
+       PROC;                                                                    
+       %INCLUDE P0011701;                                                       
+                                                                                
+           EXEC CICS GETMAIN SET (TRANS_PTR(I))                                 
+                                  LENGTH (STG(TRANS_OMR));                      
+           SUBSTR(TRANS_CHAR_TIL,1,STG(TRANS_OMR)) =                            
+                               SUBSTR(TRANS_CHAR_FRA,1,STG(TRANS_OMR));         
+                                                                                
+           DO J = 1 TO 5 WHILE(TRANS_OMR.O2.FNR_BARN(J) > 0);                   
+              W_FNR = TRANS_OMR.O2.FNR_BARN(J);                                 
+              CALL BEHANDLE_FNR;                                                
+           END;                                                                 
+                                                                                
+           TRANS_LISTE.ANT_BARN(I) = J - 1;                                     
+                                                                                
+    END O2_PROC;                                                                
+                                                                                
+                                                                                
+  /* **************************************************************** */        
+  /*                                                                  */        
+  /*  PROCEDURE FOR Å FINNE ALLE PERSONER BERØRT AV TRANSAKSJONENE.   */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+                                                                                
+ BEHANDLE_FNR:  PROC;                                                           
+  /* **************************************************************** */        
+  /*    SETTER INN FØDSELSNUMMER I FNR_ARRAY SOM IKKE FINNES FRA FØR  */        
+  /* **************************************************************** */        
+                                                                                
+  DCL NY_I_FNR_ARRAY BIT(1) ALIGNED INIT ('1'B);                                
+  DO K=1 TO 14 UNTIL (FNR_ARRAY(K)=0 ! NY_I_FNR_ARRAY='0'B);                    
+     IF (FNR_ARRAY(K) = W_FNR) THEN                                             
+        NY_I_FNR_ARRAY = '0'B;                                                  
+  END;                                                                          
+  IF (NY_I_FNR_ARRAY) THEN                                                      
+     DO;                                                                        
+        FNR_ARRAY_ANT = FNR_ARRAY_ANT + 1;                                      
+        FNR_ARRAY(FNR_ARRAY_ANT)  = W_FNR;                                      
+     END;                                                                       
+                                                                                
+ END BEHANDLE_FNR;                                                              
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+ /*   %INCLUDE R0019913;               F_SNU_DATO        */                     
+                                                                                
+ END R001A41;                                                                   

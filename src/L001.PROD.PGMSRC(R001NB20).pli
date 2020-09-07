@@ -1,0 +1,864 @@
+ /*   SIST ENDRET PÅ PROD   2001.11.05 11.50.03 AV   HLA2970          */        
+ /*       SIST ENDRET 06/07-98 10.31.08 AV   JDA7339                  */        
+ /*       SIST ENDRET 27/01-98 10.57.14 AV   SPA7339                  */        
+ /****************************************************************** */         
+ /*IDENTIFIKASJON:                                                   */         
+ /*    R001NB20 - PROSEDYRE I PLI                                    */         
+ /*    PROGRAMMERER: TRUDE SPONBERG , DES 1990                       */         
+ /*  *****************************                                   */         
+ /*  ENDRINGSDATO :                                                  */         
+ /*  ENDRINGEN GJELDER : */                                                     
+ /*  ENDRINGEN BLE UTFØRT :                                          */         
+ /*  *****************************                                   */         
+ /*HENSIKT:                                                          */         
+ /*    DETTE ER KONTROLL AV BARNEPENSJON - EN AV FORELDRENE ER DØD.  */         
+ /*    RUTINEN KONTROLLERER ALLE PERSONER I TRANSAKSJONEN MOT        */         
+ /*    INFORMASJON I REGISTERET.                                     */         
+ /*    NÅR DET OPPDAGES UOVERENSSTEMMELSER, BLIR FEIL-MELD-NR SATT   */         
+ /*    OG VI GÅR UT AV PGR.FOR HVER PERSON SOM GÅR FEILFRI GJENNOM   */         
+ /*    KONTROLLENE BLIR DET OPPRETTET NY STATUS FOR PERSONEN OG      */         
+ /*    SØKERENS STATUS OPPDATERES. TRANSTYPE SETTES I TRANSAKSJONEN. */         
+ /*    DETTE FORUTSETTER AT DØDSMELDINGEN FOR AVDØDE ER BEHANDLET PÅ */         
+ /*    FORHÅND OG AT BARNA ER SORTERT ETTER FNR. DETTE ER FORDI VI MÅ*/         
+ /*    KONTROLLERE OM BARNET ER TILKNYTTET SAMME YNGSTE BARN SOM OGSÅ*/         
+ /*    ER TILKNYTTET SAMME AVDØDE (SOM ER I TRANSEN). DETTE KAN VI   */         
+ /*    IKKE GJØRE HVIS IKKE YNGSTE BARN ALT ER LEST INN. YNGSTE BARN */         
+ /*    I TRANSEN BEHANDLES FØRST.                                    */         
+ /*PROGRAMTILKNYTNING:                                               */         
+ /*    KALLES OPP FRA PROGRAM R0013520.                              */         
+ /*BRUK:                                                             */         
+ /*    EXEC CICS XCTL PROGRAM ('R001NB20') COMMAREA (KOM_OMR)        */         
+ /*                                                                  */         
+ /* ***************************************************************  */         
+ B6TR:PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                     
+      %INCLUDE P0019908;                                                        
+      %INCLUDE P0019906;                                                        
+      %INCLUDE P001NB01;                                                        
+      %INCLUDE P0019910;                                                        
+      %INCLUDE P0019912;                                                        
+      DCL 1 B01 BASED(B01_PEKER),%INCLUDE P0019921;                             
+      DCL 1 B02 BASED(B02_PEKER),%INCLUDE P0019921;                             
+   DCL                                                                          
+      COMMAREA_PEKER PTR;                                                       
+   DCL (ADDR,CSTG,VERIFY)               BUILTIN;                                
+   DCL                                                                          
+      BARN_IND                           FIXED BIN (15),                        
+      FORRIGE_YNG_BARN_IND               FIXED BIN (15),                        
+      AVDØD_IND                          FIXED BIN (15),                        
+      YNG_BARN_LEST                      CHAR       (1),                        
+      W_STATUS_TYPE                      CHAR       (1),                        
+      BARN_ANTALL                        DEC FIXED (3),                         
+      I                                  FIXED BIN (15),                        
+      J                                  FIXED BIN (15),                        
+      HJ_VIRK_DATO_ÅMD                   PIC     '(8)9',                        
+      ANT_BARN_I_TRANS                   DEC FIXED (3);                         
+   DCL                                                                          
+      FNR                                PIC    '(11)9',                        
+      KJØNN_SIFFER DEF FNR POS(9)        PIC        '9';                        
+                                                                                
+    /* ============================================================== */        
+      PROGRAM_ID           = 'R001NB20';                                        
+      EXEC CICS PURGE MESSAGE;                                                  
+      TRANSTYPE            = 04;                                                
+      W_STATUS_TYPE        = STATUS_TYPE;                                       
+      YNG_BARN_LEST        = 'N';                                               
+      I                    = 0;                                                 
+      ANT_BARN_I_TRANS     = 0;                                                 
+      BARN_ANTALL          = 0;                                                 
+      BARN_IND             = 0;                                                 
+      FORRIGE_YNG_BARN_IND = 0;                                                 
+      FNR                  = B6B.FNR_DØD;                                       
+      HJ_VIRK_DATO_ÅMD = (B6B.VIRK_DATO_ÅMD);                                   
+      IF VERIFY(KJØNN_SIFFER,'02468') = 0 THEN                                  
+         AVDØD_IND = 1;                                                         
+      ELSE                                                                      
+         AVDØD_IND = 2;                                                         
+ /* ***************************************************************** */        
+ /* DERSOM AVDØD ER OPPGITT - FNR_DØD ULIK 11111111111                */        
+ /* ***************************************************************** */        
+      IF B6B.FNR_DØD ^= (11)'1' THEN                                            
+         DO;                                                                    
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM AVDØD IKKE ER I BASEN.                                     */        
+ /* ***************************************************************** */        
+                                                                                
+            IF B01.FNR(AVDØD_IND) = 0 THEN                                      
+               DO;                                                              
+                  DØD = '1'B;                                                   
+                  SEARCH_FNR  = B6B.FNR_DØD;                                    
+                  POS_I_B01   = AVDØD_IND;                                      
+                 EXEC CICS LINK PROGRAM ('R0019928') COMMAREA (KOM_OMR);        
+                  IF FEIL_MELD_NR > 0 THEN                                      
+                     GO  TO L999;                                               
+                  ELSE                                                          
+                     PROGRAM_ID = 'R001NB20';                                   
+                  DØD = '0'B;                                                   
+               END;                                                             
+            ELSE                                                                
+               IF B01.FNR(AVDØD_IND) ^= B6B.FNR_DØD THEN                        
+                  DO;                                                           
+  L100:                                                                         
+                     FEIL_VED_LABEL = '100';                                    
+                     FEIL_MELD_NR   = 1307;                                     
+                     GO TO L999;                                                
+                  END;                                                          
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM IKKE REGISTRERT SOM DØD.                                   */        
+ /* ***************************************************************** */        
+                                                                                
+            IF B01.DØDSDATO_ÅMD(AVDØD_IND) = 0 &                                
+               B01.FNR(AVDØD_IND) > 0            THEN                           
+               DO;                                                              
+  L120:                                                                         
+                  FEIL_VED_LABEL = '120';                                       
+                  FEIL_MELD_NR   = 1710;                                        
+                  GO TO L999;                                                   
+               END;                                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* SØKER HAR IKKE PENSJONSSTATUS.                                    */        
+ /* ***************************************************************** */        
+                                                                                
+            STATUS_TYPE    = W_STATUS_TYPE;                                     
+            IF STATUS_TYPE = 'A' !                                              
+               STATUS_TYPE = 'C' !                                              
+               STATUS_TYPE = 'I' !       /* TILLEGGSTEST PÅ 'I' OG */           
+               STATUS_TYPE = 'K' THEN    /* 'K' - 13.3.85  HL      */           
+               DO;                                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER ER I BASEN.                                          */        
+ /* ***************************************************************** */        
+                                                                                
+                  IF B01.FNR(SØKER_IND) > 0 THEN                                
+                     DO;                                                        
+                        /*  13/2-85 AV KARIN                          */        
+                        /*  TIDL.:CALL FLYTT_B01_TIL_B02(SØKER_IND);  */        
+                        /*  IF FEIL_MELD_NR > 0 THEN                  */        
+                        /*     GO TO L999;                            */        
+                        /*  ELSE                                      */        
+                        /*     PROGRAM_ID = 'R0011120';               */        
+                        B02.PERSON(SØKER_IND) = B01.PERSON(SØKER_IND);          
+ /* TILLEGG 17.4.85 HL                                              */          
+                                                                                
+                                     B02.STATUS_KODE_HIST(SØKER_IND)            
+                                         = ' ';                                 
+ /**/                                                                           
+                     END;                                                       
+                                                                                
+ /* ***************************************************************** */        
+ /* SØKER ER IKKE I BASEN.                                            */        
+ /* ***************************************************************** */        
+                                                                                
+                  ELSE                                                          
+                     B02.FNR   (SØKER_IND) = B6B.FNR_BARN(1);                   
+                                                                                
+                  B02.PERSON(AVDØD_IND) = B01.PERSON(AVDØD_IND);                
+                                                                                
+                  B02.NAVN  (SØKER_IND) = B6B.NAVN_BARN(1);                     
+                  B02.SPRÅK (SØKER_IND) = B6B.SPRÅK;                            
+                  B02.TKNR  (SØKER_IND) = B6B.TKNR(1);                          
+                  B02.PENSJONSTRYGDET(SØKER_IND) = B6B.PENSJONSTRYGDET;         
+                  B02.MINST_20ÅR_BOTID(SØKER_IND) = B6B.MINST_20ÅR;             
+                  B02.FRAVIK_BOSATT_KONVENSJON(SØKER_IND) =                     
+                              B6B.KONVENSJON;                                   
+                  BARN_IND              = SØKER_IND;                            
+                  CALL OPPRETT_STATUS_B6_BARN;                                  
+                  CALL                                                          
+                      KOBLE_TO_PERSONER(SØKER_IND,AVDØD_IND);                   
+               END;                                                             
+            ELSE                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* SØKER HAR PENSJONSSTATUS.                                         */        
+ /* ***************************************************************** */        
+                                                                                
+               IF STATUS_TYPE ^= 'F' THEN                                       
+                  DO;                                                           
+                     IF B01.TKNR(SØKER_IND) > 0 THEN                            
+                        IF B01.TKNR(SØKER_IND) ^= B6B.TKNR(1) THEN              
+                           B02.TKNR(SØKER_IND) = B6B.TKNR(1);                   
+  /*                       DO                                                   
+  L140: FJERNA 170701 MARTIN                                                    
+                              FEIL_VED_LABEL = '140'                            
+                              FEIL_MELD_NR   = 1702                             
+                              GO TO L999                                        
+                           END */                                               
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER HAR UFØREPENSJON.                                    */        
+ /* ***************************************************************** */        
+                                                                                
+                     IF B01.PENSJONSTYPE1(SØKER_IND) = 'U' THEN                 
+                        DO;                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER ER UGIFT.                                            */        
+ /* ***************************************************************** */        
+                                                                                
+                           IF B01.SIVILSTAND(SØKER_IND) = 'U' THEN              
+                              DO;                                               
+                                 CALL                                           
+                                    FLYTT_B01_TIL_B02(SØKER_IND);               
+                                 IF FEIL_MELD_NR > 0 THEN                       
+                                    GO TO L999;                                 
+                                 ELSE                                           
+                                    PROGRAM_ID = 'R0011120';                    
+                                 B02.PERSON(AVDØD_IND) =                        
+                                           B01.PERSON(AVDØD_IND);               
+                                 B02.PENSJONSTYPE3(SØKER_IND) = 'U';            
+                                 CALL                                           
+                                    KOBLE_TO_PERSONER(                          
+                                    SØKER_IND,AVDØD_IND);                       
+                              END;                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* ELLERS ER SØKER GIFT, SKILT, ETTERLATT.                           */        
+ /* ***************************************************************** */        
+                                                                                
+                           ELSE                                                 
+                              DO;                                               
+  L150:                                                                         
+                                 FEIL_VED_LABEL = '150';                        
+                                 FEIL_MELD_NR   = 1301;                         
+                                 GO TO L999;                                    
+                              END;                                              
+                        END;                                                    
+                     ELSE                                                       
+                        IF B01.PENSJONSTYPE1(SØKER_IND) = 'N' THEN              
+                           DO;                                                  
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER ER YNGSTE BARN.                                      */        
+ /* ***************************************************************** */        
+ /* ENDRET 08.02.88   SATISH                                         */         
+ /*                           IF B01.PENSJONSTYPE2(SØKER_IND)        */         
+ /*                                        = 'Y' THEN                */         
+ /*  HIT TILL      08.02.88                                          */         
+                                                                                
+                              IF B01.PENSJONSTYPE2(SØKER_IND) = 'P'             
+                                                 THEN                           
+                                 DO;                                            
+                                    YNG_BARN_LEST = 'J';                        
+                                    B02.PERSON(AVDØD_IND) =                     
+                                        B01.PERSON(AVDØD_IND);                  
+                                    CALL                                        
+                                      FLYTT_B01_TIL_B02(SØKER_IND);             
+                                    IF FEIL_MELD_NR > 0 THEN                    
+                                       GO TO L999;                              
+                                    ELSE                                        
+                                       PROGRAM_ID = 'R0011120';                 
+                                                                                
+                                 END;                                           
+                                                                                
+ /* ***************************************************************** */        
+ /* IKKE YNGSTE BARN.                                                 */        
+ /* ***************************************************************** */        
+                                                                                
+                              ELSE                                              
+                                 DO;                                            
+  L160:                                                                         
+                                    FEIL_VED_LABEL = '160';                     
+                                    FEIL_MELD_NR   = 1303;                      
+                                    GO TO L999;                                 
+                                 END;                                           
+                           END;                                                 
+                                                                                
+ /* ***************************************************************** */        
+ /* BARNEPENSJONIST BEGGE FORELDRE DØDE                               */        
+ /* ***************************************************************** */        
+                                                                                
+                        ELSE                                                    
+                           IF B01.PENSJONSTYPE1(SØKER_IND) = 'B' THEN           
+                              DO;                                               
+  L170:                                                                         
+                                 FEIL_VED_LABEL = '170';                        
+                                 FEIL_MELD_NR   = 1306;                         
+                                 GO TO L999;                                    
+                              END;                                              
+                                                                                
+ /* **************************************************************** */         
+ /* ELLERS FORSØRGET BARN.                                           */         
+ /* **************************************************************** */         
+                                                                                
+                           ELSE                                                 
+                              IF B01.PENSJONSTYPE1(SØKER_IND)                   
+                                                  = 'L' THEN                    
+                                 DO;                                            
+  L180:                                                                         
+                                   FEIL_VED_LABEL = '180';                      
+                                   FEIL_MELD_NR   = 1203;                       
+                                   GO TO L999;                                  
+                                 END;                                           
+                                                                                
+ /* **************************************************************** */         
+ /* PENSJONSTYPE1 = NOE ANNET.                                       */         
+ /* **************************************************************** */         
+                                                                                
+                              ELSE                                              
+                                 DO;                                            
+    L200:                                                                       
+                                    FEIL_VED_LABEL = '200';                     
+                                    FEIL_MELD_NR   = 1301;                      
+                                    GO TO L999;                                 
+                                 END;                                           
+                 /* 11/2-85 KARIN                                  */           
+                 /* FØLGENDE 3 STATEMENTS LÅ ETTER END-STATEMENTET */           
+                 /* OG BLE IKKE UTFØRT - DETTE FØRTE TIL FEIL I    */           
+                 /* TILKNYTNINGENE NÅR NYTT YNGSTE BARN I KULLET   */           
+                     I = 1;                                                     
+                     BARN_IND = SØKER_IND;                                      
+                     CALL AJOURFØR_B02_MED_B6_TRANS(I);                         
+                  END;  /* STATUS_TYPE ^= F  */                                 
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+ /* **************************************************************** */         
+ /* AVDØDES FNR ER UOPPGITT  - DVS 11111111111                       */         
+ /* **************************************************************** */         
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* SØKER HAR IKKE PENSJONSSTATUS.                                    */        
+ /* ***************************************************************** */        
+                                                                                
+            STATUS_TYPE    = W_STATUS_TYPE;                                     
+            IF STATUS_TYPE = 'A' !                                              
+               STATUS_TYPE = 'C' THEN                                           
+               DO;                                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER ER I BASEN.                                          */        
+ /* ***************************************************************** */        
+                                                                                
+                  IF B01.FNR(SØKER_IND) > 0 THEN                                
+                     DO;                                                        
+                        /* ENDRET 13/2-85 AV KARIN                    */        
+                        /* TIDL. CALL FLYTT_B01_TIL_B02(SØKER_IND);   */        
+                        /* IF FEIL_MELD_NR > 0 THEN                   */        
+                        /*    GO TO L999;                             */        
+                        /* ELSE                                       */        
+                        /*   PROGRAM_ID = 'R0011120';                 */        
+                        B02.PERSON (SØKER_IND) = B01.PERSON (SØKER_IND);        
+ /* TILLEGG 17.4.85 HL                                              */          
+                                                                                
+                                     B02.STATUS_KODE_HIST(SØKER_IND)            
+                                         = ' ';                                 
+ /**/                                                                           
+                     END;                                                       
+                                                                                
+ /* ***************************************************************** */        
+ /* SØKER ER IKKE I BASEN.                                            */        
+ /* ***************************************************************** */        
+                                                                                
+                  ELSE                                                          
+                     B02.FNR   (SØKER_IND) = B6B.FNR_BARN(1);                   
+                                                                                
+                  B02.NAVN  (SØKER_IND) = B6B.NAVN_BARN(1);                     
+                  B02.SPRÅK (SØKER_IND) = B6B.SPRÅK;                            
+                  B02.TKNR  (SØKER_IND) = B6B.TKNR(1);                          
+                  BARN_IND              = SØKER_IND;                            
+                  CALL OPPRETT_STATUS_B6_BARN;                                  
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* SØKER HAR PENSJONSSTATUS.                                         */        
+ /* ***************************************************************** */        
+                                                                                
+                  IF STATUS_TYPE ^= 'F' THEN                                    
+                     DO;                                                        
+                        IF B01.TKNR(SØKER_IND) > 0 THEN                         
+                           IF B01.TKNR(SØKER_IND) ^= B6B.TKNR(1) THEN           
+                              DO;                                               
+  L210:                                                                         
+                                 FEIL_VED_LABEL = '210';                        
+                                 FEIL_MELD_NR   = 1702;                         
+                                 GO TO L999;                                    
+                              END;                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER HAR UFØREPENSJON.                                    */        
+ /* ***************************************************************** */        
+                                                                                
+                        IF B01.PENSJONSTYPE1(SØKER_IND) = 'U' THEN              
+                           DO;                                                  
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER ER UGIFT.                                            */        
+ /* ***************************************************************** */        
+                                                                                
+                              IF B01.SIVILSTAND(SØKER_IND) = 'U' THEN           
+                                 DO;                                            
+                                    CALL                                        
+                                       FLYTT_B01_TIL_B02(SØKER_IND);            
+                                    IF FEIL_MELD_NR > 0 THEN                    
+                                       GO TO L999;                              
+                                    ELSE                                        
+                                       PROGRAM_ID = 'R0011120';                 
+                                    B02.PENSJONSTYPE3(SØKER_IND) = 'U';         
+                                 END;                                           
+                                                                                
+ /* ***************************************************************** */        
+ /* ELLERS ER SØKER GIFT, SKILT, ETTERLATT.                           */        
+ /* ***************************************************************** */        
+                                                                                
+                              ELSE                                              
+                                 DO;                                            
+  L220:                                                                         
+                                    FEIL_VED_LABEL = '220';                     
+                                    FEIL_MELD_NR   = 1301;                      
+                                    GO TO L999;                                 
+                                 END;                                           
+                           END;                                                 
+                        ELSE                                                    
+                           IF B01.PENSJONSTYPE1(SØKER_IND) = 'N' THEN           
+                              DO;                                               
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM SØKER ER YNGSTE BARN.                                      */        
+ /* ***************************************************************** */        
+                                                                                
+ /* ENDRET 08.02.88   SATISH                                         */         
+ /*                              IF B01.PENSJONSTYPE2(SØKER_IND)     */         
+ /*                                           = 'Y' THEN             */         
+ /*  HIT TILL      08.02.88                                          */         
+                                                                                
+                                IF B01.PENSJONSTYPE2(SØKER_IND) = 'P'           
+                                                    THEN                        
+                                    DO;                                         
+                                       YNG_BARN_LEST = 'J';                     
+                                       CALL                                     
+                                         FLYTT_B01_TIL_B02(SØKER_IND);          
+                                       IF FEIL_MELD_NR > 0 THEN                 
+                                          GO TO L999;                           
+                                       ELSE                                     
+                                          PROGRAM_ID = 'R0011120';              
+                                                                                
+                                    END;                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* IKKE YNGSTE BARN.                                                 */        
+ /* ***************************************************************** */        
+                                                                                
+                                 ELSE                                           
+                                    DO;                                         
+  L230:                                                                         
+                                       FEIL_VED_LABEL = '230';                  
+                                       FEIL_MELD_NR   = 1303;                   
+                                       GO TO L999;                              
+                                    END;                                        
+                              END;                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* BARNEPENSJONIST BEGGE FORELDRE DØDE                               */        
+ /* ***************************************************************** */        
+                                                                                
+                           ELSE                                                 
+                              IF B01.PENSJONSTYPE1(SØKER_IND) = 'B' THEN        
+                                 DO;                                            
+  L240:                                                                         
+                                    FEIL_VED_LABEL = '240';                     
+                                    FEIL_MELD_NR   = 1306;                      
+                                    GO TO L999;                                 
+                                 END;                                           
+                                                                                
+ /* **************************************************************** */         
+ /* ELLERS FORSØRGET BARN.                                           */         
+ /* **************************************************************** */         
+                                                                                
+                              ELSE                                              
+                                 IF B01.PENSJONSTYPE1(SØKER_IND)                
+                                                     = 'L' THEN                 
+                                    DO;                                         
+  L250:                                                                         
+                                      FEIL_VED_LABEL = '250';                   
+                                      FEIL_MELD_NR   = 1203;                    
+                                      GO TO L999;                               
+                                    END;                                        
+                                                                                
+ /* **************************************************************** */         
+ /* PENSJONSTYPE1 = NOE ANNET.                                       */         
+ /* **************************************************************** */         
+                                                                                
+                                 ELSE                                           
+                                    DO;                                         
+  L260:                                                                         
+                                       FEIL_VED_LABEL = '260';                  
+                                       FEIL_MELD_NR   = 1301;                   
+                                       GO TO L999;                              
+                                    END;                                        
+                     END;  /* STATUS_TYPE ^= F  */                              
+                  I = 1;                                                        
+                  BARN_IND = SØKER_IND;                                         
+                  CALL AJOURFØR_B02_MED_B6_TRANS(I);                            
+               END;                                                             
+         END;     /* FNR_DØD = 11111111111 */                                   
+                                                                                
+                                                                                
+ /* **************************************************************** */         
+ /* BARNEDELEN.                                                      */         
+ /* **************************************************************** */         
+ /* NÅ HAR VI AVDØDE OG YNGSTE BARN MED EVENTUELLE TILKNYTTEDE BARN */          
+ /* PÅ PLASS OG KOBLET I B02                                        */          
+ /* HVIS YNGSTE BARN IKKE ER I BASEN FRA FØR ER INGEN AV DE ØVRIGE  */          
+ /* BARNA I B6_TRANSEN LEST INN ENNÅ.                               */          
+ /* *************************************************************** */          
+                                                                                
+ DO I = 2 TO 10 WHILE(B6B.FNR_BARN(I) > 0);                                     
+    BARN_IND = 0;                                                               
+    DO J = 4 TO 14 WHILE (B02.FNR(J) > 0);                                      
+       IF B6B.FNR_BARN(I) = B02.FNR(J) THEN                                     
+          DO;                                                                   
+             BARN_IND = J;                                                      
+             J        = 14;                                                     
+          END;                                                                  
+    END;                                                                        
+ %PAGE;                                /* */                                    
+                                                                                
+ /* ***************************************************************** */        
+ /* BARNET ER IKKE I B01, IKKE LEST INN I B01 SAMMEN MED YNGSTE BARN  */        
+ /* ***************************************************************** */        
+                                                                                
+    IF BARN_IND = 0 THEN                                                        
+       DO;                                                                      
+          BARN_IND        = J;                                                  
+          SEARCH_FNR      = B6B.FNR_BARN(I);                                    
+          POS_I_B01       = BARN_IND;                                           
+                                                                                
+          /* BARNET LESES INN I B01                          */                 
+          EXEC CICS LINK PROGRAM ('R0019928') COMMAREA (KOM_OMR);               
+          IF FEIL_MELD_NR > 0 THEN                                              
+             GO  TO L999;                                                       
+          ELSE                                                                  
+             PROGRAM_ID = 'R0011120';                                           
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM BARNET ER I BASEN.                                       */          
+ /* *************************************************************** */          
+                                                                                
+          IF STATUS_TYPE = 'A' !                                                
+             STATUS_TYPE = 'C' THEN                                             
+             DO;                                                                
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM BARNET IKKE HAR PENSJONSSTATUS.                          */          
+ /* *************************************************************** */          
+                                                                                
+                IF B01.FNR(BARN_IND) > 0           THEN                         
+                   DO;                                                          
+                      /* ENDRET 13/2-85 AV KARIN      */                        
+                      /* TIDL. CALL FLYTT_B01_TIL_B02(BARN_IND);    */          
+                      /*       IF FEIL_MELD_NR > 0 THEN             */          
+                      /*          GO TO L999;                       */          
+                      /*       ELSE                                 */          
+                      /*          PROGRAM_ID = 'R0011120';          */          
+                      B02.PERSON (BARN_IND) = B01.PERSON (BARN_IND);            
+ /* TILLEGG 17.4.85 HL                                              */          
+                                                                                
+                                     B02.STATUS_KODE_HIST(BARN_IND)             
+                                         = ' ';                                 
+ /**/                                                                           
+                   END;                                                         
+                ELSE                                                            
+                                                                                
+ /* ***************************************************************** */        
+ /* BARNET ER IKKE I BASEN                                            */        
+ /* ***************************************************************** */        
+                                                                                
+                   B02.FNR   (BARN_IND) = B6B.FNR_BARN(I);                      
+                B02.NAVN  (BARN_IND) = B6B.NAVN_BARN(I);                        
+                B02.TKNR  (BARN_IND) = B6B.TKNR(I);                             
+                B02.SPRÅK (BARN_IND) = B6B.SPRÅK;                               
+                CALL OPPRETT_STATUS_B6_BARN;                                    
+                CALL                                                            
+                    KOBLE_TO_PERSONER(SØKER_IND,                                
+                                                       BARN_IND);               
+                                                                                
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+                IF B01.TKNR(BARN_IND) ^=                                        
+                                         B6B.TKNR(I) THEN                       
+                   DO;                                                          
+  L300:                                                                         
+                      FEIL_VED_LABEL = '300';                                   
+                      FEIL_MELD_NR   = 1702;                                    
+                      GO TO L999;                                               
+                   END;                                                         
+                ELSE                                                            
+                   IF STATUS_TYPE ^= 'F' &                                      
+                      STATUS_TYPE ^= 'H'        THEN                            
+                      DO;                                                       
+                                                                                
+                         IF B01.PENSJONSTYPE1(BARN_IND) = 'U' THEN              
+                            DO;                                                 
+                               IF B01.SIVILSTAND(BARN_IND) = 'U' THEN           
+                                  DO;                                           
+                                     /* ENDRET 13/2-85 AV KARIN     */          
+                                     /* TIDLIGERE:                  */          
+                                     /*CALL                         */          
+                                     /* FLYTT_B01_TIL_B02(BARN_IND);*/          
+                                     /* IF FEIL_MELD_NR > 0 THEN    */          
+                                     /*    GO TO L999;              */          
+                                     /* ELSE                        */          
+                                     /*    PROGRAM_ID = 'R0011120';*/           
+                                                                                
+                                     B02.PERSON(BARN_IND) =                     
+                                     B01.PERSON(BARN_IND);                      
+ /* TILLEGG 17.4.85 HL                                              */          
+                                                                                
+                                     B02.STATUS_KODE_HIST(BARN_IND)             
+                                         = ' ';                                 
+ /**/                                                                           
+                                                                                
+                                  END;                                          
+                               ELSE                                             
+                                  DO;                                           
+  L310:                                                                         
+                                     FEIL_VED_LABEL = '310';                    
+                                     FEIL_MELD_NR   = 1301;                     
+                                     GO TO L999;                                
+                                  END;                                          
+                            END;                                                
+                         ELSE                                                   
+                            IF B01.PENSJONSTYPE1(BARN_IND) = 'N' THEN           
+                               DO;                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* NÅ SUMMERER VI ANTALL BARN I SAMME BARNEKULL FOR Å VÆRE SIKKER PÅ */        
+ /* AT DET ER INGEN IGJEN I REGISTERET. BARNA ER SORTERT PÅ FORHÅND   */        
+ /* SLIK AT VI ALLTID LESER YNGSTE BARN FØRST.                        */        
+ /* ***************************************************************** */        
+                                                                                
+ /* ENDRET 08.02.88   SATISH                                         */         
+ /*                               IF B01.PENSJONSTYPE2(              */         
+ /*                                            BARN_IND) = 'Y' THEN  */         
+ /*  HIT TILL      08.02.88                                          */         
+                                                                                
+                                IF B01.PENSJONSTYPE2(BARN_IND) = 'P'            
+                                                           THEN                 
+                                     DO;                                        
+                                        IF YNG_BARN_LEST = 'J' THEN             
+                                           DO;                                  
+  L330:                                                                         
+                                              FEIL_VED_LABEL = '330';           
+                                              FEIL_MELD_NR   = 1309;            
+                                              GO TO L999;                       
+                                           END;                                 
+                                        /* ENDRET 13/2-85 AV KARIN   */         
+                                        /* TIDL.: CALL FLYTT_B01_TIL */         
+                                        /* B02(BARN_IND);            */         
+                                        /* IF FEIL_MELD_NR > 0 THEN  */         
+                                        /*    GO TO L999;            */         
+                                        /* ELSE                      */         
+                                        /*    PROGRAM_ID = 'R0011120';*/        
+                                                                                
+                                        B02.PERSON(BARN_IND) =                  
+                                        B01.PERSON(BARN_IND);                   
+ /* TILLEGG 17.4.85 HL                                              */          
+                                                                                
+                                        B02.STATUS_KODE_HIST(BARN_IND)          
+                                            = ' ';                              
+ /**/                                                                           
+                                        FORRIGE_YNG_BARN_IND =                  
+                                                            BARN_IND;           
+ /* 14/2-85 AV KARIN                                                  */        
+ /* ***************************************************************** */        
+ /* VI MÅ SLETTE TIDLIGER KOBLINGER MELLOM BARNET OG AVDØDE           */        
+ /* ***************************************************************** */        
+                                        CALL OPPHØR_KOBLING_TO_PERSONER         
+                                      (FORRIGE_YNG_BARN_IND, AVDØD_IND);        
+                                       YNG_BARN_LEST = 'J';                     
+                                    END;                                        
+                                 ELSE                                           
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM TILKNYTTET FORRIGE YNGSTE BARN OG PENSJONSTYPE2 = Ø.       */        
+ /* ***************************************************************** */        
+                                                                                
+                                    IF B01.PENSJONSTYPE2(                       
+                                                  BARN_IND) = 'Ø' THEN          
+                                       DO;                                      
+                                        /* ENDRET 13/2-85 AV KARIN */           
+                                        /* TIDL.: CALL             */           
+                                        /* FLYTT_B01_TIL_B02       */           
+                                        /*           (BARN_IND);   */           
+                                        /*IF FEIL_MELD_NR > 0 THEN*/            
+                                        /*   GO TO L999;           */           
+                                        /*ELSE                     */           
+                                        /*   PROGRAM_ID='R0011120';*/           
+                                        B02.PERSON(BARN_IND) =                  
+                                        B01.PERSON(BARN_IND);                   
+ /* TILLEGG 17.4.85 HL                                              */          
+                                                                                
+                                        B02.STATUS_KODE_HIST(BARN_IND)          
+                                            = ' ';                              
+ /**/                                                                           
+                                        /* 14/2-85 AV KARIN        */           
+                                        IF YNG_BARN_LEST = 'J' THEN             
+                                          DO;                                   
+                                            IF B01.FNR_TILKN                    
+                                               (BARN_IND, 1) =                  
+                                               B01.FNR                          
+                                               (FORRIGE_YNG_BARN_IND)           
+                                               THEN                             
+                                      CALL OPPHØR_KOBLING_TO_PERSONER           
+                                      (FORRIGE_YNG_BARN_IND, BARN_IND);         
+                                            ELSE                                
+                                             DO;                                
+  L335:                                                                         
+                                              FEIL_VED_LABEL = '335';           
+                                              FEIL_MELD_NR   = 1310;            
+                                              GO TO L999;                       
+                                             END;                               
+                                                                                
+                                          END;                                  
+                                       END; /* END PT2 = 'Ø' */                 
+                                    ELSE                                        
+                                       DO;                                      
+  L340:                                                                         
+                                          FEIL_VED_LABEL = '340';               
+                                          FEIL_MELD_NR   = 1307;                
+                                          GO TO L999;                           
+                                       END;                                     
+                               END;                                             
+                            ELSE                                                
+                               IF B01.PENSJONSTYPE1(BARN_IND) =                 
+                                                               'L' THEN         
+                                  DO;                                           
+                                                                                
+ /* ***************************************************************** */        
+ /* BARNET ER FORSØRGET AV ANDRE                                      */        
+ /* ***************************************************************** */        
+                                                                                
+  L350:                                                                         
+                                     FEIL_VED_LABEL = '350';                    
+                                     FEIL_MELD_NR   = 1203;                     
+                                     GO TO L999;                                
+                                  END;                                          
+                               ELSE                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* BARNET ER REGISTRERT SOM GIFT/SKILT/ETTERLATT                     */        
+ /* ***************************************************************** */        
+ /* DERSOM FORSØRGET EKTEFELLE.                                       */        
+ /* ***************************************************************** */        
+                                                                                
+                                     IF B01.PENSJONSTYPE1(                      
+                                                   BARN_IND) = 'F' THEN         
+                                        DO;                                     
+  L360:                                                                         
+                                           FEIL_VED_LABEL = '360';              
+                                           FEIL_MELD_NR   = 1206;               
+                                           GO TO L999;                          
+                                        END;                                    
+                                     ELSE                                       
+                                        DO;                                     
+  L370:                                                                         
+                                           FEIL_VED_LABEL = '370';              
+                                           FEIL_MELD_NR   = 1306;               
+                                           GO TO L999;                          
+                                        END;                                    
+                         CALL                                                   
+                             AJOURFØR_B02_MED_B6_TRANS(I);                      
+                         CALL                                                   
+                             KOBLE_TO_PERSONER(                                 
+                                               SØKER_IND,BARN_IND);             
+                      END;                                                      
+                   ELSE                                                         
+                      DO;                                                       
+  L380:                                                                         
+                         FEIL_VED_LABEL = '380';                                
+                         FEIL_MELD_NR   = 0601;                                 
+                         GO TO L999;                                            
+                      END;                                                      
+             END;                                                               
+       END;                                                                     
+    ELSE                                                                        
+       /*  BARNET ER LEST INN SAMMEN MED YNGSTE BARN, DVS KOBLET */             
+       /*  FRA FØR.                                              */             
+       CALL                                                                     
+           AJOURFØR_B02_MED_B6_TRANS(I);                                        
+ END;                                                                           
+                                                                                
+ ANT_BARN_I_TRANS = I - 1;                                                      
+                                                                                
+ /* TATT BORT 14/2-84 AV KARIN - KOBLINGENE TAS BORT VED BEHANLINGEN  */        
+ /* AV HVERT ENKELT BARN                                              */        
+ /* IF FORRIGE_YNG_BARN_IND > 0 THEN                                  */        
+ /*   DO;                                                             */        
+ /*    DO I=1 TO 13 WHILE(B02.FNR_TILKN(FORRIGE_YNG_BARN_IND,I) > 0); */        
+ /*       IF B02.FNR(SØKER_IND) ^=                                    */        
+ /*          B02.FNR_TILKN(FORRIGE_YNG_BARN_IND,I) THEN               */        
+ /*          DO;                                                      */        
+ /*             DO J = 1 TO 14 UNTIL(B02.FNR(J) =                     */        
+ /*                      B02.FNR_TILKN(FORRIGE_YNG_BARN_IND,I));      */        
+ /*             END;                                                  */        
+ /*             IF B02.TILKNYTNINGSKODE(FORRIGE_YNG_BARN_IND,I) =     */        
+ /*                                       'Ø' THEN                    */        
+ /*                B02.ANTALL_BARN(FORRIGE_YNG_BARN_IND) =            */        
+ /*                B02.ANTALL_BARN(FORRIGE_YNG_BARN_IND) - 1;         */        
+ /*             CALL OPPHØR_KOBLING_TO_PERSONER                       */        
+ /*             (FORRIGE_YNG_BARN_IND,I);                             */        
+ /*          END;                                                     */        
+ /*    END;                                                           */        
+ /*    B02.ANTALL_BARN(FORRIGE_YNG_BARN_IND) =                        */        
+ /*                        B02.ANTALL_BARN(FORRIGE_YNG_BARN_IND) - 1; */        
+ /*    IF B02.ANTALL_BARN(FORRIGE_YNG_BARN_IND) > 1 THEN              */        
+                                                                                
+ /* ***************************************************************** */        
+ /* DET ER FLERE BARN FREMDELES TILKNYTTET.                           */        
+ /* ***************************************************************** */        
+                                                                                
+ /*         DO;                                                       */        
+ /*  L390:                                                            */        
+ /*             FEIL_VED_LABEL = '390';                               */        
+ /*             FEIL_MELD_NR   = 1308;                                */        
+ /*             GO TO L999;                                           */        
+ /*          END;                                                     */        
+ /*    ELSE                                                           */        
+ /*       B02.ANTALL_BARN(FORRIGE_YNG_BARN_IND) = 0;                  */        
+ /*   END;                                                            */        
+ /* *************** HIT TATT BORT 14/2-85    ************************ */        
+                                                                                
+ /* ***************************************************************** */        
+ /* NÅR ALLE BARNA I TRANSEN ER I B02 MÅ ANTALL BARN I DET NYE        */        
+ /* BARNEKULLET SUMMERES OG PESTATUS TIL YNGSTE BARN AJOURFØRES MED   */        
+ /* DETTE TALLET.                                                     */        
+ /* ***************************************************************** */        
+                                                                                
+ /* FØRSTE_GANG_REG MÅ VæRE LIKT FOR HELE FAMILIEN                    */        
+ /* 15/2-85 AV KARIN                                                  */        
+ IF B02.FØRSTE_GANG_REG (3) = 'J' &                                             
+    B02.FØRSTE_GANG_REG (4) = 'N' THEN                                          
+    B02.FØRSTE_GANG_REG (3) = 'N';                                              
+                                                                                
+                                                                                
+ DO I = 3 TO 14 WHILE(B02.FNR(I) > 0);                                          
+    BARN_ANTALL = BARN_ANTALL + 1;                                              
+ END;                                                                           
+                                                                                
+ B02.ANTALL_BARN(SØKER_IND) = BARN_ANTALL;                                      
+                                                                                
+ IF B02.ANTALL_BARN(SØKER_IND) ^= ANT_BARN_I_TRANS THEN                         
+    DO;                                                                         
+  L400:                                                                         
+       FEIL_VED_LABEL = '400';                                                  
+       FEIL_MELD_NR   = 1308;                                                   
+       GO TO L999;                                                              
+   END;                                                                         
+ L999:                                                                          
+ EXEC CICS RETURN;                                                              
+ %PAGE;                                                                         
+ %INCLUDE R001NB21;         /* OPPRETT_STATUS_UP_SØKER     */                   
+ %INCLUDE R001NB22;         /* AJOURFØR B02 MED UP TRANS   */                   
+ %INCLUDE R0019905;         /* REGN ALDER PR VIRKDATO      */                   
+ %INCLUDE R0019924;         /* KOBLE TO PERSONER           */                   
+ %INCLUDE R0019926;         /* FLYTT B01 TIL B02           */                   
+ %INCLUDE R0019934;         /* OPPHØR_KOBLING_TO_PERSONER  */                   
+ %INCLUDE R0019995;         /* KONV_FNR11_FNR13            */   /*Y2K*/         
+ END B6TR;                                                                      

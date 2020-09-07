@@ -1,0 +1,403 @@
+ /*   SIST ENDRET PÅ PROD   2004.09.29 10.20.27 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.09.22  9.28.37 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.05.14 13.15.34 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.05.04 11.18.58 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.03.18 11.53.53 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.02  9.57.33 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.06.19 15.35.19 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.03.14 10.39.57 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.12.20  8.56.44 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.19 12.44.55 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.01.18 12.19.42 AV   JDA7339          */        
+ /*       SIST ENDRET 22/06-98 10.25.11 AV   JDA7339                  */        
+ /*       SIST ENDRET 18/06-98 15.50.29 AV   RFA9991                  */        
+ /* **************************************************************** */         
+ /*IDENTIFIKASJON:                                                   */         
+ /*    R0014301 - PROSEDYRE I PLI                                    */         
+ /*    PROGRAMMERER: JAN KR., JUNI-82.                               */         
+ /*HENSIKT:                                                          */         
+ /*    BEREGNE ETTERLATTEPENSJON                                     */         
+ /*                                                                  */         
+ /*PROGRAMTILKNYTNING:                                               */         
+ /*    KALLES OPP AV PROGRAM R0013520                                */         
+ /*BRUK:                                                             */         
+ /*    EXEC CICS XCTL PROGRAM ('R0014301') COMMAREA (KOM_OMR)        */         
+ /* **************************************************************** */         
+ REGNXEP:                                                                       
+   PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                        
+      %INCLUDE P0019906; /* TRANS_OMR_OPL */                                    
+      %INCLUDE P0019908; /* KOM_OMR       */                                    
+      %INCLUDE P0019910; /* STYRINGS_OMR  */                                    
+      %INCLUDE P0019912; /* DIV_PARAM_OMR */                                    
+      %INCLUDE P0014009; /* POTALL_OPPL   */                                    
+      %INCLUDE P0014002; /* W_POREKKE     */                                    
+      %INCLUDE P0014003; /* TAB           */                                    
+      %INCLUDE P0019924; /* GV_TAB_RE     */                                    
+      %INCLUDE P0019925; /* G_TAB_RE      */                                    
+                                                                                
+   DCL 1 B01 BASED(B01_PEKER), %INCLUDE P0019921;                               
+   DCL 1 B02 BASED(B02_PEKER), %INCLUDE P0019921;                               
+   DCL COMMAREA_PEKER PTR;                                                      
+   DCL                                                                          
+       (                                                                        
+        ADDR,                                                                   
+        CSTG,                                                                   
+        SUBSTR                                                                  
+       )                            BUILTIN,                                    
+       (                                                                        
+        I,                                                                      
+        K                                                                       
+       )                            FIXED BIN (15) INIT (0);                    
+   DCL                                                                          
+       TRYGDETID_KONV               FIXED DEC(3) INIT (0),                      
+       W_ST_FRADRAG                 FIXED DEC(5) INIT (0),                      
+       W_ST                         FIXED DEC(7) INIT (0),                      
+       W_KT                         FIXED DEC(5) INIT (0),                      
+       Y_TILLEGG                    CHAR (1)     INIT (''),                     
+       DATO                         CHAR (8)     INIT ('');                     
+                                                                                
+          DCL 1 DAGENS_DATO  DEF  DATO,                                         
+                2  ÅR        PIC'9999',                                         
+                2  MND       PIC'99',                                           
+                2  DAG       PIC'99';                                           
+                                                                                
+          DCL J       FIXED DEC (2);                                            
+                                                                                
+          DCL  W_TILLEGG_LOV92         FIXED DEC (5) INIT (0);                  
+          DCL  W_TP_PROSENT            FIXED DEC (3);                           
+          DCL  W_FNR_EK                        PIC '(11)9';                     
+          DCL  W_FNR_EK13                      PIC '(13)9';                     
+          DCL  W_FNR_EK13_ÅR DEF W_FNR_EK13 POS(5) PIC '9999';                  
+          DCL  W_FNR_EK_ÅR DEF W_FNR_EK POS(5) PIC '99';                        
+          DCL  W_FNR_EK_ÅRHUNDRE DEF W_FNR_EK POS(7) PIC '9';                   
+     DCL                                                                        
+         W_TT_EGEN                       FIXED(5) INIT (0),                     
+         W_TT_AVDØD                      FIXED(5) INIT (0);                     
+     DCL                                                                        
+         1 DØDSDATO_ÅMD                  PIC '(8)9',          /*Y2K*/           
+         1 DØDSTP DEF DØDSDATO_ÅMD,                                             
+           2 ÅR                          PIC '9999',          /*Y2K*/           
+           2 MND                         PIC '99',                              
+           2 DAG                         PIC '99';                              
+     DCL FULL_TT               CHAR (1)  INIT (' ');  /* HL*/                   
+     DCL BRUKT_TT              FIXED DEC (3) INIT (0);/* HL*/                   
+                                                                                
+    /* ============================================================== */        
+    /* PROGRAMMET STARTER HER                                         */        
+                                                                                
+    DATO = DATO_2000;                                                           
+    DØDSDATO_ÅMD = B02.DØDSDATO_ÅMD(BER_EK_IND);                                
+    W_FNR_EK     = B02.FNR         (BER_EK_IND);                                
+    W_FNR_EK13   = KONV_FNR11_FNR13((B02.FNR(BER_EK_IND)));                     
+                                                                                
+    /* DERSOM PT1 = E SKAL DET IKKE GIS POENGTILLEGG. # 138*/                   
+    /* TRUDE 14102002******************************** # 138*/                   
+                                                                                
+    B02.POENGTILLEGG_DATO_ÅMD(BER_SØ_IND) = 0;                                  
+    B02.POENGTILLEGG_KODE   (BER_SØ_IND) = ' ';                                 
+    B02.POENGTILLEGG_DATO_ÅMD(BER_EK_IND) = 0;                                  
+    B02.POENGTILLEGG_KODE   (BER_EK_IND) = ' ';                                 
+                                    /* TIL HIT TRUDE # 138 */                   
+                                                                                
+    DIV_PARAM_OMR.FULLT_SÆRTILLEGG(BER_SØ_IND) = 0;                             
+    B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = ' ';                             
+                                                                                
+    IF TRANS_OPPL_OMR.BLANKETTYPE  = 'EP' THEN                                  
+       CALL HENT_FRA_EP;                                                        
+    ELSE                                                                        
+    IF TRANS_OPPL_OMR.BLANKETTYPE  = 'E3' THEN                                  
+       CALL HENT_FRA_E3;                                                        
+    ELSE                                                                        
+    IF TRANS_OPPL_OMR.BLANKETTYPE  = 'EE' THEN                                  
+       CALL HENT_FRA_EE;                                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL UNDERPROGRAM SOM BEREGNER                                    */        
+ /* ***************************************************************** */        
+                                                                                
+                                                                                
+        IF Y_TILLEGG    = 'J'  THEN               /*NY0191*/                    
+           CALL BEREGN_POENG_AÅI_AVDØD;           /*4128*/                      
+                                                                                
+    CALL BEREGN_TP_ETTERLATT;                                                   
+                                                                                
+ /*0795 HL : ******** */                                                        
+                                                                                
+   IF FULL_TT = ' '                       THEN                                  
+     DO;                                                                        
+       IF (B02.DØDSDATO_ÅMD(BER_EK_IND) < 19930000) THEN     /*Y2K*/            
+          DO;                                                                   
+            IF B02.IKKE_GP(BER_SØ_IND) = 'J'   THEN                             
+               B02.GP_BRUTTO(BER_SØ_IND) = 0;                                   
+            ELSE                                                                
+               CALL REGN_GP;                                                    
+    /*         B02.GP_BRUTTO(BER_SØ_IND) =                                      
+                   G*B02.TT_ANV(BER_SØ_IND)/(12*40) + 0.5; */                   
+          END;                                                                  
+       ELSE                                                                     
+          DO;                                                                   
+            IF B02.TT_ANV(BER_EK_IND) < B02.TT_ANV(BER_SØ_IND) THEN             
+               B02.TT_ANV(BER_EK_IND) = B02.TT_ANV(BER_SØ_IND);                 
+            IF B02.SPESOPPL.KONVENSJON(BER_EK_IND) ^= 'J'  THEN                 
+               IF B02.TT_ANV(BER_EK_IND) < B02.PÅ_AVD(BER_SØ_IND) THEN          
+                  B02.TT_ANV(BER_EK_IND) = B02.PÅ_AVD(BER_SØ_IND);              
+            B02.TT_GARANTI(BER_SØ_IND) = 0;                                     
+            IF B02.PENSJON_FØR_9802(BER_SØ_IND) ^= 'J'   &                      
+               B02.RED_GP_3_2_5(BER_SØ_IND)      = 'J'   THEN                   
+               DO;                                                              
+                  B02.GP_BRUTTO(BER_SØ_IND) = G * B02.TT_ANV(BER_EK_IND)        
+                                 * GP_PROSENT / (40 * 12) + 0.5;                
+                  DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'X';               
+                  B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = 'X';               
+               END;                                                             
+            ELSE                                                                
+               B02.GP_BRUTTO(BER_SØ_IND)  = G * B02.TT_ANV(BER_EK_IND)          
+                                       / (40 * 12) + 0.5;                       
+                                                                                
+          END;                                                                  
+     END;                                                                       
+   ELSE                                                                         
+   IF  FULL_TT = 'J'                       THEN                                 
+     DO;                                                                        
+        B02.TT_ANV(BER_EK_IND) = 40;                                            
+        IF (B02.DØDSDATO_ÅMD(BER_EK_IND) < 19930000) THEN   /*Y2K*/             
+           DO;                                                                  
+     /*      B02.GP_BRUTTO(BER_SØ_IND) = G / 12 + 0.5;   */                     
+             B02.TT_ANV(BER_SØ_IND) = 40;                                       
+             B02.TT_GARANTI(BER_SØ_IND) = 40;                                   
+             CALL REGN_GP;                                                      
+           END;                                                                 
+        ELSE                                                                    
+           DO;                                                                  
+              B02.TT_GARANTI(BER_EK_IND) = 40;                                  
+  /* EGEN PROC 20040921 HL - REMEDY 582 : */                                    
+            IF B02.PENSJON_FØR_9802(BER_SØ_IND) ^= 'J'   &                      
+               B02.RED_GP_3_2_5(BER_SØ_IND)      = 'J'   THEN                   
+               DO;                                                              
+                  B02.GP_BRUTTO(BER_SØ_IND) = G * B02.TT_ANV(BER_EK_IND)        
+                                 * GP_PROSENT / (40 * 12) + 0.5;                
+                  DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'X';               
+                  B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = 'X';               
+               END;                                                             
+            ELSE                                                                
+               B02.GP_BRUTTO(BER_SØ_IND)  = G * B02.TT_ANV(BER_EK_IND)          
+                                       / (40 * 12) + 0.5;                       
+                                                                                
+           END;                                                                 
+     END;                                                                       
+   ELSE  /*DA ER NORSK_BOSATT = N */                                            
+     IF (B02.DØDSDATO_ÅMD(BER_EK_IND) < 19930000) THEN    /*Y2K*/               
+       DO;                                                                      
+         IF B02.BOSATT(SØKER_IND)        >  0     &                             
+            (B02.TT_16_66(SØKER_IND)      =  0     &                            
+            B02.TT_16_66(BER_EK_IND)      =  0) THEN                            
+            CALL BEREGN_GP_ETTERLATT_UTLAND;  /* 4380 */                        
+         ELSE                                                                   
+            CALL BEREGN_GP_ETTERLATT;            /*4321*/                       
+       END;                                                                     
+     ELSE                                                                       
+        CALL GP_TT_AVD;                   /*4381*/                              
+                                                                                
+    IF FEIL_MELD_NR > 0  THEN                                                   
+       GO TO L999;                                                              
+    ELSE                                                                        
+       PROGRAM_ID = 'R0014301';                                                 
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL FUNKSJON SOM BEREGNER KOMPENSASJONSTILLEGG                   */        
+ /* ***************************************************************** */        
+    W_KT                          = F_BEREGN_KOMPENSASJONSTILLEGG(              
+                                     B02.PENSJONSTYPE1(SØKER_IND),              
+                                     B02.PENSJONSTYPE2(SØKER_IND),              
+                                     B02.TT_ANV(SØKER_IND),                     
+                                     0,1,'J');                                  
+                                                                                
+ /* ***************************************************************** */        
+ /* DEN PÅFØLGENDE TESTEN SKAL UNNGÅ Å GI UTENLANDSBOENDE KOMP.       */        
+ /* ERIK 22.12.86.                                                    */        
+ /* ***************************************************************** */        
+                                                                                
+  /*IF B02.SPESOPPL.BOSATT(SØKER_IND) > 0 THEN W_KT = 0   */                    
+                               /*TAR OGSÅ MED TEST PÅ TKNR 2101 */              
+                               /*                  TRUDE, 021090*/              
+    IF B02.SPESOPPL.BOSATT(SØKER_IND) > 0 !                                     
+       B02.TKNR           (SØKER_IND) >  2100 THEN                              
+       W_KT = 0;                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* PENSJON ER NÅ BEREGNET ETTER VANLIGE REGLER - PROGRAM 4326 GIR    */        
+ /* BEREGNING MED HEL ELLER DELVIS YRKESSKADEFORDEL :                 */        
+ /* ***************************************************************** */        
+                                                                                
+        IF B02.YRKEPENS.YUG(BER_EK_IND) > 0      THEN                           
+              CALL BEREGN_ETTERLATT_YP;              /*4326*/                   
+                                                                                
+  IF B02.GT_LOV92(BER_SØ_IND) > 0   !                                           
+     (B02.VIRK_DATO_ÅMD(BER_SØ_IND) = 19920100   &      /*Y2K*/                 
+      B02.ETTEPENS.SPT_1291(BER_SØ_IND) > 0)      !   /* 0395 HL */             
+     B02.GT_LOV92(BER_EK_IND) > 0      THEN                                     
+    DO;                                                                         
+       B02.GT_LOV92(BER_SØ_IND) = F_TILLEGGSPENSJON(W_FNR_EK13_ÅR,              
+                                  35500,                                        
+                                  (B02.ETTEPENS.SPT_1291(BER_SØ_IND)),          
+                                  (B02.ETTEPENS.OPT_1291(BER_SØ_IND)),          
+                                  (B02.ETTEPENS.PÅ_1291(BER_SØ_IND)),           
+                                  100,W_TP_PROSENT,'J');                        
+                                                                                
+      IF B02.GT_LOV92(BER_SØ_IND) > B02.TP_BRUTTO(SØKER_IND)     THEN           
+         DO;                                                                    
+            W_TILLEGG_LOV92       =                                             
+                B02.GT_LOV92(BER_SØ_IND) - B02.TP_BRUTTO(SØKER_IND);            
+            W_ST_FRADRAG          = B02.GT_LOV92(BER_SØ_IND);                   
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+            W_ST_FRADRAG                     = B02.TP_BRUTTO(SØKER_IND);        
+            B02.GT_LOV92(BER_SØ_IND)         = 0;                               
+            B02.GT_TILLEGG_LOV92(BER_SØ_IND) = 0;                               
+            B02.GT_LOV92(BER_EK_IND)         = 0;                               
+            B02.GT_TILLEGG_LOV92(BER_EK_IND) = 0;                               
+         END;                                                                   
+    END;                                                                        
+  ELSE                                                                          
+     W_ST_FRADRAG                     = B02.TP_BRUTTO(SØKER_IND);               
+                                                                                
+    IF B02.BOSATT(BER_SØ_IND)  >  0   &     /* PENSJON UTLAND   */              
+      (B02.TT_16_66(SØKER_IND) = 0   &        /*NY0191*/                        
+       B02.TT_16_66(BER_EK_IND)    = 0)  THEN     /*NY0191*/                    
+       W_ST = F_SÆRTILLEGG_UTLAND_EP(W_ST_FRADRAG);   /*4183*/                  
+    ELSE                                        /* TIL HIT, TRUDE */            
+       DO;                                                                      
+          IF DØDSDATO_ÅMD < 19930000 THEN               /*Y2K*/                 
+             BRUKT_TT = B02.TT_ANV(BER_SØ_IND);                                 
+          ELSE                                                                  
+             BRUKT_TT = B02.TT_ANV(BER_EK_IND);                                 
+          W_ST = F_BEREGN_SÆRTILLEGG(                                           
+                                  W_ST_FRADRAG,0,'J',                           
+                                  (ST_PROSENT_ENSLIG),                          
+                                  100,                                          
+                             /*   B02.TT_ANV(BER_SØ_IND));  */                  
+                                  BRUKT_TT);                                    
+       END;   /* ANTAR DET SKAL VÆRE END HER - 9709 HL*/                        
+                                                                                
+ /* REMEDY 283 - OGSÅ ENDRET I 4126 OG 4501 JFA 11.2.04 */                      
+    B02.ETTEPENS.ST_BRUTTO(SØKER_IND) = 0;                                      
+ /* B02.ETTEPENS.ST_BRUTTO(SØKER_IND) = W_ST;  */                               
+ /*ST_BRUTTO MÅ VEL OPPDATERES: 20040422 HL */                                  
+    B02.ETTEPENS.ST_BRUTTO(SØKER_IND) = W_ST;                                   
+    IF B02.FORVENTET(SØKER_IND) * 100 <=  0.5 * G &                             
+       B02.FRADRAG_2G(SØKER_IND) ^= 'J'           THEN                          
+       DO;                                                                      
+          B02.ETTEPENS.ST(SØKER_IND) = W_ST;                                    
+          B02.ETTEPENS.KT(SØKER_IND) = W_KT;                                    
+          B02.GP_NETTO (SØKER_IND)   = B02.GP_BRUTTO  (SØKER_IND);              
+          B02.TP_NETTO (SØKER_IND)   = B02.TP_BRUTTO  (SØKER_IND);              
+          B02.GT_TILLEGG_LOV92 (SØKER_IND)   = W_TILLEGG_LOV92;                 
+ /*KOMP.TILLEGGET ENDRET FRA 1.5.91 ( G > 34100 ) */                            
+                                                                                
+  IF G > 34100 THEN                                                             
+     IF B02.ETTEPENS.KT(BER_SØ_IND) > B02.ETTEPENS.ST(BER_SØ_IND) THEN          
+        B02.ETTEPENS.KT(BER_SØ_IND) =                                           
+        B02.ETTEPENS.KT(BER_SØ_IND) - B02.ETTEPENS.ST(BER_SØ_IND);              
+     ELSE                                                                       
+        B02.ETTEPENS.KT(BER_SØ_IND) = 0;                                        
+                                                                                
+          B02.SUM_YTELSE(SØKER_IND)  = B02.GP_BRUTTO  (SØKER_IND) +             
+                                       B02.TP_BRUTTO  (SØKER_IND) +             
+                                       B02.ETTEPENS.ST(SØKER_IND) +             
+                                  B02.GT_TILLEGG_LOV92(SØKER_IND) +             
+                                       B02.ETTEPENS.KT(SØKER_IND) ;             
+       END;                                                                     
+    ELSE                                                                        
+       DO;                                                                      
+          CALL JUSTER_MED_FORVENTET_INNTEKT((W_KT));                            
+ /*KOMP.TILLEGGET ENDRET FRA 1.5.91 ( G > 34100 ) */                            
+                                                                                
+  IF G > 34100 THEN                                                             
+     IF B02.ETTEPENS.KT(BER_SØ_IND) > B02.ETTEPENS.ST(BER_SØ_IND) THEN          
+        B02.ETTEPENS.KT(BER_SØ_IND) =                                           
+        B02.ETTEPENS.KT(BER_SØ_IND) - B02.ETTEPENS.ST(BER_SØ_IND);              
+     ELSE                                                                       
+        B02.ETTEPENS.KT(BER_SØ_IND) = 0;                                        
+                                                                                
+          B02.SUM_YTELSE(SØKER_IND) = B02.GP_NETTO   (SØKER_IND) +              
+                                      B02.TP_NETTO   (SØKER_IND) +              
+                                      B02.ETTEPENS.ST(SØKER_IND) +              
+                                  B02.GT_TILLEGG_LOV92(SØKER_IND) +             
+                                      B02.ETTEPENS.KT(SØKER_IND) ;              
+       END;                                                                     
+                                                                                
+  REGN_GP: PROC;                                                                
+  /* EGEN PROC 20040921 HL - REMEDY 582 : */                                    
+            IF B02.PENSJON_FØR_9802(BER_SØ_IND) ^= 'J'   &                      
+               B02.RED_GP_3_2_5(BER_SØ_IND)      = 'J'   THEN                   
+               DO;                                                              
+                  B02.GP_BRUTTO(BER_SØ_IND) = G * B02.TT_ANV(BER_SØ_IND)        
+                                 * GP_PROSENT / (40 * 12) + 0.5;                
+                  DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'X';               
+                  B02.GP_REDUKSJON_KODE       (BER_SØ_IND) = 'X';               
+               END;                                                             
+            ELSE                                                                
+               B02.GP_BRUTTO(BER_SØ_IND)  = G * B02.TT_ANV(BER_SØ_IND)          
+                                       / (40 * 12) + 0.5;                       
+                                                                                
+  END REGN_GP;                                                                  
+  HENT_FRA_EP: PROC;                                                            
+   %INCLUDE P0010801;  /* EP_OMRÅDET*/                                          
+   IF EPS.YSKADE_TILLEGG  = 'J' THEN                                            
+          Y_TILLEGG       = 'J';                                                
+   IF EPS.NORSK_BOSATT_EK = 'N'        !                                        
+      EPS.NORSK_BOSATT    = 'N'       THEN                                      
+      FULL_TT = 'N';                                                            
+   ELSE                                                                         
+      FULL_TT = 'J';                                                            
+  END HENT_FRA_EP;                                                              
+                                                                                
+  HENT_FRA_E3: PROC;                                                            
+   %INCLUDE P001N801;  /* E3_OMRÅDET*/                                          
+   IF E3S.YSKADE_TILLEGG  = 'J' THEN                                            
+          Y_TILLEGG       = 'J';                                                
+   IF E3SP.TT_KONVENSJON_ÅR > 0  THEN                                           
+          TRYGDETID_KONV   = E3SP.TT_KONVENSJON_ÅR;                             
+   IF E3S.NORSK_BOSATT_EK = 'N'        !                                        
+      E3S.NORSK_BOSATT    = 'N'       THEN                                      
+      FULL_TT = 'N';                                                            
+   ELSE                                                                         
+      FULL_TT = 'J';                                                            
+  END HENT_FRA_E3;                                                              
+                                                                                
+  HENT_FRA_EE: PROC;                                                            
+   %INCLUDE P001U801;  /* EE_OMRÅDET*/                                          
+   IF EES.YSKADE_TILLEGG  = 'J' THEN                                            
+          Y_TILLEGG       = 'J';                                                
+   IF EESP.TT_KONVENSJON_ÅR_EK > 0  THEN                                        
+          TRYGDETID_KONV   = EESP.TT_KONVENSJON_ÅR_EK;                          
+   IF EES.NORSK_BOSATT_EK = 'N'        !                                        
+      EES.NORSK_BOSATT    = 'N'       THEN                                      
+      FULL_TT = 'N';                                                            
+   ELSE                                                                         
+      FULL_TT = 'J';                                                            
+  END HENT_FRA_EE;                                                              
+                                                                                
+        %INCLUDE R0014128;  /* BEREGN_POENG_AÅI_AVDØD        */                 
+        %INCLUDE R0014133;  /* F_BEREGN_SÆRTILLEGG           */                 
+        %INCLUDE R0014134;  /* F_BEREGN_KOMPENSASJONSTILLEGG */                 
+        %INCLUDE R0014142;  /* F_TILLEGGSPENSJON             */                 
+        %INCLUDE R0014143;  /* POENG_TILLEGG                 */                 
+        %INCLUDE R0014148;  /* F_TP92                        */                 
+        %INCLUDE R0014183;  /* F_SÆRTILLEGG_UTLAND_EP        */                 
+        %INCLUDE R0014199;  /* SPT_GARANTI_E                 */                 
+        %INCLUDE R0014321;  /* BEREGN_GP_ETTERLATT           */                 
+        %INCLUDE R0014323;  /* BEREGN_TP_ETTERLATT           */                 
+        %INCLUDE R0014324;  /* JUSTER_MED_FORVENTET_INNTEKT  */                 
+        %INCLUDE R0014326;  /* BEREGN_ETTERLATT_YP           */                 
+        %INCLUDE R0014327;  /* UNGE_DØDE_E                   */                 
+        %INCLUDE R0014380;  /* BEREGN_GP_ETTERLATT_UTLAND    */                 
+        %INCLUDE R0014381;  /* GP_TT_AVD                     */                 
+        %INCLUDE R0019905;  /* F_ALDER                       */                 
+        %INCLUDE R0019995;  /* KONV_FNR11_FNR13              */                 
+                                                                                
+   L999:                                                                        
+    EXEC CICS RETURN;                                                           
+                                                                                
+   END REGNXEP;                                                                 

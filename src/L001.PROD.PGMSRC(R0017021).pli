@@ -1,0 +1,123 @@
+ /*   SIST ENDRET PÅ PROD   2004.07.16 12.36.56 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 13.39.34 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2003.01.29  9.00.52 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.23  9.44.10 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.19 12.28.44 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.01  8.03.59 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.05.03 10.00.17 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2001.02.16 12.06.27 AV   JDA7339          */        
+ /*       SIST ENDRET 22/12-2000             ABD7339                  */        
+ /*       SIST ENDRET 04/05-98 13.15.03 AV   JDA7339                  */        
+ /*       SIST ENDRET 11/03-98 12.11.54 AV   JDA7339                  */        
+ /* **************************************************************** */         
+ /* IDENTIFIKASJON:  R0017021                                        */         
+ /* PROGRAMMERER :   HELEN , JULI 1982                               */         
+ /* HENSIKT:                                                         */         
+ /*        LESER SBROT I STØNADSBREV BASEN. OPPRETTER SBROT          */         
+ /*        OM DET IKKE FINNES FRA FØR.                               */         
+ /* PROGRAM TILKNYTNING:                                             */         
+ /*        PROGRAM INCLUDES I R0017001(LAG_STØNADSBREV_TRANSER)      */         
+ /*                                                                  */         
+ /*                                                                  */         
+ /* **************************************************************** */         
+                                                                                
+ OPPRETT_SB_ROT_SEGMENT:                                                        
+    PROC(SB_FNR,PERSON_IND);                                                    
+                                                                                
+                                                                                
+    DCL SB_FNR                    FIXED DEC(11);                                
+    DCL PERSON_IND                FIXED BIN(15);                                
+                                                                                
+                                                                                
+    /* ************************************************************* */         
+    /*     HER BEGYNNER PROGRAMMET.                                  */         
+    /* ************************************************************* */         
+                                                                                
+    SSA1_SB0PERSN.PKEY        =   SB_FNR                              ;         
+    W_ROT.FNR                 =   SB_FNR                              ;         
+    W_ROT.NESTE_SB_VERSJON_NR =   1                                   ;         
+    W_ROT.NAVN                =  B02.PERSON.RF0PERSN.NAVN(PERSON_IND);          
+    W_ROT.TKNR                =  B02.PERSON.RF0PERSN.TKNR(PERSON_IND);          
+    W_ROT.SPRÅK               =  B02.PERSON.RF0PERSN.SPRÅK(PERSON_IND);         
+                                                                                
+    /* ENDERING ANGåENDE   TEST-LINJE På TEST-BREV 10.03.2002   */              
+    W_ROT.CICS_KODE           =  ' ';                                           
+    IF (SUBSTR(DIV_PARAM_OMR.CICS_NAVN,5,4) = 'P001' !                          
+        SUBSTR(DIV_PARAM_OMR.CICS_NAVN,5,4) = 'Q001') THEN                      
+        W_ROT.CICS_KODE           =  'J';                                       
+                                                                                
+  /*IF SB_FNR = B02.PERSON.RF0PERSN.FNR(PERSON_IND)  THEN */                    
+    /* LAGT INN BREV DATO SOM SKRIVER I BLANKETE 22.12.2000 AB */               
+                                                                                
+    IF  B02.STATUS.STATUS_KODE_HIST(PERSON_IND) =  ' ' THEN                     
+        DO;                                                                     
+           B02.SB_DATO_ÅMD(PERSON_IND) = DIV_PARAM_OMR.DATO_2000;               
+           B02.RF0PERSN.BRUKER_ID      = DIV_PARAM_OMR.BRUKER_ID;               
+        /* ********************************************************** */        
+        /*   VI SKRIVER INFORMASJON OM PENSJONBREV TIL REVISJON DB    */        
+        /* ********************************************************** */        
+           CALL OPPDATE_DR_BASE (SB_FNR,PERSON_IND);                            
+        END;                                                                    
+        /* ********************************************************** */        
+        /*   VI SKRIVER DEN NYE ROTEN TIL BASEN.                      */        
+        /* ********************************************************** */        
+        SSA_UQUAL             =        ('SB0PERSN ');                           
+                                                                                
+        CALL            PLITDLI        (PARM_CT_4,                              
+                                       ISRT,                                    
+                                       PCB_SB1,                                 
+                                       W_ROT,                                   
+                                       SSA_UQUAL);                              
+                                                                                
+        IF PCB_SB1.STATUS_KODE     =  'II'            &                         
+           DLIUIB.UIBFCTR          =   UIB_RC_OK          THEN                  
+                                                                                
+           CALL FINN_VERSJON_NR;                                                
+        ELSE                                                                    
+           IF PCB_SB1.STATUS_KODE ^=  '  '           !                          
+              DLIUIB.UIBFCTR      ^=   UIB_RC_OK          THEN                  
+              DO;                                                               
+ L100:                                                                          
+                 FEIL_MELD_NR      =   500;                                     
+                 FEIL_VED_LABEL    =  'L100';                                   
+                 DB_STATUS_KODE    =   PCB_SB1.STATUS_KODE;                     
+              END;                                                              
+                                                                                
+                                                                                
+                                                                                
+   /* ************************************************************** */         
+   /*                                                                */         
+   /* HER LESES ROT-SEGMENTET FOR Å FINNE SISTE VERSJON-NR.          */         
+   /* DETTE OPPDATERES     MED 1 FOR Å GI NESTE NR. TIL HENDELSENE . */         
+   /*                                                                */         
+   /* ************************************************************** */         
+                                                                                
+   FINN_VERSJON_NR:                                                             
+    PROC;                                                                       
+                                                                                
+        DCL 1 SB0PERSN,                                                         
+            2 FNR       FIXED DEC      (11)      INIT (   0 )       ,           
+            2 VERS_NR   PIC            'ZZ9'     INIT ('000')       ,           
+            2 REST      CHAR           (136)     INIT (   '')       ;           
+                                                                                
+        CALL            PLITDLI        (PARM_CT_4,                              
+                                       GU,                                      
+                                       PCB_SB1,                                 
+                                       SB0PERSN,                                
+                                       SSA1_SB0PERSN);                          
+                                                                                
+        IF PCB_SB1.STATUS_KODE    ^=  '  '            !                         
+           DLIUIB.UIBFCTR         ^=   UIB_RC_OK          THEN                  
+              DO;                                                               
+ L110:                                                                          
+                 FEIL_MELD_NR      =   500;                                     
+                 FEIL_VED_LABEL    =  'L110';                                   
+                 DB_STATUS_KODE    =   PCB_SB1.STATUS_KODE;                     
+              END;                                                              
+        ELSE                                                                    
+           W_ROT.NESTE_SB_VERSJON_NR = SB0PERSN.VERS_NR  ;                      
+                                                                                
+   END FINN_VERSJON_NR;                                                         
+                                                                                
+                                                                                
+  END OPPRETT_SB_ROT_SEGMENT;                                                   

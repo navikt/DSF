@@ -1,0 +1,168 @@
+ /*   SIST ENDRET PÅ PROD   2000.07.07 13.00.08 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.03.22  9.40.36 AV   JDA7339          */        
+ /*       SIST ENDRET 04/05-98 12.40.33 AV   JDA7339                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0014122 - BEREGN_APD - INTERN PROC I PLI.                     */        
+ /*    PROGRAMMERER: KRISTENSEN, APRIL 1982.                          */        
+ /*    ENDRET JULI 82 AV KARIN                                        */        
+ /* HENSIKT:                                                          */        
+ /*    PROGRAMMET BEREGNER APD OG SETTER UTTAKSDATO I B02.            */        
+ /* PROGRAMTILKNYTNING:                                               */        
+ /*    PROGRAMMET BLIR INKLUDERT I / CALL FRA                         */        
+ /*       4101 / 4101 - 4123 - 4124 - 4136                            */        
+ /*       4201 / 4201 - 4123 - 4124 - 4136                            */        
+ /*       4251 / 4251 - 4136                                          */        
+ /* BRUK:                                                             */        
+ /*    CALL BEREGN_APD(APD_ØNSKET)                                    */        
+ /* ***************************************************************** */        
+ BEREGN_APD: PROC(APD_ØNSKET);                                                  
+                                                                                
+    DCL APD_ØNSKET           FIXED DEC(3);                                      
+    DCL                                                                         
+       I                     FIXED BIN(15),                                     
+       W_TAI                 FIXED DEC(7),                                      
+       W_BRP                 FIXED DEC(7,2),                                    
+       W_APD_80              FIXED DEC(7,3),                                    
+       W_APD_ANVENDT         FIXED DEC(3),                                      
+       W_FRAVIK              CHAR(1);                                           
+                                                                                
+    /* == R0014122 ================================================== */        
+    PROGRAM_ID = 'R0014122';                                                    
+    W_TAI         = 0;                                                          
+    W_APD_80      = 0;                                                          
+    W_APD_ANVENDT = 0;                                                          
+    W_FRAVIK      = ' ';                                                        
+                                                                                
+    CALL TIDLIGERE_ARBEIDSINNTEKT(W_TAI,W_BRP);                                 
+                                                                                
+    IF (W_FNR_R13.ÅR  > 1903    !                                               
+        (W_FNR_R13.ÅR  = 1903 &                                                 
+         W_FNR_R13.MND > 01     ) )                     &                       
+       (B02.STATUS.VIRK_DATO_ÅMD(BER_SØ_IND) > 19721200 ) THEN                  
+       DO;                                                                      
+          IF APD_ØNSKET = 999 THEN                                              
+             APD_ØNSKET = 100;                                                  
+          IF B02.FAI(BER_SØ_IND) = 0 THEN                                       
+             DO;                                                                
+                W_APD_80 = 100;                                                 
+                W_FRAVIK = 'N';                                                 
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+     /* RUTINEN REGNER UT TIDL ARB_INNTEKT, 4135  */                            
+     /* VERDIEN LEGGES INN I W_TAI                    */                        
+     /* FLYTTES FORAN PGA TAI SKAL INN I DIV_PARAM_OMR.TAI */                   
+     /* UANSETT OM FAI = 0 . TRUDE, 11,91                  */                   
+                                                                                
+     /* RUTINEN REGNER UT APD ETTER 80-PROSENT-REGELEN, FINNER UT  */           
+     /* OM DET SKAL GIS FRAVIK ETTER 80_PROSENT-REGELEN, 4136  */               
+    /* VED FRAVIK: W_FRAVIK = 'J'                                 */            
+                                                                                
+             CALL ÅTTI_PROSENT_REGELEN                                          
+                                (W_TAI,APD_ØNSKET,W_APD_80,W_FRAVIK);           
+          END;                                                                  
+                                                                                
+                                                                                
+                                                                                
+       IF B02.ALDERSP.KONV_GRAD(BER_SØ_IND) > W_APD_80 THEN                     
+          DO;                                                                   
+             W_APD_ANVENDT = B02.ALDERSP.KONV_GRAD(BER_SØ_IND);                 
+             B02.ALDERSP.P67_KODE(BER_SØ_IND) = '2'; /* KONVERTERT */           
+          END;                                                                  
+       ELSE                                                                     
+          DO;                                                                   
+             W_APD_ANVENDT = W_APD_80;                                          
+             IF W_FRAVIK = 'J' THEN                                             
+                B02.ALDERSP.P67_KODE(BER_SØ_IND) = '4';                         
+                                                                                
+             ELSE                                                               
+                B02.ALDERSP.P67_KODE(BER_SØ_IND) = '1';                         
+         /*  TEKST B13    */                                                    
+          END;                                                                  
+                                                                                
+       IF APD_ØNSKET < W_APD_ANVENDT THEN                                       
+          DO;                                                                   
+             W_APD_ANVENDT = APD_ØNSKET;                                        
+             B02.ALDERSP.P67_KODE(BER_SØ_IND) = '3';      /* ØNSKET   */        
+          END;                                                                  
+                                                                                
+       IF B02.ALDERSP.UTTAKSDATO_ÅMD(BER_SØ_IND) = 0 THEN   /*2000*/            
+          DO;                                                                   
+             B02.ALDERSP.UTTAKSDATO_ÅMD(BER_SØ_IND) = B02.STATUS.               
+                                VIRK_DATO_ÅMD(BER_SØ_IND);   /*2000*/           
+             B02.ALDERSP.UTTAKS_APD   (BER_SØ_IND) = W_APD_ANVENDT;             
+          END;                                                                  
+       ELSE        /*AFP*/                                                      
+ /*AFP*/  IF B02.ALDERSP.UTTAKSDATO_ÅMD(BER_SØ_IND) =      /*2000*/             
+ /*AFP*/     B02.STATUS.VIRK_DATO_ÅMD(BER_SØ_IND)     THEN /*2000*/             
+ /*AFP*/     B02.ALDERSP.UTTAKS_APD   (BER_SØ_IND) = W_APD_ANVENDT;             
+                                                                                
+       ELSE                                                                     
+          IF B02.UTTAKSDATO_ÅMD_ØVRIGE(BER_SØ_IND,5) > 0 &  /*2000*/            
+             B02.VIRK_DATO_ÅMD(BER_SØ_IND) >                /*2000*/            
+                   B02.UTTAKSDATO_ÅMD_ØVRIGE(BER_SØ_IND,5) THEN /*2000*/        
+             DO;                                                                
+ L100:                                                                          
+                FEIL_VED_LABEL = 'L100';                                        
+                                                                                
+              /*ANTALL VENTEPERIODER OPPBRUKT*/                                 
+                                                                                
+                FEIL_MELD_NR = 218;                                             
+                GOTO L999;                                                      
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+                DO I = 1 TO 5 UNTIL                                             
+                 (B02.UTTAKSDATO_ÅMD_ØVRIGE(BER_SØ_IND,I) = 0);/*2000*/         
+                END;                                                            
+                IF I = 1 THEN                                                   
+                   DO;                                                          
+                      IF B02.VIRK_DATO_ÅMD(BER_SØ_IND) =      /*2000*/          
+                          B02.UTTAKSDATO_ÅMD(BER_SØ_IND) THEN /*2000*/          
+                         B02.ALDERSP.UTTAKS_APD   (BER_SØ_IND) =                
+                                                     W_APD_ANVENDT;             
+                      ELSE                                                      
+                      IF W_APD_ANVENDT ^=                                       
+                             B02.ALDERSP.UTTAKS_APD(BER_SØ_IND)  THEN           
+                        DO;                                                     
+                          B02.UTTAKSDATO_ÅMD_ØVRIGE(BER_SØ_IND,I) =             
+                          B02.STATUS.VIRK_DATO_ÅMD(BER_SØ_IND); /*2000*/        
+                               B02.APD_ØVRIGE(BER_SØ_IND,I) =                   
+                                                         W_APD_ANVENDT;         
+                        END;                                                    
+                   END;                                                         
+                ELSE                                                            
+                 DO;                                                            
+                   IF B02.VIRK_DATO_ÅMD(BER_SØ_IND) =    /*2000>*/              
+                      B02.UTTAKSDATO_ÅMD_ØVRIGE(BER_SØ_IND,I - 1)               
+                                                               THEN             
+                         B02.APD_ØVRIGE(BER_SØ_IND,I - 1) =                     
+                                                         W_APD_ANVENDT;         
+                   ELSE                                                         
+                      IF W_APD_ANVENDT ^=                                       
+                               B02.APD_ØVRIGE(BER_SØ_IND,I - 1)   THEN          
+                         DO;                                                    
+                            B02.UTTAKSDATO_ÅMD_ØVRIGE(BER_SØ_IND,I) =           
+                               B02.STATUS.VIRK_DATO_ÅMD(BER_SØ_IND);            
+                              B02.APD_ØVRIGE(BER_SØ_IND,I) =                    
+                                                       W_APD_ANVENDT;           
+                         END;                                                   
+                 END;                                                           
+                                                                                
+             END;                                                               
+                                                                                
+       B02.ALDERSP.APD(BER_SØ_IND) = W_APD_ANVENDT;                             
+                                                                                
+       IF W_APD_ANVENDT = 0 THEN         /*12.6.91 HL */                        
+          DO;                                                                   
+             B02.GARANTITILLEGG_EK(BER_SØ_IND)        = 0;                      
+             B02.GARANTITILLEGG_BARN(BER_SØ_IND)      = 0;                      
+             B02.BT_SÆRBARN(BER_SØ_IND)               = 0;                      
+             B02.GARANTITILLEGG_SÆRBARN(BER_SØ_IND)   = 0;                      
+             B02.FT_SKAL_BEREGNES(BER_SØ_IND)         = 'D';                    
+          END;                                                                  
+    END;                                                                        
+                                                                                
+ L999:                                                                          
+ END BEREGN_APD;                                                                

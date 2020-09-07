@@ -1,0 +1,119 @@
+ /*   SIST ENDRET PÅ PROD   2000.11.07 12.22.38 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.04.12 10.11.16 AV   JDA7339          */        
+ /*       SIST ENDRET 04/05-98 12.40.49 AV   JDA7339                  */        
+ /* ******************************************************************/         
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0014133 - F_BEREGN_SÆRTILLEGG - FUNKSJON  I PLI.             */        
+ /*     PROGRAMMERER: TOM JØRGENSEN, JUNI-82.                         */        
+ /*     ENDRET I JULI AV KARIN                                        */        
+ /* HENSIKT                                                           */        
+ /*     BEREGNE SÆRTILLEGG.                                           */        
+ /* PROGRAMTILKNYTNING                                                */        
+ /*     PROSEDYREN BLIR INKLUDERT I OVERLIGGENDE PROGRAM.             */        
+ /*        4101 - BEREGN ETTERLATT MED ALDERSPENSJON                  */        
+ /*        4201 - BEREGN ALDERSPENSJON                                */        
+ /*        4251 - BEREGN AVTALEFESTA PENSJON                          */        
+ /*        4270 - BEREGN ALDERSPENSJON MED EØS-RETTIGHETER            */        
+ /*        4301 - BEREGN ETTERLATTEPENSJON                            */        
+ /*        4401 - BEREGN UFØREPENSJON                                 */        
+ /*        4501 - BEREGN UFØR MED ALDERSPENSJON                       */        
+ /*        4601 - BEREGN ETTERLATT FAMILIEPLEIER                      */        
+ /* BRUK                                                              */        
+ /*     ST = F_BEREGN_SÆRTILLEGG(SUM_TP,ÅFT_MAX,FORH_INDIKATOR,       */        
+ /*                              ST_PROSENT,GRAD,TT_ANV)              */        
+ /* ***************************************************************** */        
+ F_BEREGN_SÆRTILLEGG:                                                           
+  PROC (SUM_TP,ÅFT_MAX,FORH_INDIKATOR,ST_PROSENT,GRAD,TT_ANV)                   
+       RETURNS(FIXED DEC (7,2));                                                
+                                                                                
+   DCL SUM_TP                   FIXED DEC (5),                                  
+       ÅFT_MAX                  FIXED DEC (5),                                  
+       FORH_INDIKATOR           CHAR      (1),                                  
+       ST_PROSENT               FIXED DEC (5,2),                                
+       GRAD                     FIXED DEC (3),                                  
+       TT_ANV                   FIXED DEC (3);                                  
+                                                                                
+   DCL ST                       FIXED DEC (7,2);                                
+                                                                                
+   DCL W_ST                     FIXED DEC (15,4),                               
+       W_GRAD                   FIXED DEC (3),                                  
+       W_ST_FRADRAG             FIXED DEC (5);                                  
+                                                                                
+    /* == START 4133 ================================================ */        
+    IF  B02.SPESOPPL.FRAVIK_19_3(BER_SØ_IND) = '1' !                            
+        B02.SPESOPPL.FRAVIK_19_3(BER_SØ_IND) = '4' !                            
+        B02.SPESOPPL.FRAVIK_19_3(BER_SØ_IND) = '6' THEN                         
+      DO;                                                                       
+         /* UTENLADSBOENDE MED 19_3 KODE LIK 1,    4,6 SKAL IKKE  */            
+         /* HA MEDREGNET TT FØR 1967 I SÆRTILLEGG, TRUDE 10.01.94 */            
+         /* TRYGDETID ETTER 66 MÅ VÆRE >= 3 ÅR FOR RETT TIL SÆRT.,*/            
+         /* ELLERS MÅ DET VÆRE EN KONVENSJONSSAK.  TRUDE250594    */            
+         TT_ANV = B02.TT_ANV(BER_SØ_IND) -                                      
+                  B02.TT_FØR_1967(BER_SØ_IND);                                  
+         IF  TT_ANV      < 0 THEN                                               
+             TT_ANV      = 0 ;                                                  
+      END;                                                                      
+                                                                                
+   IF (TT_ANV                       <  3  &                                     
+       B02.KONVENSJON (BER_SØ_IND) ^= 'J' ) THEN                                
+      DO;                                                                       
+         /* DERSOM TRYGDETID ER MINDRE ENN TRE ÅR, OG DET IKKE ER EN */         
+         /* KONVENSJONS-SAK , FORELIGGER DET IKKE RETT TIL SÆRTILLEGG*/         
+         /* FFU HAR PRØVD DETTE FOR RTV. TRUDE  24.010.93            */         
+         TT_ANV                        = 0;                                     
+         B02.ALDERSP.ST(BER_SØ_IND)    = 0;                                     
+         B02.AP_ST_NETTO(BER_SØ_IND)   = 0; /* NULLSTILLES 241000 MH */         
+         B02.UFØRPENS.ST(BER_SØ_IND)   = 0;                                     
+         ST                            = 0;                                     
+      END;                                                                      
+   ELSE                                                                         
+   IF ST_PROSENT = 99.99      THEN                                              
+     /* 99.99 BETYR IKKE  SÆRTILLEGG. LOVEN KOM 1.7-69  */                      
+      ST = 0;                                                                   
+   ELSE                                                                         
+      DO;  /* LOV OM SÆRTILLEGG KOM 1.7-69  */                                  
+         W_ST_FRADRAG = 0;                                                      
+         W_ST_FRADRAG = SUM_TP + B02.TP_NORDISK(BER_SØ_IND);                    
+         W_GRAD = GRAD;                                                         
+         IF ÅFT_MAX > 0 THEN                                                    
+            DO;                                                                 
+               W_GRAD = 100;                                                    
+               /* SÆRTILLEGG SKAL REGNES ETTER 100 % UFØRHET NÅR */             
+               /* PERSONEN HAR RETT TIL 8.5.1-TILLEGG            */             
+               IF ÅFT_MAX > SUM_TP       THEN                                   
+                  W_ST_FRADRAG = 0;                                             
+               ELSE                                                             
+                  W_ST_FRADRAG = SUM_TP - ÅFT_MAX;                              
+            END;                                                                
+                                                                                
+         W_ST = ST_PROSENT * G / 100;                                           
+         W_ST = W_ST * W_GRAD / 100;                                            
+         W_ST = W_ST * TT_ANV;                                                  
+         W_ST = W_ST / (40 * 12);                                               
+                                                                                
+         IF FORH_INDIKATOR = 'J' THEN                                           
+            W_ST = W_ST + 0.5;                                                  
+                                                                                
+         IF W_ST > W_ST_FRADRAG THEN                                            
+            /* ST HAR IKKE DESIMALER */                                         
+            ST = W_ST - W_ST_FRADRAG;                                           
+         ELSE                                                                   
+            ST = 0;                                                             
+                                                                                
+                                                                                
+         IF B02.IKKE_GP(BER_SØ_IND) = 'J' THEN                                  
+            ST = 0;                           /*  ERIK 22.2.1990 */             
+                                                                                
+                                                                                
+         /* NOTAT FRA S.JOSTAD FFU ANG. UTL SOM BARE HAR KAP11   */             
+         /* RETTIGHETER, SKAL IKKE HA SÆRTILLEGGG . TRUDE 260893 */             
+                                                                                
+         IF (B02.BOSATT(BER_SØ_IND) > 0  &                                      
+            B02.YRKEPENS.YUG(BER_SØ_IND) > 0 )  &                               
+           (B02.UFØRPENS.UFG(BER_SØ_IND)   =                                    
+            B02.YRKEPENS.YUG(BER_SØ_IND))  THEN                                 
+            ST = 0;                                                             
+                                                                                
+      END;                                                                      
+   RETURN (ST);                                                                 
+ END F_BEREGN_SÆRTILLEGG;                                                       

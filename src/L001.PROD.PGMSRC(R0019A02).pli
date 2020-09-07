@@ -1,0 +1,306 @@
+ /*   SIST ENDRET PÅ PROD   2007.12.21 12.20.26 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2005.01.28 11.37.21 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.01.25  9.08.59 AV   SPA2970          */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0019A02 - PROCEDYRE I PLI                                     */        
+ /*    PROGRAMMERER:  KRISTENSEN, NOVEMBER 1982                       */        
+ /*HENSIKT:                                                           */        
+ /*    PROGRAMMET INNEHOLDER:                                         */        
+ /*        PROSEDYRE FOR BLANKING AV AU_TRANS_OMR.                    */        
+ /*        PROSEDYRE FOR BLANKING AV MELDINGSNUMMERNE                 */        
+ /*BRUK:                                                              */        
+ /*%INCLUDE R0019A02;                                                 */        
+ /*    BLANK_AU_SØKER:         BLANKING AV AU SØKERDELEN              */        
+ /*    BLANK_AU_MELDNR:        SETTER 0 I MELDINGSNUMMERNE            */        
+ /*    CALL KONTROLL_AU_SØKER(FEIL_FUNNET);                           */        
+ /*                                                                   */        
+ /*                                                                   */        
+ /*   PROSEDYREN KONTROLLERER AU_SØKER OG RETURNERER MED              */        
+ /*   FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RIKTIG                  */        
+ /*                                                                   */        
+ /*    OVERFØR_AUSØKER_MAP:    OVERFØRING AV APDELEN                  */        
+ /*    BLANK_AU_MAP:           SETTER LOW VALUES TIL MAP              */        
+ /*    OVERFØR_AU_SØKER:       OVERFØRER MAP -< ARBEIDSOMRÅDE         */        
+ /*                                                                   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*   PROSEDYRE FOR BLANKING AU_SØKER I AU_TRANS_OMR.                 */        
+ /*                                                                   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ BLANK_AU_SØKER:                                                                
+   PROC;                                                                        
+                                                                                
+     AUS.FNR        = 0;                                                        
+     AUS.FNR_GML    = 0;                                                        
+     AUS.STBREV     = ' ';                                                      
+     AUS.TRANSTYPE  = 0;                                                        
+     AUS.TKNR       = 0;                                                        
+ END BLANK_AU_SØKER;                                                            
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*   PROSEDYRE FOR Å SETTE 0 I MELDINGSNUMMERNE I AU_TRANS_OMRÅDE    */        
+ /*                                                                   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ BLANK_AU_MELDNR:                                                               
+   PROC;                                                                        
+     AUS.TKNRNR       = 0;                                                      
+     AUS.FNRNR       = 0;                                                       
+     AUS.STBREVNR    = 0;                                                       
+     AUS.TRANSTYPENR = 0;                                                       
+                                                                                
+ END BLANK_AU_MELDNR;                                                           
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ KONTROLLER_AU_SØKER:                                                           
+   PROC(FEIL_FUNNET);                                                           
+                                                                                
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+ %SKIP;                                                                         
+     DCL                                                                        
+        FEIL_FUNNET BIT(1);                                                     
+                                                                                
+     DCL                                                                        
+        1 FNR_REG,                                                              
+          2 FNR1         FIXED DEC(11),                                         
+          2 FNR2         FIXED DEC(11),                                         
+          2 BRUKERID     CHAR     ( 4);                                         
+                                                                                
+                                                                                
+    FNR_REG.BRUKERID =  DIV_PARAM_OMR.CICS_IND;                                 
+    ANT_FEIL_SKREVET =  0;                                                      
+    FEIL_FUNNET      = '0'B;                                                    
+    KEY_PEKER         =  ADDR (AUS.TKNR);                                       
+                                                                                
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR11(AUS.FNR)) THEN                             
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          AUS.FNRNR = 200;                                                      
+       END;                                                                     
+    ELSE IF AUS.FNR > 0  THEN                                                   
+            DO;                                                                 
+               IF ^F_GYLDIG_FNR(AUS.FNR) THEN                                   
+                   DO;                                                          
+                      FEIL_FUNNET = '1'B;                                       
+                      AUS.FNRNR = 1;                                            
+                   END;                                                         
+               ELSE                                                             
+                  DO;                                                           
+                     FNR_REG.FNR1 = AUS.FNR;                                    
+                     EXEC CICS LINK PROGRAM ('R0019906')                        
+                                       COMMAREA(FNR_REG);                       
+                                                                                
+                     IF FNR_REG.FNR2 > 0 THEN                                   
+                        DO;                                                     
+                           AUS.FNRNR = 203;                                     
+                           AUS.FNR_GML = AUS.FNR;                               
+                           AUS.FNR = FNR_REG.FNR2;                              
+                        END;                                                    
+                  END;                                                          
+              END;                                                              
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR4(AUS.TKNR))  THEN                            
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          AUS.TKNRNR  = 200;                                                    
+       END;                                                                     
+    ELSE                                                                        
+    IF AUS.TKNR  > 0   THEN                                                     
+       DO;                                                                      
+            EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                          
+            EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)                  
+                                               INTO(TK_RECL);                   
+            LEAVE;                                                              
+        NOTFND:                                                                 
+            FEIL_FUNNET = '1'B;                                                 
+            AUS.TKNRNR  = 3;                                                    
+       END;                                                                     
+                                                                                
+    IF VERIFY(AUS.STBREV,'JN') ^= 0 THEN                                        
+       DO;                                                                      
+           AUS.STBREVNR = 272;                                                  
+           FEIL_FUNNET = '1'B;                                                  
+       END;                                                                     
+                                                                                
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR11(AUS.TRANSTYPE)) THEN                       
+       DO;                                                                      
+          FEIL_FUNNET = '1'B;                                                   
+          AUS.TRANSTYPENR = 200;                                                
+       END;                                                                     
+    ELSE                                                                        
+    IF AUS.STBREV ^= 'J' THEN                                                   
+       DO;                                                                      
+          IF AUS.TRANSTYPE > 0 THEN                                             
+             DO;                                                                
+                FEIL_FUNNET = '1'B;                                             
+                AUS.TRANSTYPENR = 278;                                          
+             /* AUS.STBREVNR = 277; */                                          
+             END;                                                               
+      /*  AUS.STBREV = ' '; */                                                  
+       END;                                                                     
+   /*LOVENDRING FOR AP UNDER 68 ÅR - 200812 HL : */                             
+    ELSE                                                                        
+       IF AUS.TRANSTYPE = 89     THEN;                                          
+    ELSE                                                                        
+       IF AUS.TRANSTYPE > 50 !                                                  
+          AUS.TRANSTYPE < 1  THEN                                               
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             AUS.TRANSTYPENR = 278;                                             
+          END;                                                                  
+                                                                                
+    TRANS_OPPL_OMR.FØDSNUMMER = AUS.FNR;                                        
+                                                                                
+ END KONTROLLER_AU_SØKER;                                                       
+ /*                                                                   */        
+ %PAGE;                                /*   */                                  
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ OVERFØR_AUSØKER_MAP:                                                           
+   PROC;                                                                        
+   DCL                                                                          
+      NORMAL  CHAR (1) INIT(' '),                                               
+      NOR_NUM CHAR (1) INIT('&'),                                               
+      BRI_NUM CHAR (1) INIT('Q');                                               
+                                                                                
+      S0019A1O.FNRO          = F_FELT_PIC_CHAR11 (AUS.FNR);                     
+      S0019A1O.STBREVO       = AUS.STBREV;                                      
+      S0019A1O.TRANSTYPEO    = AUS.TRANSTYPE;                                   
+      S0019A1O.TKNRO         = AUS.TKNR     ;                                   
+                                                                                
+      S0019A1O.DUMMYA = '_';                                                    
+       IF ^ FRA_CICS THEN                                                       
+          DO;                                                                   
+            IF FEIL_MELD_NR > 0 THEN                                            
+               CALL SKRIV_FEIL(FEIL_MELD_NR);                                   
+             FEIL_MELD_NR = 0;                                                  
+          END;                                                                  
+                                                                                
+      IF AUS.FNRNR = 0 THEN                                                     
+         S0019A1O.FNRA = NOR_NUM;                                               
+      ELSE                                                                      
+         DO;                                                                    
+            S0019A1O.FNRA = BRI_NUM;                                            
+            S0019A1I.FNRL = CURSOR_POS;                                         
+            IF AUS.FNRNR ^= 999 THEN                                            
+               CALL SKRIV_FEIL(AUS.FNRNR);                                      
+         END;                                                                   
+                                                                                
+      IF AUS.STBREVNR = 0 THEN                                                  
+         S0019A1O.STBREVA      = NORMAL;                                        
+      ELSE                                                                      
+         DO;                                                                    
+            S0019A1O.STBREVA          = DFHBMBRY;                               
+            S0019A1I.STBREVL          = CURSOR_POS;                             
+            IF AUS.STBREVNR ^= 999 THEN                                         
+               CALL SKRIV_FEIL(AUS.STBREVNR);                                   
+         END;                                                                   
+                                                                                
+      IF AUS.TRANSTYPENR = 0 THEN                                               
+         S0019A1O.TRANSTYPEA      = NORMAL;                                     
+      ELSE                                                                      
+         DO;                                                                    
+            S0019A1O.TRANSTYPEA          = DFHBMBRY;                            
+            S0019A1I.TRANSTYPEL          = CURSOR_POS;                          
+            IF AUS.TRANSTYPENR ^= 999 THEN                                      
+               CALL SKRIV_FEIL(AUS.TRANSTYPENR);                                
+         END;                                                                   
+                                                                                
+      IF AUS.TKNRNR = 0 THEN                                                    
+         S0019A1O.TKNRA = NOR_NUM;                                              
+      ELSE                                                                      
+         DO;                                                                    
+            S0019A1O.TKNRA = BRI_NUM;                                           
+            S0019A1I.TKNRL = CURSOR_POS;                                        
+            IF AUS.TKNRNR ^= 999 THEN                                           
+               CALL SKRIV_FEIL(AUS.TKNRNR);                                     
+         END;                                                                   
+                                                                                
+      /* VED GAMLE TRANS SKAL TKNR OG VIRKDATO BLOKKERES */                     
+                                                                                
+     IF TRANS_OPPL_OMR.NY_GML_TRANS_IND = 'G' & FRA_MED_DIALOG THEN             
+        DO;                                                                     
+          S0019A1O.FNRA          = DFHBMASK;       /* PROT AND ASKIP */         
+          S0019A1O.TKNRA         = DFHBMASK;       /* PROT AND ASKIP */         
+        END;                                                                    
+                                                                                
+     ELSE IF FRA_UTEN_DIALOG THEN    /* BLOKKER ALT SAMMEN    */                
+                                                                                
+        DO;                                                                     
+          S0019A1O.FNRA          = DFHBMASK;                                    
+          S0019A1O.STBREVA       = DFHBMASK;                                    
+          S0019A1O.TKNRA         = DFHBMASK;                                    
+          S0019A1O.TRANSTYPEA    = DFHBMASK;                                    
+          MELDING6O = 'TRYKK PF14 FOR OPPBEVAR, PF15 FOR FORKASTE.';            
+        END;                                                                    
+                                                                                
+     IF ^ FRA_CICS THEN                                                         
+        DO;                                                                     
+      /*  S0019A1O.STYRE_KODEA    = DFHBMASK; */                                
+          S0019A1O.FUNKSJONSKODEA = DFHBMASK;                                   
+        END;                                                                    
+                                                                                
+   END OVERFØR_AUSØKER_MAP;                                                     
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*   PROSEDYRE FOR Å BLANKE MAPEN S0019A1O                           */        
+ /*                                                                   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ BLANK_AU_MAP:                                                                  
+   PROC;                                                                        
+                                                                                
+     DCL                                                                        
+        LOW BUILTIN;                                                            
+                                                                                
+     FNRO       = LOW(11);                                                      
+     STBREVO    = LOW( 1);                                                      
+     TKNRO      = LOW( 1);                                                      
+     TRANSTYPEO = LOW( 1);                                                      
+     MELDING1O  = (78)' ';                                                      
+     MELDING2O  = (78)' ';                                                      
+     MELDING3O  = (78)' ';                                                      
+     MELDING4O  = (78)' ';                                                      
+     MELDING5O  = (78)' ';                                                      
+     MELDING6O  = (78)' ';                                                      
+                                                                                
+ END BLANK_AU_MAP;                                                              
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*   PROSEDYRE FOR Å OVERFØRE FELT SOM ER UTFYLT, EVENTUELT ENDRET   */        
+ /*   PÅ SKJERMBILDET TIL AU_TRANS_OMR.                               */        
+ /*          MAPSET : S0019A3     MAP: S0019A1                        */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ OVERFØR_AU_SØKER:                                                              
+   PROC;                                                                        
+                                                                                
+     IF FNRL > 0 THEN                                                           
+        AUS.FNR    = F_FELT_CHAR_PIC11(FNRI);                                   
+     IF TKNRL > 0 THEN                                                          
+        AUS.TKNR   = F_FELT_CHAR_PIC4(TKNRI);                                   
+     IF STBREVL > 0 THEN                                                        
+        AUS.STBREV = STBREVI;                                                   
+                                                                                
+  /* IF TRANSTYPEL > 0 THEN                                                     
+        AUS.TRANSTYPE = TRANSTYPEI;                                             
+  */                                                                            
+     IF STBREVL > 0 THEN                                                        
+        AUS.STBREV = STBREVI;                                                   
+     IF TRANSTYPEL > 0 THEN                                                     
+        AUS.TRANSTYPE = F_FELT_CHAR_PIC2(TRANSTYPEI);                           
+                                                                                
+ END OVERFØR_AU_SØKER;                                                          

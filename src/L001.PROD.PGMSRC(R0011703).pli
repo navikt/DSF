@@ -1,0 +1,210 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.45 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.15.24 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2001.09.06 10.02.59 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ QASS   2001.03.09 12.50.59 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ QASS   2001.01.19  9.12.08 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.58 AV   JDA7339          */        
+ /*       SIST ENDRET 30/07-98 09.25.46 AV   JDA7339                  */        
+ /*       SIST ENDRET 06/07-98 14.22.51 AV   RFA9991                  */        
+ /* **************************************************************** */         
+ /*IDENTIFIKASJON:                                                   */         
+ /*    R0011703 - PROSEDYRE I PLI                                    */         
+ /*    PROGRAMMERER: GEIR, SEPTEMBER 1981                            */         
+ /*HENSIKT:                                                          */         
+ /*    PROSEDYREN FORETAR KONTROLL AV DATA VEDRØRENDE                */         
+ /*    OPPHØRSBLANKETT 2.                                            */         
+ /*PROGRAMTILKNYTNING:                                               */         
+ /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLINGA AV                */         
+ /*    OPPHØRSBLANKETT 2, INCLUDES I R0011701.                       */         
+ /*BRUK:                                                             */         
+ /*    CALL KONTROLL_O2                                              */         
+ /* **************************************************************** */         
+ /*                                                                  */         
+ /*ENDRET: 14.04.88 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S            */         
+ /* ******                                                           */         
+ /*    INITIERER BRUKERID I FNR_REG MED CICS_IND FØR KONTROLL PÅ     */         
+ /*    OM FNR ER ENDRET (R0019906).                                  */         
+ /* **************************************************************** */         
+ /*    MODULEN KONTROLLERER OPPHØRSBLANKETT NR 2 OG RETURNERER       */         
+ /*    MED FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RIKTIG.           */         
+ /* **************************************************************** */         
+ %SKIP(2);                                                                      
+ KONTROLL_O2:                                                                   
+   PROC (FEIL_FUNNET);                                                          
+   DCL                                                                          
+      I           FIXED BIN (15),                                               
+      FEIL_FUNNET BIT (1);                                                      
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+   DCL                                                                          
+      1 FNR_REG,                                                                
+        2 FNR1         FIXED DEC(11),                                           
+        2 FNR2         FIXED DEC(11),                                           
+        2 BRUKERID     CHAR     ( 4);                                           
+                                                                                
+                                                                                
+      FNR_REG.BRUKERID =  DIV_PARAM_OMR.CICS_IND;                               
+      FEIL_FUNNET      = '0'B;                                                  
+      ANT_FEIL_SKREVET =  0;                                                    
+      KEY_PEKER        =  ADDR(O2.TKNR);                                        
+                                                                                
+                                                                                
+      IF ^F_NUMERISK(F_FELT_PIC_CHAR11(O2.FNR)) THEN                            
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            O2.FNRNR    = 200;                                                  
+         END;                                                                   
+      ELSE                                                                      
+         IF ^F_GYLDIG_FNR(O2.FNR) THEN                                          
+            DO;                                                                 
+               FEIL_FUNNET = '1'B;                                              
+               O2.FNRNR    = 1;                                                 
+            END;                                                                
+         ELSE                                                                   
+            DO;                                                                 
+               FNR_REG.FNR1 = O2.FNR;                                           
+               EXEC CICS LINK PROGRAM ('R0019906') COMMAREA (FNR_REG);          
+               IF FNR_REG.FNR2 > 0 THEN                                         
+                  DO;                                                           
+                     O2.FNRNR   = 203;                                          
+                     O2.FNR_GML = O2.FNR;                                       
+                     O2.FNR     = FNR_REG.FNR2;                                 
+                  END;                                                          
+            END;                                                                
+      IF ^F_NUMERISK(F_FELT_PIC_CHAR4(O2.TKNR)) THEN                            
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            O2.TKNRNR   = 200;                                                  
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+                  EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                    
+                  EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)            
+                                                     INTO(TK_RECL);             
+                  LEAVE;                                                        
+              NOTFND:                                                           
+                  FEIL_FUNNET = '1'B;                                           
+                  O2.TKNRNR   = 3;                                              
+          END;                                                                  
+                                                                                
+    /* ************************************************** */                    
+    /* KONTROLL AV ACF2 FOR TILLGANGE TIL TKNR            */                    
+    /*                                                    */                    
+          /* ************************************************** */              
+    BO_TKNR  = TKNR;                                                            
+    CALL ATK_TILGANG_KONTROLL;                                                  
+                                                                                
+      IF ^F_NUMERISK(F_FELT_PIC_CHAR8(O2.VIRK_DATO_ÅMD)) THEN                   
+         DO;                                                                    
+            FEIL_FUNNET       = '1'B;                                           
+            O2.VIRK_DATO_ÅMDNR= 200;                                            
+         END;                                                                   
+      ELSE                                                                      
+         IF ^F_GYLDIG_DATO(O2.VIRK_DATO_ÅMD) THEN                               
+            DO;                                                                 
+               FEIL_FUNNET       = '1'B;                                        
+               O2.VIRK_DATO_ÅMDNR = 9;                                          
+            END;                                                                
+      ELSE                                                                      
+         IF ^F_6MDR(O2.VIRK_DATO_ÅMD) THEN                                      
+            DO;                                                                 
+               FEIL_FUNNET       = '1'B;                                        
+               O2.VIRK_DATO_ÅMDNR= 205;                                         
+            END;                                                                
+      IF VERIFY(O2.EK_TILL,'X ') ^= 0 THEN                                      
+         DO;                                                                    
+            FEIL_FUNNET  = '1'B;                                                
+            O2.EK_TILLNR = 166;                                                 
+         END;                                                                   
+      DO I = 1 TO 5 WHILE(F_FELT_PIC_CHAR11(O2.FNR_BARN(I)) ^= (11)'0');        
+         IF ^F_NUMERISK(F_FELT_PIC_CHAR11(O2.FNR_BARN(I))) THEN                 
+            DO;                                                                 
+               FEIL_FUNNET      = '1'B;                                         
+               O2.FNR_BARNNR(I) = 200;                                          
+            END;                                                                
+         ELSE                                                                   
+            IF ^F_GYLDIG_FNR(O2.FNR_BARN(I)) THEN                               
+               DO;                                                              
+                  FEIL_FUNNET      = '1'B;                                      
+                  O2.FNR_BARNNR(I) = 1;                                         
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  FNR_REG.FNR1 = O2.FNR_BARN(I);                                
+                  EXEC CICS LINK PROGRAM ('R0019906') COMMAREA (                
+                   FNR_REG);                                                    
+                  IF FNR_REG.FNR2 > 0 THEN                                      
+                     DO;                                                        
+                        O2.FNR_BARNNR(I) = 203;                                 
+                        O2.FNR_GML       = O2.FNR_BARN(I);                      
+                        O2.FNR_BARN(I)   = FNR_REG.FNR2;                        
+                     END;                                                       
+               END;                                                             
+      END;                                                                      
+                                                                                
+ /* ENDRET 15.1.85  HL  - OPPHØR BARNEPENSJON ER ENDRET FRA  */                 
+ /*        'G' TIL 'F'. 'G' SKAL GI MELDING OM DETTE         */                 
+ /* ENDRET 31.1.85  HL  - KODENE 'C' OG 'D' SKAL GODTAS      */                 
+ /*                       OG TRANSTYPE SETTES = 68           */                 
+                                                                                
+      IF VERIFY(O2.OPPHØR_KODE,'ABCDEFI ') ^= 0 THEN                            
+         DO;                                                                    
+            FEIL_FUNNET      = '1'B;                                            
+            IF O2.OPPHØR_KODE  = 'G'       THEN                                 
+               O2.OPPHØR_KODENR = 279;                                          
+            ELSE                                                                
+               O2.OPPHØR_KODENR = 167;                                          
+                                                                                
+         END;                                                                   
+                                                                                
+      IF O2.OPPHØR_KODE = 'C'     !                                             
+         O2.OPPHØR_KODE = 'D'              THEN                                 
+                                                                                
+         TRANSTYPE = 68;                                                        
+      ELSE                                                                      
+         TRANSTYPE = 0;                                                         
+ /* HIT 31.1.85  HL                                            */               
+                                                                                
+      IF O2.OPPHØR_KODE = 'I' THEN   /* JFA 10.1.2001 */                        
+         TRANSTYPE = 77;  /* FJERNE J I ROTA, MEN IKKE SKRIVE BREV */           
+                                                                                
+      FØDSNUMMER    =  O2.FNR;                                                  
+      VIRKNINGSDATO_ÅMD =  O2.VIRK_DATO_ÅMD;                                    
+ % PAGE;                               /*     */                                
+ /* **************************************************************** */         
+ /*                                                                  */         
+ /*    KRYSSKONTROLLER                                               */         
+ /* **************************************************************** */         
+ %SKIP;                                                                         
+      IF ^FEIL_FUNNET THEN                                                      
+         DO;                                                                    
+            IF (O2.FNR > 0 & O2.TKNR > 0 & O2.                                  
+                                              VIRK_DATO_ÅMD > 0) THEN           
+               DO;                                                              
+                  IF (O2.EK_TILL   = ' ' & O2.FNR_BARN(1) = 0 &                 
+                      O2.OPPHØR_KODE = ' ')  THEN                               
+                      DO;                                                       
+                         FEIL_FUNNET          = '1'B;                           
+                         O2.EK_TILLNR         = 181;                            
+                         O2.FNR_BARNNR(1)     = 999;                            
+                         O2.OPPHØR_KODENR     = 999;                            
+                         O2.FNRNR             = 999;                            
+                         O2.TKNRNR            = 999;                            
+                         O2.VIRK_DATO_ÅMDNR   = 999;                            
+                       END;                                                     
+                  IF (O2.EK_TILL = 'X' ! O2.FNR_BARN(1) > 0) THEN               
+                     DO;                                                        
+                        IF (                                                    
+                            O2.OPPHØR_KODE ^= ' ') THEN                         
+                           DO;                                                  
+                              FEIL_FUNNET          = '1'B;                      
+                              O2.OPPHØR_KODENR     = 180;                       
+                              O2.EK_TILLNR         = 999;                       
+                              O2.FNR_BARNNR(1)     = 999;                       
+                           END;                                                 
+                     END;                                                       
+               END;                                                             
+         END;                                                                   
+   END KONTROLL_O2;                                                             

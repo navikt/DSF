@@ -1,0 +1,109 @@
+ /*   SIST ENDRET PÅ PROD   2003.11.18 11.27.54 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.11.17 13.39.34 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.06.19 15.33.20 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.03.14 10.36.35 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.07.07 13.00.16 AV   JDA7339          */        
+ /*       SIST ENDRET 04/05-98 12.41.14 AV   JDA7339                  */        
+ /*       SIST ENDRET 13/12-91 12.22.02 AV   DYBVIK                   */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0014140 - FUNKSJON I PLI                                      */        
+ /*    PROGRAMMERER: TRUDE NOV 91                                     */        
+ /* HENSIKT:                                                          */        
+ /*    BEREGNE OVERGANG FRA YRKESSKADEPENSJON                         */        
+ /*                                                                   */        
+ /*    AP/AFP SKAL FASTSETTES SLIK AT AP/AFP PENSJON BLIR MINST LIKE  */        
+ /*    HØY SOM TIDLIGERE YRKESSKADEPENSJON :                          */        
+ /* PROGRAMTILKNYTNING:                                               */        
+ /*    INCLUDES I / CALLES FRA                                        */        
+ /*       4101 / 4139 - 4244                                          */        
+ /*       4201 / 4139 - 4244                                          */        
+ /*       4251 / 4139                                                 */        
+ /* BRUK:                                                             */        
+ /*    VAR = F_OVERGANG_FRA_YP(W_YP_AP)                               */        
+ /* ENDRINGER                                                         */        
+ /* ***************************************************************** */        
+ F_OVERGANG_FRA_YP : PROC (W_YP) RETURNS (FIXED DEC(7));                        
+     DCL W_YP            FIXED DEC (7);                                         
+     DCL W_YRKE_GP       FIXED DEC (11,4)  INIT (0),                            
+         YRKE_GP         FIXED DEC (7)   INIT (0),                              
+         YRKE_TP         FIXED DEC (7)   INIT (0),                              
+         ST_REDUKSJON    FIXED DEC (7)   INIT (0),                              
+         W_APD_YP        FIXED DEC (3)   INIT (0),                              
+         W1_ST           FIXED DEC (15,4)INIT (0),                              
+         W2_ST           FIXED DEC (7)   INIT (0),                              
+         W1_TP           FIXED DEC (11,4)INIT (0),                              
+         ST_PROSENT      FIXED DEC (4,2) INIT (0),                              
+         YRKEPENSJON     FIXED DEC (7)   INIT (0);                              
+     DCL TP_WORK         FIXED DEC (15,5); /*ENDRET FRA 13,4->15,5*/            
+     DCL FAKTOR1         FIXED DEC (15,5);                                      
+     DCL FAKTOR2         FIXED DEC (15,5);                                      
+                                                                                
+     /* === RXX14140 STARTER HER ==================================== */        
+                                                                                
+     W_YP   = 0;                                                                
+                                                                                
+     /* ------------------------------------------------------------- */        
+     /* GRUNNPENSJONSBEREGNING                                        */        
+     /* ------------------------------------------------------------- */        
+     W_YRKE_GP = G * B02.YRKEPENS.YUG(BER_SØ_IND)/(100*12);                     
+                                                                                
+  /*200309 HL : TILLEGGSTET PÅ REDUSERT_GP_2G*/                                 
+     IF DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) ^= ' '     !                   
+        B02.PENSJONSTYPE2(BER_SØ_IND) = 'S' THEN                                
+  /*    W_YRKE_GP = W_YRKE_GP * 0.75 ;     */                                   
+        W_YRKE_GP = W_YRKE_GP * GP_PROSENT;                                     
+     YRKE_GP = W_YRKE_GP + 0.5;                                                 
+                                                                                
+     /* ------------------------------------------------------------- */        
+     /* TILLEGGSPENSJONSBEREGNING                                     */        
+     /* ------------------------------------------------------------- */        
+     IF (B02.YPT(BER_SØ_IND) < B02.YRKE_POENG_1291(BER_SØ_IND)) THEN            
+        /* YPT ER SLUTTPOENGTALLET ETTER YRKESSKADE (NY 13 GAMMEL 11) */        
+        B02.YPT(BER_SØ_IND) = B02.YRKE_POENG_1291(BER_SØ_IND);                  
+                                                                                
+     TP_WORK  = G * B02.YRKEPENS.YPT(BER_SØ_IND);                               
+     TP_WORK  = TP_WORK * B02.YRKEPENS.YUG(BER_SØ_IND) /100;                    
+     TP_WORK  = TP_WORK / 12;                                                   
+                                                                                
+     /* ------------------------------------------------------------- */        
+     /* VED YRKESSKADE REDUSERES IKKE TILLEGGSPENSJONEN SELV OM VEDK. */        
+     /* HAR MINDRE ENN 40 POENGÅR, SE § 3-30 FØRSTE LEDD BOKSTAV B.   */        
+     /* ------------------------------------------------------------- */        
+     IF (B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) = 0) THEN                          
+       TP_WORK = TP_WORK * 0.45;                                                
+     ELSE                                                                       
+        DO;                                                                     
+           FAKTOR1 = (B02.YRKEPENS.PÅ(BER_SØ_IND)                               
+                     - B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) )                    
+                     / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.45;                      
+           FAKTOR2 = B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND)                        
+                     / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.42;                      
+           TP_WORK = TP_WORK * (FAKTOR1 + FAKTOR2 + 0.00005);                   
+        END;                                                                    
+     YRKE_TP = TP_WORK + 0.5;                                                   
+                                                                                
+     /* ------------------------------------------------------------- */        
+     /* SÆRTILLEGGSBEREGNING                                          */        
+     /* ------------------------------------------------------------- */        
+                                                                                
+     IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'S' THEN                                
+        ST_PROSENT = ST_PROSENT_SAMST;                                          
+     ELSE                                                                       
+        ST_PROSENT = ST_PROSENT_ENSLIG;                                         
+                                                                                
+     W1_ST = ST_PROSENT * G / 100;                                              
+     W1_ST = W1_ST * B02.YRKEPENS.YUG(BER_SØ_IND) / 100;                        
+     W1_ST = W1_ST / 12;                                                        
+     W2_ST = W1_ST + 0.5;                                                       
+                                                                                
+     IF YRKE_TP > W2_ST THEN                                                    
+        YRKEPENSJON = YRKE_TP + YRKE_GP;                                        
+     ELSE                                                                       
+        YRKEPENSJON = W2_ST   + YRKE_GP;                                        
+                                                                                
+       W_YP =   YRKEPENSJON;                                                    
+                                                                                
+       RETURN (W_YP);                                                           
+                                                                                
+   END F_OVERGANG_FRA_YP ;                                                      

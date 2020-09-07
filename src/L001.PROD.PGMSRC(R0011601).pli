@@ -1,0 +1,340 @@
+ /*   SIST ENDRET PÅ PROD   2004.06.01  8.34.08 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.06.01  8.28.33 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.41.10 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.33.07 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 13.06.39 AV   JDA2970          */        
+ /*       SIST ENDRET 19/08-98 09.29.23 AV   TSB7339                  */        
+ /*       SIST ENDRET 20/07-98 13.07.07 AV   JDA7339                  */        
+ /*       SIST ENDRET 22/06-98 13.21.42 AV   JDA7339                  */        
+ /*       SIST ENDRET 11/06-98 08.49.49 AV   RFA9991                  */        
+ R00116:                                                                        
+   PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                          
+ %PAGE;                                                                         
+ %INCLUDE S00116;    /*  OPPHØRSBLANKETT-1 MAPSETTET   */                       
+ %PAGE;                                                                         
+ %INCLUDE P0011601;  /*  TRANS_OMR FOR OPPHØRSBLANKETT-1        */              
+ %PAGE;                                                                         
+ %INCLUDE P0019906;  /*  TRANS-OPPL-OMRÅDE (BASED)         */                   
+ %PAGE;                                                                         
+ %INCLUDE P0019908;  /*  KOM-OMRÅDE (BASED)                */                   
+ %PAGE;                                                                         
+ %INCLUDE P0019910;  /*  STYRINGS-OMRÅDE (BASED)           */                   
+ %PAGE;                                                                         
+ %INCLUDE P0019912;  /*  DIV_OMRÅDE (BASED)      */                             
+ %PAGE;                                                                         
+ %INCLUDE DFHBMSCA;                                                             
+ %PAGE;                                                                         
+   DCL                                                                          
+      (BMSMAPBR,COMMAREA_PEKER)        PTR;                                     
+   DCL                                                                          
+      (ADDR,UNSPEC,CSTG,ONCODE,VERIFY,SUBSTR) BUILTIN;                          
+   DCL                                                                          
+      FEIL_FUNNET      BIT (1),                                                 
+      ONKODE           PIC'9999',                                               
+      CURSOR_POS       FIXED BIN(15) INIT(-1),                                  
+      ONK              DEF ONKODE CHAR(4),                                      
+      FEILKODE         CHAR(4),                                                 
+      DSNAVN           CHAR(8),                                                 
+      ANT_FEIL_SKREVET FIXED DEC (3) INIT (0);                                  
+ %SKIP(1);                                                                      
+ %PAGE;                                                                         
+      ON ERROR SNAP BEGIN       ;                                               
+         ON ERROR SYSTEM        ;                                               
+         ONKODE=ONCODE          ;                                               
+         FEILKODE   = ONK       ;                                               
+         DSNAVN     = EIBDS     ;                                               
+         GO TO FEILBEH          ;                                               
+      END;                                                                      
+ FEILKODE  = 'FEIL'     ;                                                       
+ DSNAVN   = '      '    ;                                                       
+                                                                                
+ EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                                     
+                                                                                
+ EXEC CICS HANDLE AID PF1(PF1) PF2(PF2);                                        
+                                                                                
+ KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);            
+                                                                                
+ IF FRA_CICS THEN                                                               
+  DO;                                                                           
+    KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);        
+    KOM_OMR.PEKER_LISTE.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);             
+    KOM_OMR.PEKER_LISTE.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);          
+    ATK_KOM_PTR           = ADDR  (KOM_OMR.ATK_COM_OMR  ) ;                     
+  END;                                                                          
+                                                                                
+ IF HENT_FRAM_MAP  THEN                                                         
+    DO;                                                                         
+       EXEC CICS LOAD PROGRAM ('S001163');                                      
+       ALLOCATE S001161O;                                                       
+       S001161O.CICS_INFOO = CICS_NAVN;                                         
+    END;                                                                        
+                                                                                
+ RECEIVE_MAP:                                                                   
+                                                                                
+ IF ^HENT_FRAM_MAP THEN                                                         
+    DO;                                                                         
+       EXEC CICS RECEIVE MAP('S001161')                                         
+                                    MAPSET('S001163') SET(BMSMAPBR);            
+       CALL BLANK_O1_MELDNR;                                                    
+       FEIL_MELD_NR = 0;                                                        
+    END;                                                                        
+                                                                                
+                                                                                
+ IF FUNKSJONSKODEL > 0 THEN                                                     
+    DO;                                                                         
+       FUNKSJONSKODE = FUNKSJONSKODEI;                                          
+       EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);                    
+    END;                                                                        
+                                                                                
+ IF STYRE_KODEL > 0 THEN                                                        
+    DO;                                                                         
+       STYREKODE = STYRE_KODEI;                                                 
+       TRANSKODE = 'R041';                                                      
+       EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                    
+    END;                                                                        
+                                                                                
+                                                                                
+ IF STYREKODE ^= 'O1'  &  FRA_CICS THEN                                         
+    TRANSKODE  = 'R041';                                                        
+ ELSE                                                                           
+    DO;                                                                         
+       TRANS_RETURKODE = TRANSKODE;                                             
+       SELECT (TRANSKODE);                                                      
+         WHEN('R160')                                                           
+           DO;                                                                  
+              CALL BLANK_O1_OPPHØR;                                             
+              CALL BLANK_O1_MELDNR;                                             
+              CALL OVERFØR_O1_OPPHØR;                                           
+              CALL KONTROLL_O1(FEIL_FUNNET);                                    
+           END;                                                                 
+         WHEN('R161')                                                           
+           DO;                                                                  
+              CALL BLANK_O1_MELDNR;                                             
+              CALL OVERFØR_O1_OPPHØR;                                           
+              CALL KONTROLL_O1(FEIL_FUNNET);                                    
+           END;                                                                 
+       OTHERWISE;                                                               
+       /* INGEN UTGANG DA CICS IKKE GODTAR UGYLDIGE TRANSAKSJONSKODER */        
+                                                                                
+    END;                                                                        
+                                                                                
+ IF FEIL_FUNNET ! HENT_FRAM_MAP ! FRA_UTEN_DIALOG !                             
+    TRANS_RETURKODE ^= TRANSKODE THEN                                           
+    DO;                                                                         
+       IF TRANSKODE = 'R160' THEN                                               
+          TRANSKODE = 'R161';                                                   
+       CALL BLANK_O1_MAP;                                                       
+       CALL OVERFØR_O1_MAP;                                                     
+                                                                                
+      IF HENT_FRAM_MAP THEN                                                     
+         EXEC CICS SEND MAP('S001161') MAPSET('S001163') ERASE CURSOR;          
+      ELSE                                                                      
+         EXEC CICS SEND MAP('S001161') MAPSET('S001163') ERASEAUP               
+                                                        DATAONLY CURSOR;        
+      FEIL_MELD_NR  = 666;/* => FEIL_FUNNET ER SATT. */                         
+                                                                                
+      HENT_FRAM_MAP = '0'B;                                                     
+                                                                                
+      IF FRA_CICS THEN                                                          
+         EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);                 
+      ELSE                                                                      
+         GOTO RECEIVE_MAP;                                                      
+    END;                                                                        
+  ELSE                                                                          
+    DO;                                                                         
+       IF TRANSKODE = 'R160' THEN                                               
+          TRANS_RETURKODE = 'R161';                                             
+       ELSE                                                                     
+          TRANS_RETURKODE = TRANSKODE;                                          
+       IF FRA_CICS  THEN                                                        
+          DO;                                                                   
+             BLANKETTYPE = STYREKODE;                                           
+             TRANSKODE   = 'R042';                                              
+          END;                                                                  
+    END;                                                                        
+ END;                                                                           
+                                                                                
+  CALL UTGANG;                                                                  
+                                                                                
+  UTGANG: PROC;                                                                 
+    IF FRA_CICS THEN                                                            
+       EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                    
+    ELSE                                                                        
+       EXEC CICS RETURN;                                                        
+  END UTGANG;                                                                   
+                                                                                
+  FEILBEH:                                                                      
+                                                                                
+     EXEC CICS HANDLE CONDITION ERROR(ABEND);                                   
+     IF FEIL_MELD_NR = 0 THEN /* AB 01.08.16 */                                 
+        PROGRAM_ID = 'R0011601';                                                
+                                                                                
+     S001161O.MELDING2O =                                                       
+              'F E I L  H A R  O P P S T Å T T ! ! !.';                         
+                                                                                
+     S001161O.MELDING3O =                                                       
+              'EIBRCODE : ' !! UNSPEC(EIBRCODE);                                
+                                                                                
+     S001161O.MELDING4O =                                                       
+          'EIBFN    : ' !! UNSPEC(EIBFN) !! '. FEILKODE : ' !! FEILKODE         
+                                         !! '. DATASETT : ' !! DSNAVN;          
+                                                                                
+     S001161O.MELDING5O =                                                       
+                   'PROGRAMNAVN :  ' !! PROGRAM_ID    !!                        
+                   '.INGEN OPPDATERING ER BLITT UTFØRT.';                       
+                                                                                
+     S001161O.MELDING6O =                                                       
+                   'TA UTSKRIFT!!!. TRYKK DERETTER "ENTER".';                   
+                                                                                
+                                                                                
+     EXEC CICS SEND MAP('S001161')                                              
+                                                 MAPSET('S001163');             
+                                                                                
+     EXEC CICS RECEIVE MAP('S001161')                                           
+                                    MAPSET('S001163') SET(BMSMAPBR);            
+                                                                                
+                                                                                
+     EXEC CICS SYNCPOINT ROLLBACK;                                              
+                                                                                
+                                                                                
+     TERMINERINGS_IND = 'F';                                                    
+                                                                                
+     TRANSKODE  = 'R041';                                                       
+                                                                                
+     CALL UTGANG;                                                               
+                                                                                
+  ABEND:                                                                        
+     EXEC CICS ABEND ABCODE(FEIL);                                              
+                                                                                
+  PF1:                                                                          
+                                                                                
+ /* LEGGER UNDERKJENT TRANS UT PÅ VENTEDATABASE HVIS GYLDIG     */              
+ /* FNR OG VIRKNINGSDATO,ELLERS FORKASTES TRANSAKSJONEN.        */              
+                                                                                
+     IF ^(O1.FNR_DØDNR = 1      !                                               
+          O1.FNR_DØDNR = 200    !                                               
+          O1.DØDSDATO_ÅMDNR = 9 !                                               
+          O1.DØDSDATO_ÅMDNR = 200) THEN                                         
+        DO;                                                                     
+                                                                                
+           IF FØDSNUMMER    = 0   THEN                                          
+                                                                                
+ /* SKRIVER MELDING OM AT TRANSAKSJONEN ER FORKASTET.           */              
+                                                                                
+              DO;                                                               
+                 FEIL_MELD_NR  = 0;                                             
+                 S001161O.MELDING6O =                                           
+                         'REGISTERINGEN ER IKKE AVSLUTTET MED "ENTER"'!!        
+                         '.TRANSAKSJONEN ER FORKASTET.';                        
+                                                                                
+              END;                                                              
+           ELSE                                                                 
+              DO;                                                               
+                                                                                
+                 SEARCH_FNR  = TRANS_OPPL_OMR.FØDSNUMMER;                       
+                 IF FRA_CICS THEN                                               
+                    BLANKETTYPE = STYREKODE;                                    
+                                                                                
+                                                                                
+                 IF FEIL_MELD_NR = 666 &      /*BLANKETTKONTROLLFEIL*/          
+                    ^FRA_MED_DIALOG     THEN  /*IKKE BASEKONTROLLFEIL*/         
+                    FUNKSJONSKODE = 'B';                                        
+                                                                                
+                 EXEC CICS LINK PROGRAM('R0010490') COMMAREA(KOM_OMR);          
+                                                                                
+     /* SKRIVER MELDING OM AT TRANSAKSJONEN ER LAGT UT PÅ VENTEBASE.*/          
+                                                                                
+                 S001161O.MELDING6O =                                           
+                         'TRANSAKSJONEN ER LAGT UT PÅ VENTEREGISTER.';          
+              END;                                                              
+           EXEC CICS SEND MAP('S001161') MAPSET('S001163')                      
+                                                           DATAONLY;            
+     /* DUMMY SEND-KALL.                              */                        
+                                                                                
+           EXEC CICS SEND MAP('S001161')                                        
+                                                  MAPSET('S001163');            
+           EXEC CICS DELAY INTERVAL(005);                                       
+                                                                                
+           TERMINERINGS_IND = 'F';                                              
+                                                                                
+           TRANSKODE  = 'R041';                                                 
+                                                                                
+           CALL UTGANG;                                                         
+                                                                                
+        END;                                                                    
+     ELSE                                                                       
+        DO;                                                                     
+           TERMINERINGS_IND = 'F';                                              
+                                                                                
+           TRANSKODE = 'R041';                                                  
+                                                                                
+           S001161O.MELDING6O =                                                 
+                                                                                
+   'NB** TRANSAKSJONEN ER FORKASTET P.G.A. UGYLDIG FNR EL. VDATO **NB';         
+                                                                                
+           EXEC CICS SEND MAP('S001161') MAPSET('S001163')                      
+                                                           DATAONLY;            
+     /* DUMMY SEND-KALL.                            */                          
+                                                                                
+           EXEC CICS SEND MAP('S001161')                                        
+                                    MAPSET('S001163');                          
+                                                                                
+           EXEC CICS DELAY INTERVAL(005);                                       
+           CALL UTGANG;                                                         
+        END;                                                                    
+                                                                                
+                                                                                
+  PF2:                                                                          
+     TERMINERINGS_IND   = 'F';                                                  
+                                                                                
+     S001161O.MELDING6O =                                                       
+                                                                                
+      'NBNBNBNBNB***    TRANSAKSJONEN ER FORKASTET.    ***NBNBNBNBNB';          
+                                                                                
+     EXEC CICS SEND MAP('S001161') MAPSET('S001163')                            
+                                                      DATAONLY ;                
+     /* DUMMY SEND-KALL.                                     */                 
+                                                                                
+     EXEC CICS SEND MAP('S001161')                                              
+                                    MAPSET('S001163');                          
+     EXEC CICS DELAY INTERVAL(005);                                             
+                                                                                
+                                                                                
+     TRANSKODE = 'R041';                                                        
+                                                                                
+     CALL UTGANG;                                                               
+ %PAGE;                                                                         
+      %INCLUDE R0011602;               /* BLANK ARBEIDSOMRÅDE */                
+ %PAGE;                                                                         
+      %INCLUDE R0011603;               /* KONTROLL AV SØKERDELEN */             
+ %PAGE;                                                                         
+      %INCLUDE R0011606;               /* ARBEIDSOMRÅDE -> MAP */               
+ %PAGE;                                                                         
+      %INCLUDE R0011609;               /* MAP -> ARBEIDSOMRÅDE */               
+ %PAGE;                                                                         
+      %INCLUDE R0019902;               /* F_KJØNN               */              
+ %PAGE;                                                                         
+      %INCLUDE R0019904;               /* FØDSELSNUMMERKONTROLL */              
+ %PAGE;                                                                         
+      %INCLUDE R0019908;               /* DAGENS DATO PLUSS 1 */                
+ %PAGE;                                                                         
+      %INCLUDE R0019910;               /* NUMERISK KONTROLL */                  
+ %PAGE;                                                                         
+      %INCLUDE R0019901;               /* DATO_KONTROLL   */                    
+ %PAGE;                                                                         
+      %INCLUDE R0019912;  /* KONVERTERING CHAR ==> PIC / PIC ==> CHAR */        
+ %PAGE;                                                                         
+      %INCLUDE R0019944;               /* SKRIV_FEIL      */                    
+ %PAGE;                                                                         
+      %INCLUDE R0019983;             /* KONV_ÅMD_HÅMD 2000-3 */                 
+ %PAGE;                                                                         
+      %INCLUDE R0019985;             /* KONV_DMÅ_HÅMD 2000-3 */                 
+ %PAGE;                                                                         
+      %INCLUDE R0019988;             /* KONV_HÅMD_ÅMD 2000-3 */                 
+ %PAGE;                                                                         
+      %INCLUDE R0019990;             /* KONV_HÅMD_DMÅ 2000-3 */                 
+ %PAGE;                                                                         
+      %INCLUDE R0019995;             /* KONV_FNR11_FNR13 2000-3 */              
+      %INCLUDE R0019945;               /* ATK_TILLGANG_KONTROLL   */            
+      %INCLUDE R0019999;               /* KONTROLL_ACF2           */            
+   END R00116;                                                                  

@@ -1,0 +1,157 @@
+ /*   SIST ENDRET PÅ PROD   2007.07.09 13.21.05 AV   SPA2990          */        
+ /*   SIST ENDRET PÅ TEST   2005.12.07 14.39.09 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.09.19 12.49.01 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.08.29 11.18.56 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.39 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.15.20 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 12.35.21 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.54 AV   JDA7339          */        
+ /*       SIST ENDRET 30/07-98 11.26.09 AV   JDA7339                  */        
+ /*       SIST ENDRET 17/06-98 14.41.42 AV   HLA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0011503 - PROSEDYRE I PLI                                     */        
+ /*    PROGRAMMERER: JAN, SEPTEMBER 1981.                             */        
+ /*HENSIKT:                                                           */        
+ /*    PROSEDYREN FORETAR KONTROLL AV DATA FOR E2_SØKER               */        
+ /*       FRA ENDRINGSBLANKETT TRYGDEKONTORNUMMER.                    */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLING AV ENDRING I TKNR.  */        
+ /*    INCLUDES I  R0011501.                                          */        
+ /*BRUK:                                                              */        
+ /* CALL KONRTOLL_E2_SØKER(FEIL_I_E2_SØKER);                          */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*   MODULEN KONTROLLERER E2_SØKER, OG RETURNERER                    */        
+ /*   MED FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RIKTIG              */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ KONTROLL_E2_SØKER: PROC (FEIL_FUNNET) ;                                        
+   DCL                                                                          
+      FEIL_FUNNET BIT (1);                                                      
+   DCL                                                                          
+      KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),                    
+      KEY_PEKER1                 POINTER,                                       
+      KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),                    
+      KEY_PEKER2                 POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+ %PAGE;                                /*   */                                  
+ %SKIP;                                                                         
+   DCL                                                                          
+      1 FNR_REG,                                                                
+        2 FNR1         FIXED DEC(11),                                           
+        2 FNR2         FIXED DEC(11),                                           
+        2 BRUKERID     CHAR     ( 4);                                           
+                                                                                
+                                                                                
+                                                                                
+      FNR_REG.BRUKERID =  DIV_PARAM_OMR.CICS_IND;                               
+      KEY_PEKER1       =  ADDR(E2S.TKNR_FRA);                                   
+      KEY_PEKER2       =  ADDR(E2S.TKNR_TIL);                                   
+      FEIL_FUNNET      = '0'B;                                                  
+      ANT_FEIL_SKREVET =  0;                                                    
+                                                                                
+      IF ^F_NUMERISK(F_FELT_PIC_CHAR11(E2S.FNR)) THEN                           
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            E2S.FNRNR = 200;                                                    
+         END;                                                                   
+      ELSE                                                                      
+      IF ^F_GYLDIG_FNR(E2S.FNR) THEN                                            
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            E2S.FNRNR = 1;                                                      
+         END;                                                                   
+      ELSE                                                                      
+      DO;                                                                       
+         FNR_REG.FNR1 = E2S.FNR;                                                
+         EXEC CICS LINK PROGRAM ('R0019906') COMMAREA (FNR_REG);                
+         IF FNR_REG.FNR2 > 0 THEN                                               
+            DO;                                                                 
+              E2S.FNRNR = 203;                                                  
+              E2S.FNR_GML = E2S.FNR;                                            
+              E2S.FNR = FNR_REG.FNR2;                                           
+            END;                                                                
+      END;                                                                      
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR4(E2S.TKNR_FRA)) THEN                      
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            E2S.TKNR_FRANR = 200;                                               
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+                EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);                     
+                EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT1)             
+                                                   INTO(TK_RECL);               
+                LEAVE;                                                          
+            NOTFND1:                                                            
+                FEIL_FUNNET    = '1'B;                                          
+                E2S.TKNR_FRANR  = 3;                                            
+         END;                                                                   
+                                                                                
+    /* ************************************************** */                    
+    /* KONTROLL AV ACF2 FOR TILLGANGE "FRA TKNR"            */                  
+    /*                                                    */                    
+          /* ************************************************** */              
+    BO_TKNR  = E2S.TKNR_FRA;                                                    
+     CALL  KONTROLL_ACF2;                                                       
+    IF FEIL_MELD_NR    >  0  THEN                                               
+       DO;                                                                      
+           FEIL_FUNNET = '1'B;                                                  
+           TKNR_FRANR  = FEIL_MELD_NR;                                          
+       END;                                                                     
+                                                                                
+      IF ^ F_NUMERISK(F_FELT_PIC_CHAR4(E2S.TKNR_TIL)) THEN                      
+         DO;                                                                    
+            FEIL_FUNNET = '1'B;                                                 
+            E2S.TKNR_TILNR = 200;                                               
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+                EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);                     
+                EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT2)             
+                                                   INTO(TK_RECL);               
+                GOTO TKNR_TILUT;                                                
+            NOTFND2:                                                            
+                FEIL_FUNNET    = '1'B;                                          
+                E2S.TKNR_TILNR  = 3;                                            
+                LEAVE;                                                          
+            TKNR_TILUT:                                                         
+         END;                                                                   
+                                                                                
+    /* ************************************************** */                    
+    /* KONTROLL AV ACF2 FOR TILLGANGE "TIL TKNR"            */                  
+    /* DU KAN FYLLET TIL_TKNR                              */                   
+    /* ************************************************** */                    
+  /* ENDRET AV SATISH PGA. FYLLETE TIL TKNR ER OK                               
+    BO_TKNR  = TKNR_TIL;                                                        
+                                                                                
+    IF TKNR_TILNR  = 0          THEN                                            
+       DO;                                                                      
+           CALL  KONTROLL_ACF2;                                                 
+           IF FEIL_MELD_NR    >  0  THEN                                        
+              DO;                                                               
+                 FEIL_FUNNET = '1'B;                                            
+                 FEIL_MELD_NR = 0652;                                           
+                 TKNR_TILNR  = FEIL_MELD_NR;                                    
+                                                                                
+             END;                                                               
+       END;                                                                     
+    **********************************************  */                          
+ %SKIP(3);                             /*  */                                   
+      FØDSNUMMER    = E2S.FNR;                                                  
+      VIRKNINGSDATO_ÅMD = E2S.VIRK_DATO_ÅMD;    /*2000*/                        
+ /*   KRYSS KONTROLLER       */                                                 
+ %SKIP;                                                                         
+      IF ^FEIL_FUNNET THEN                                                      
+         DO;                                                                    
+            IF E2S.TKNR_TIL = E2S.TKNR_FRA THEN                                 
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  E2S.TKNR_TILNR = 159;                                         
+                  E2S.TKNR_FRANR = 999;                                         
+               END;                                                             
+         END;                                                                   
+   END KONTROLL_E2_SØKER;                                                       

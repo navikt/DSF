@@ -1,0 +1,1684 @@
+ R001B00:                                                               00000110
+   PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                  00000120
+                                                                        00000130
+ /******************************************************************* */00000140
+ /*IDENTIFIKASJON:                                                    */00000150
+ /************************                                            */00000160
+ /*  PROGRAM-IDENT   : R001B001 - REGISTRERER MEDISINSK KODE.         */00000170
+ /*  PROGRAM-SPRÅK   : PLI/CICS                                       */00000180
+ /*  PROGRAMMERER    : SVERRE LUNDEBY . DATA-UTVIKLING A/S            */00000190
+ /*  PROGRAM. LAGET  : MAI  1987                                      */00000200
+ /*  ENDR. DATO      : OKT. 1990                                      */00000210
+ /*  ENDR. GJELDER   : NY BLANKETKONTROLL VEDR. NYE SEK.DIAG          */00000220
+ /*  ENDR. UTFØRT AV : SVERRE LUNDEBY . DATA-UTVIKLING A/S            */00000230
+ /*                                                                   */00000240
+ /******************************************************************* */00000250
+ /*HENSIKT:                                                           */00000260
+ /************                                                        */00000270
+ /*  PROGRAMMET OPPDATERER  RF-DB - GRUNNBUP      MED MEDISINSK KODE  */00000280
+ /*                         TR-DB - DIAGNOSE      MED MEDISINSK KODE  */00000290
+ /*                                                                   */00000300
+ /*  REGISTRERING. PROGRAMMETS TRANSKODE ER RB00.                     */00000310
+ /*  PROGRAMMET BLIR AKTIVISERT NÅR OPERATØREN TASTER INN 'MK' I      */00000320
+ /*  STYRINGS-KODEN PÅ MAP S001B01 MAPSET S001B03.                    */00000330
+ /*                                                                   */00000340
+ /******************************************************************* */00000350
+ /*PROGRAMTILKNYTTING:                                                */00000360
+ /**********************                                              */00000370
+ /*  PROGRAMMET BLIR AKTIVISERT FRA CICS MED TRANSID = RB00.          */00000380
+ /*  RB00: KONTROLLEN KOMMER FRA R001B001                             */00000390
+ /*                                                                   */00000400
+ /******************************************************************* */00000410
+ /*DATASETTOPPLYSNINGER:                                              */00000420
+ /*************************                                           */00000430
+ /*  RF-DB , TR-DB.                                                   */00000440
+ /*                                                                   */00000450
+ /******************************************************************* */00000460
+ /*FEILMELDINGER:                                                     */00000470
+ /*********************                                               */00000480
+ /* 'UGYLDIG ÅR'        BLIR SKREVET PÅ SKJERMBILDET NÅR INNTEKTSÅRET */00000490
+ /*  IKKE HAR GYLDIG VERDI.                                           */00000500
+ /*                                                                   */00000510
+ /* 'INNTEKT IKKE FUNNET' SKRIVES HVIS ØNSKET INNTEKT IKKE LIGGER PÅ  */00000520
+ /*  STRYK-REG.                                                       */00000530
+ /*                                                                   */00000540
+ /*ENDRET: 14.04.88 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */00000550
+ /* ******                                                            */00000560
+ /*    INITIERER BRUKERID I FNR_REG MED CICS_IND FØR KONTROLL PÅ      */00000570
+ /*    OM FNR ER ENDRET (R0019906).                                   */00000580
+ /*                                                                   */00000590
+ /*ENDRET: MARS  89 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */00000600
+ /* ******                                                            */00000610
+ /*    LAGT INN NORDISKE YRKES-KODER I BLANKETTEN.                    */00000620
+ /*    KODENE OPPDATERER BARE TR-DB.                                  */00000630
+ /*                                                                   */00000640
+ /*ENDRET: SEP.  89 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */00000650
+ /* ******                                                            */00000660
+ /*    LAGT INN VSAM-FIL FOR KONTROLL AV DIAGNOSE.                    */00000670
+ /* ***************************************************************** */00000680
+                                                                        00000690
+                                                                        00000700
+  %INCLUDE P0019906;   /*  TRANS_OPPL_OMRÅDE (BASED)  */                00000710
+  %INCLUDE P0019908;   /*  KOM_OMRÅDE        (BASED)  */                00000720
+  %INCLUDE P0019910;   /*  STYRINGS_OMRÅDE   (BASED)  */                00000730
+  %INCLUDE P0019912;   /*  DIV_PARAM_OMRÅDE  (BASED)  */                00000740
+  %INCLUDE S001B0;     /*  DIAGNOSE-MAPSET1  (BASED)  */                00000750
+  DCL  DUMMY               CHAR     (200)    INIT((200)' ');            00000760
+                                                                        00000770
+  DCL 1 RF0PERSN,                                                       00000780
+     %INCLUDE P0019927;/* ARBEIDSOMRÅDE RF0PERSN      */                00000790
+                                                                        00000800
+  DCL 1 TRANHIST_FELT,                                                  00000810
+      2 VIRK_DATO_ÅM       FIXED DEC ( 4),                              00000820
+      2 TKNR               FIXED DEC ( 5),                              00000830
+      2 GRUNN_BLKODE       CHAR      ( 2);                              00000840
+                                                                        00000850
+  DCL 1 GRUNNB_UP_U2,                                                   00000860
+      2 UFT_MÅ             FIXED DEC ( 4),                              00000870
+      2 PRIMDIAG           CHAR      ( 6),                              00000880
+      2 SEKUDIAG           CHAR      ( 6),                              00000890
+      2 YSKADE_TILLEGG     CHAR      ( 1);                              00000900
+                                                                        00000910
+  DCL 1 TR0ROT,                                                         00000920
+     %INCLUDE P0016201; /* ARBEIDSOMRÅDE TR0ROT               */        00000930
+                                                                        00000940
+  DCL 1 REGTPKT,                                                        00000950
+     %INCLUDE P0016202; /* ARBEIDSOMRÅDE REGTPKT              */        00000960
+                                                                        00000970
+  DCL 1 DIAGNOSE,                                                       00000980
+     %INCLUDE P0016216; /* ARBEIDSOMRÅDE DIAGNOSE             */        00000990
+                                                                        00001000
+  DCL  MAP_MELDING              CHAR      (78)      INIT((78)' '),      00001010
+       MAP_MELDING_NR           PIC      '( 4)9'    INIT(  0    ),      00001020
+                                                                        00001030
+       1  FEIL_STRUC,                                                   00001040
+          2  FEIL_NR            FIXED DEC ( 5),                         00001050
+          2  FEIL_MELDING       CHAR      (78),                         00001060
+          2  KOM_OMR_PEKER      POINTER;                                00001070
+                                                                        00001080
+    /* ************************************************************** */00001090
+    /*   INNEBYGDE PLI-FUNKSJONER                                     */00001100
+    /* ************************************************************** */00001110
+                                                                        00001120
+       DCL                                                              00001130
+         ( ADDR , CSTG , LOW  ,  SUBSTR , ONCODE , STG ,                00001140
+           NULL , DATE , TIME ,  VERIFY , UNSPEC            )  BUILTIN; 00001150
+                                                                        00001160
+       DCL                                                              00001170
+           BMSMAPBR     PTR  ;                                          00001180
+                                                                        00001190
+       DCL                                                              00001200
+         ( COMMAREA_PEKER , W01_HJELPE_PEKER , TRANS_SEGM_PEKER )       00001210
+                                               POINTER;                 00001220
+                                                                        00001230
+       DCL MAP_OMR                  CHAR(1500) BASED (BMSMAPBR);        00001240
+                                                                        00001250
+       DCL FATAL_FEIL               CHAR (1) INIT ('S');                00001260
+                                                                        00001270
+       DCL DATO_KLOKKE              PIC '(15)9',                        00001280
+           DATO   DEF DATO_KLOKKE   PIC '( 6)9'     POS (1),            00001290
+           KLOKKE DEF DATO_KLOKKE   PIC '( 9)9'     POS (7);            00001300
+                                                                        00001310
+       DCL 1 FNR_REG,                                                   00001320
+             2 FNR1                 FIXED DEC(11),                      00001330
+             2 FNR2                 FIXED DEC(11),                      00001340
+             2 BRUKERID             CHAR     ( 4);                      00001350
+                                                                        00001360
+       DCL   INTERN_KOM_PTR         POINTER;                            00001370
+                                                                        00001380
+       DCL 1 INTERN_KOM_OMR  BASED (INTERN_KOM_PTR),                    00001390
+             2 HOVED_KOM_PTR        POINTER,                            00001400
+             2 FRA_FNR              PIC '(11)9',                        00001410
+             2 TIL_FNR              PIC '(11)9';                        00001420
+                                                                        00001430
+    /* ************************************************************** */00001440
+    /*   OPPTELLINGS- OG LOOP-PARAMETRE M.M                           */00001450
+    /* ************************************************************** */00001460
+                                                                        00001470
+       DCL 1  W01                       UNALIGNED,                      00001480
+              2   FEILMELDING_SATT            BIT  (1)   INIT ('0'B),   00001490
+              2   STYRINGSKODE_IKKE_SATT      BIT  (1)   INIT ('0'B),   00001500
+              2   AKSJONSKODE                 CHAR (2)   INIT ('  '),   00001510
+              2   CICSINFO                    CHAR (16)  INIT (' ' ),   00001520
+              2   PERSON_IKKE_FUNNET          BIT  (1)   INIT ('1'B),   00001530
+              2   AKSJON_IKKE_SATT            BIT  (1)   INIT ('1'B),   00001540
+              2   W_KAP18                     BIT  (1)   INIT ('0'B),   00001550
+              2   VIRK_DATO_ÅM                PIC '9999' INIT ( 0  ),   00001560
+              2   PAKKET_FNR           FIXED  DEC  (11)  INIT ( 0  ),   00001570
+              2   PAKKET_AAR           FIXED  DEC  ( 3)  INIT ( 0  ),   00001580
+              2   I                    FIXED  BIN  (15)  INIT ( 1  ),   00001590
+              2   J                    FIXED  BIN  (15)  INIT ( 1  );   00001600
+                                                                        00001610
+                                                                        00001620
+    DCL ONKODE                PIC      '( 4)9'  INIT ( 0     ),         00001630
+        ONK  DEF ONKODE       CHAR      ( 4)                  ,         00001640
+        DSNAVN                CHAR      ( 8)                  ,         00001650
+        FEILKODE              CHAR      ( 4)                  ;         00001660
+                                                                        00001670
+    DCL                                                                 00001680
+        FEIL                  BIT       ( 1)    INIT ('0'B   ),         00001690
+        UP_TRANS_BEHANDLET    BIT       ( 1)    INIT ('0'B   ),         00001700
+        W01_P                 POINTER                         ,         00001710
+        W01_YTELSE            CHAR      ( 2)    INIT ('  '   ),         00001720
+        W01_GU                CHAR      ( 4)    INIT ('GU  ' ),         00001730
+        W01_GHU               CHAR      ( 4)    INIT ('GHU ' ),         00001740
+        W01_GNP               CHAR      ( 4)    INIT ('GNP ' ),         00001750
+        W01_GHNP              CHAR      ( 4)    INIT ('GHNP' ),         00001760
+        W01_REPL              CHAR      ( 4)    INIT ('REPL' ),         00001770
+        W01_ISRT              CHAR      ( 4)    INIT ('ISRT' ),         00001780
+        W01_OPEN              CHAR      ( 5)    INIT ('OPEN '),         00001790
+        W01_CLOSE             CHAR      ( 5)    INIT ('CLOSE'),         00001800
+        UIB_RC_OK             BIT       ( 8)    INIT ('00000000'B),     00001810
+        MELDING               CHAR      (78)    INIT (''     ),         00001820
+        LENGDE_INN_OMR        FIXED BIN (15)    INIT ( 16    );         00001830
+                                                                        00001840
+                                                                        00001850
+    DCL EN      FIXED BIN (31) INIT (1),                                00001860
+        TO      FIXED BIN (31) INIT (2),                                00001870
+        TRE     FIXED BIN (31) INIT (3),                                00001880
+        FIRE    FIXED BIN (31) INIT (4),                                00001890
+        FEM     FIXED BIN (31) INIT (5),                                00001900
+        SEKS    FIXED BIN (31) INIT (6);                                00001910
+                                                                        00001920
+    DCL SSA1_TRANHIST_CMD   CHAR (11)        INIT ('TRANHIST*D '),      00001930
+        SSA1_UNQUAL         CHAR ( 9)        INIT ('         '  );      00001940
+                                                                        00001950
+    DCL 1 SSA1_RF0PERSN     STATIC,                                     00001960
+        2 SEGM_NAVN         CHAR       ( 9)  INIT ('RF0PERSN(' ),       00001970
+        2 FELT1             CHAR       ( 8)  INIT ('FNR     '  ),       00001980
+        2 REL_OP            CHAR       ( 2)  INIT (' ='        ),       00001990
+        2 FNR               FIXED DEC  (11)  INIT ( 0          ),       00002000
+        2 HP                CHAR       ( 1)  INIT (')'         );       00002010
+                                                                        00002020
+                                                                        00002030
+    DCL 1 SSA1_TRANHIST     STATIC,                                     00002040
+        2 SEGM_NAVN         CHAR       ( 9)  INIT ('TRANHIST(' ),       00002050
+        2 FELT1             CHAR       ( 8)  INIT ('GRBLKODE'  ),       00002060
+        2 REL_OP1           CHAR       ( 2)  INIT (' ='        ),       00002070
+        2 GRUNNBL_KODE1     CHAR       ( 2)  INIT ('UP'        ),       00002080
+        2 OP                CHAR       ( 1)  INIT ('!'         ),       00002090
+        2 FELT2             CHAR       ( 8)  INIT ('GRBLKODE'  ),       00002100
+        2 REL_OP2           CHAR       ( 2)  INIT (' ='        ),       00002110
+        2 GRUNNBL_KODE2     CHAR       ( 2)  INIT ('U2'        ),       00002120
+        2 HP                CHAR       ( 1)  INIT (')'         );       00002130
+                                                                        00002140
+                                                                        00002150
+    DCL 1 SSA1_TR0ROT       STATIC,                                     00002160
+        2 SEGM_NAVN         CHAR       ( 9)  INIT ('TR0ROT  (' ),       00002170
+        2 FELT1             CHAR       ( 8)  INIT ('FNR     '  ),       00002180
+        2 REL_OP            CHAR       ( 2)  INIT (' ='        ),       00002190
+        2 FNR               FIXED  DEC (11)  INIT (  0         ),       00002200
+        2 HP                CHAR       ( 1)  INIT (')'         );       00002210
+                                                                        00002220
+    DCL 1 SSA1_REGTPKT      STATIC,                                     00002230
+        2 HOVEDDEL          CHAR       (17) INIT  ('REGTPKT (DATOKL  '),00002240
+        2 REL_OP            CHAR       ( 2) INIT  (' ='        ),       00002250
+        2 DATOKL_KEY        FIXED DEC  (15) INIT  ( 0          ),       00002260
+        2 END_MRK           CHAR       ( 1) INIT  (')'         );       00002270
+                                                                        00002280
+                                                                        00002290
+   /* ********************************************************** */     00002300
+   /* DLI - FUNKSJONER :  PSB OG DLIUIB                          */     00002310
+   /* ********************************************************** */     00002320
+                                                                        00002330
+                                                                        00002340
+    DCL PLITDLI ENTRY;                                                  00002350
+                                                                        00002360
+   %INCLUDE DLIUIB;                                                     00002370
+                                                                        00002380
+    DCL 1 PCB_PEKERE       BASED  (UIBPCBAL),                           00002390
+          2 RF1_PCB_PEKER          POINTER,                             00002400
+          2 TR1_PCB_PEKER          POINTER;                             00002410
+                                                                        00002420
+    DCL 1 RF1 BASED               (RF1_PCB_PEKER),                      00002430
+    %INCLUDE  P0012003;                                                 00002440
+                                                                        00002450
+    DCL 1 TR1 BASED               (TR1_PCB_PEKER),                      00002460
+    %INCLUDE  P0012003;                                                 00002470
+                                                                        00002480
+                                                                        00002490
+                                                                        00002500
+  /* ************************************************************** */  00002510
+  /*                                                                */  00002520
+  /*      SLUTT PÅ DEKLARASJONENE , EKSEKVERINGEN STARTER .         */  00002530
+  /*     ---------------------------------------------------        */  00002540
+  /*                                                                */  00002550
+  /*                                                                */  00002560
+  /*      INITIERING AV PARAMETRE TIL DIV OMR.     .                */  00002570
+  /*                                                                */  00002580
+  /*                                                                */  00002590
+  /* ************************************************************** */  00002600
+                                                                        00002610
+                                                                        00002620
+  ON ERROR SNAP                                                         00002630
+     BEGIN;                                                             00002640
+        ON ERROR SYSTEM;                                                00002650
+        ONKODE            =     ONCODE   ;                              00002660
+        FEILKODE          =     ONK      ;                              00002670
+        DSNAVN            =     EIBDS    ;                              00002680
+        ONKODE            =     ONCODE   ;                              00002690
+        EXEC CICS ABEND ABCODE (ONK);                                   00002700
+     END;                                                               00002710
+                                                                        00002720
+  FEILKODE                =    'FEIL'    ;                              00002730
+  DSNAVN                  =    '        ';                              00002740
+                                                                        00002750
+  EXEC CICS HANDLE CONDITION ERROR (ERRBEH);                            00002760
+  EXEC CICS HANDLE AID       PF1   (PF2);                               00002770
+  EXEC CICS HANDLE AID       PF2   (PF2);                               00002780
+                                                                        00002790
+  /*----------------------------------------------------------------*/  00002800
+  /* INITIERER MAP-OMRÅDET OG SENDER UT BILDET.                     */  00002810
+  /* LESER INN FRA DIAG-BILDET OG SJEKKER :                         */  00002820
+  /*   1.  OM FUNKSJONSKODE ER SATT.                                */  00002830
+  /*   2.  OM FNR OG DIAGNOSE ER UTFYLT OG GYLDIG.                  */  00002840
+  /*----------------------------------------------------------------*/  00002850
+                                                                        00002860
+  FEILMELDING_SATT                       = '1'B                       ; 00002870
+  KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER    = ADDR(KOM_OMR.DIV_PARAM_OMR); 00002880
+  KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER   = ADDR(KOM_OMR.TRANS_OPPL_OMR);00002890
+  KOM_OMR.PEKER_LISTE.TRANS_PEKER        = ADDR(KOM_OMR.TRANS_OMR);     00002900
+  KOM_OMR.PEKER_LISTE.STYRINGS_PEKER     = ADDR(KOM_OMR.STYRINGS_OMR);  00002910
+  FNR_REG.BRUKERID                       = DIV_PARAM_OMR.CICS_IND;      00002920
+                                                                        00002930
+  PROGRAM_ID              =   'R001B001'                            ;   00002940
+  FEIL_MELD_NR            =    0                                    ;   00002950
+                                                                        00002960
+  IF HENT_FRAM_MAP  THEN                                                00002970
+     DO;                                                                00002980
+        ALLOCATE S001B01O;                                              00002990
+        EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') MAPONLY         00003000
+                                      SET   (BMSMAPBR);                 00003010
+     END;                                                               00003020
+  ELSE                                                                  00003030
+     IF ^HENT_FRAM_MAP THEN                                             00003040
+        DO;                                                             00003050
+          EXEC CICS RECEIVE MAP('S001B01')                              00003060
+                    MAPSET     ('S001B03') SET(BMSMAPBR);               00003070
+          FEIL_MELD_NR = 0;                                             00003080
+        END;                                                            00003090
+                                                                        00003100
+                                                                        00003110
+  CICSINFO            =   F_CICSINFO (DIV_PARAM_OMR.CICS_IND)       ;   00003120
+  S001B01O.CICS_INFOO =     CICSINFO;                                   00003130
+                                                                        00003140
+  /*----------------------------------------------------------------*/  00003150
+  /* KONTROLL AV BLANKETT                                           */  00003160
+  /*----------------------------------------------------------------*/  00003170
+                                                                        00003180
+  DO WHILE (FEILMELDING_SATT);                                          00003190
+                                                                        00003200
+     FEILMELDING_SATT            =  '0'B                            ;   00003210
+                                                                        00003220
+     CALL P060_SJEKK_FUNK_STYR                                      ;   00003230
+     CALL P010_SJEKK_FNR                                            ;   00003240
+     CALL P060_SJEKK_FUNK_STYR                                      ;   00003250
+                                                                        00003260
+     IF ^FEILMELDING_SATT                                      THEN     00003270
+        CALL P015_SJEKK_DIAG1                                       ;   00003280
+                                                                        00003290
+     CALL P060_SJEKK_FUNK_STYR                                      ;   00003300
+                                                                        00003310
+     IF ^FEILMELDING_SATT                                      THEN     00003320
+        CALL P020_SJEKK_DIAG2                                       ;   00003330
+                                                                        00003340
+     CALL P060_SJEKK_FUNK_STYR                                      ;   00003350
+                                                                        00003360
+     IF ^FEILMELDING_SATT                                      THEN     00003370
+        CALL P021_SJEKK_YRKESKODE                                   ;   00003380
+                                                                        00003390
+     CALL P060_SJEKK_FUNK_STYR                                      ;   00003400
+                                                                        00003410
+     IF ^FEILMELDING_SATT                                      THEN     00003420
+        CALL P023_SJEKK_ALLE                                        ;   00003430
+                                                                        00003440
+     CALL P060_SJEKK_FUNK_STYR                                      ;   00003450
+  END;                                                                  00003460
+                                                                        00003470
+  /*----------------------------------------------------------------*/  00003480
+  /* INITIERER PCB'ENE MOT RF OG TR.                                */  00003490
+  /* KONTROLLERER OM PERSONEN FINNES.                               */  00003500
+  /* SJEKKER OG OPPDATERER SISTE TRANS-SEGMENT FOR UFØRE            */  00003510
+  /*----------------------------------------------------------------*/  00003520
+                                                                        00003530
+  CALL P025_DATABASE (W01_OPEN);                                        00003540
+                                                                        00003550
+  IF FEIL                                              THEN             00003560
+     GOTO FEILUT;                                                       00003570
+                                                                        00003580
+  CALL P030_LES_RF_ROT;                                                 00003590
+                                                                        00003600
+  IF FEIL                                              THEN             00003610
+     GOTO FEILUT;                                                       00003620
+                                                                        00003630
+  CALL P040_LES_OPPDATER_UPTRANS;                                       00003640
+                                                                        00003650
+  IF FEIL                                              THEN             00003660
+     GOTO FEILUT;                                                       00003670
+                                                                        00003680
+  /*----------------------------------------------------------------*/  00003690
+  /* HVIS SISTE UP-TRANS ER OK OG DIAGNOSENE LAGT INN               */  00003700
+  /* OPPDATERES TR :                                                */  00003710
+  /*                                                                */  00003720
+  /*     TR0ROT    :   LEGGES INN DERSOM DEN IKKE FINNES            */  00003730
+  /*     REGTPKT   :   LEGGES INN MED DATOKL OG  D  I  DELETE KODE  */  00003740
+  /*     DIAGNOSE  :   LEGGES INN / EV. ENDRES MED.                 */  00003750
+  /*----------------------------------------------------------------*/  00003760
+                                                                        00003770
+  IF UP_TRANS_BEHANDLET                                THEN             00003780
+     DO;                                                                00003790
+        CALL P050_OPPDATER_TR;                                          00003800
+                                                                        00003810
+        IF FEIL                                        THEN             00003820
+           GOTO FEILUT;                                                 00003830
+     END;                                                               00003840
+                                                                        00003850
+  S001B01I.FNRI           =  LOW(11)                                ;   00003860
+  S001B01I.FNRL           =  -1;                     /* CURSOR POS */   00003870
+  S001B01I.DIAG1I         =  LOW( 6)                                ;   00003880
+  S001B01I.DIAG2I         =  LOW( 6)                                ;   00003890
+  S001B01I.NORDISK_YKODEI =  LOW( 3)                                ;   00003900
+  S001B01I.BEKREFTI       =  LOW( 2)                                ;   00003910
+                                                                        00003920
+  CALL P025_DATABASE (W01_CLOSE);                                       00003930
+                                                                        00003940
+  EXEC CICS SEND MAP('S001B01') MAPSET ('S001B03') CURSOR ERASE;        00003950
+  EXEC CICS XCTL PROGRAM   ('R001B001') COMMAREA (KOM_OMR);             00003960
+                                                                        00003970
+                                                                        00003980
+                                                                        00003990
+  /* **************************************************************** */00004000
+  /* **************************************************************** */00004010
+  /* ***************       INTERNE   PROSEDURER       *************** */00004020
+  /* **************************************************************** */00004030
+  /* **************************************************************** */00004040
+                                                                        00004050
+                                                                        00004060
+  /* **************************************************************** */00004070
+  /*HENSIKT:                                                          */00004080
+  /*    SJEKKER OM FNR GYLDIG.                                        */00004090
+  /*                                                                  */00004100
+  /*BRUK:                                                             */00004110
+  /*    CALL P010_SJEKK_FNR;                                          */00004120
+  /*                                                                  */00004130
+  /* **************************************************************** */00004140
+                                                                        00004150
+    P010_SJEKK_FNR:                                                     00004160
+      PROC;                                                             00004170
+                                                                        00004180
+         DCL W010_CHAR11          CHAR (11);                            00004190
+                                                                        00004200
+         W010_CHAR11              =   ''      ;                         00004210
+         S001B01O.CICS_INFOO      =   CICSINFO;                         00004220
+                                                                        00004230
+         IF ^(S001B01I.FNRL > 0)                         THEN           00004240
+            DO;                                                         00004250
+               EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') DATAONLY;00004260
+               MAP_MELDING        =  'FNR MÅ OPPGIS  !!  ';             00004270
+               FEILMELDING_SATT   =  '1'B;                              00004280
+               S001B01I.FNRL      =  -1  ;   /* CURSOR POS       */     00004290
+               S001B01O.MELDINGO  =  MAP_MELDING;                       00004300
+                                                                        00004310
+               EXEC CICS SEND MAP    ('S001B01')                        00004320
+                              MAPSET ('S001B03')  ERASE CURSOR ALARM;   00004330
+                                                                        00004340
+               /*----------------------------------------------------*/ 00004350
+               /*    LESER INN FNR FRA INNTEKTSBILDET.               */ 00004360
+               /*----------------------------------------------------*/ 00004370
+                                                                        00004380
+               EXEC CICS RECEIVE MAP('S001B01') MAPSET ('S001B03')      00004390
+                                                SET    ( BMSMAPBR)   ;  00004400
+               GO TO RETUR;                                             00004410
+            END;                                                        00004420
+         ELSE                                                           00004430
+            IF ^F_NUMERISK(S001B01I.FNRI)                THEN           00004440
+               DO;                                                      00004450
+                  EXEC CICS SEND MAP('S001B01') MAPSET('S001B03')       00004460
+                                                              DATAONLY; 00004470
+                  MAP_MELDING        = 'TEGN SOM IKKE ER NUMERISK ' !!  00004480
+                                       'I FØDSELSNR. ! '             ;  00004490
+                  FEILMELDING_SATT   = '1'B;                            00004500
+                  S001B01I.FNRL      = -1; /* CURSOR POS       */       00004510
+                  S001B01O.MELDINGO  = MAP_MELDING;                     00004520
+                                                                        00004530
+                  EXEC CICS SEND MAP    ('S001B01')                     00004540
+                                 MAPSET ('S001B03') ERASE CURSOR ALARM; 00004550
+                                                                        00004560
+                  /*-------------------------------------------------*/ 00004570
+                  /*    LESER INN FNR FRA VENTEMENYBILDET.           */ 00004580
+                  /*-------------------------------------------------*/ 00004590
+                                                                        00004600
+                  EXEC CICS RECEIVE MAP ('S001B01') MAPSET ('S001B03')  00004610
+                                                    SET    ( BMSMAPBR); 00004620
+                  GO TO RETUR;                                          00004630
+               END;                                                     00004640
+            ELSE                                                        00004650
+               IF ^F_GYLDIG_FNR(S001B01O.FNRO) THEN                     00004660
+                  DO;                                                   00004670
+                     EXEC CICS SEND MAP('S001B01') MAPSET('S001B03')    00004680
+                                                              DATAONLY; 00004690
+                     MAP_MELDING        = 'UGYLDIG FØDSELSNUMMER';      00004700
+                     FEILMELDING_SATT   = '1'B;                         00004710
+                     S001B01I.FNRL      = -1; /* CURSOR POS   */        00004720
+                     S001B01O.FNRO      = S001B01I.FNRI;                00004730
+                     S001B01O.MELDINGO  = MAP_MELDING;                  00004740
+                                                                        00004750
+                     EXEC CICS SEND MAP    ('S001B01')                  00004760
+                                    MAPSET ('S001B03') ERASE CURSOR     00004770
+                                                             ALARM;     00004780
+                     /*---------------------------------------------*/  00004790
+                     /*    LESER INN FNR FRA INNTEKTSBILDET.        */  00004800
+                     /*---------------------------------------------*/  00004810
+                                                                        00004820
+                     EXEC CICS RECEIVE MAP('S001B01') MAPSET ('S001B03')00004830
+                                                      SET    (BMSMAPBR);00004840
+                     GO TO RETUR;                                       00004850
+                  END;                                                  00004860
+                                                                        00004870
+                                                                        00004880
+         FNR_REG.FNR1              =   S001B01O.FNRO;                   00004890
+         FNR_REG.FNR2              =   0            ;                   00004900
+         EXEC CICS LINK PROGRAM      ('R0019906') COMMAREA(FNR_REG);    00004910
+                                                                        00004920
+                                                                        00004930
+         IF FNR_REG.FNR2           >   0                   THEN         00004940
+            DO;                                                         00004950
+               MAP_MELDING         =  S001B01I.FNRI !! ' FNR ER ENDRET';00004960
+               S001B01O.FNRO       =  FNR_REG.FNR2                     ;00004970
+               W010_CHAR11         =  S001B01O.FNRO                    ;00004980
+               S001B01O.CICS_INFOO =  CICSINFO;                         00004990
+               FEILMELDING_SATT    =  '1'B;                             00005000
+               S001B01O.MELDINGO   =  MAP_MELDING;                      00005010
+                                                                        00005020
+               EXEC CICS SEND    MAP    ('S001B01')                     00005030
+                                 MAPSET ('S001B03') ALARM;              00005040
+                                                                        00005050
+               EXEC CICS RECEIVE MAP    ('S001B01')                     00005060
+                                 MAPSET ('S001B03')  SET (BMSMAPBR)  ;  00005070
+               S001B01I.FNRI       = W010_CHAR11                      ; 00005080
+               GO TO RETUR;                                             00005090
+            END;                                                        00005100
+                                                                        00005110
+ RETUR:                                                                 00005120
+                                                                        00005130
+ END P010_SJEKK_FNR;                                                    00005140
+                                                                        00005150
+                                                                        00005160
+                                                                        00005170
+  /* **************************************************************** */00005180
+  /*HENSIKT:                                                          */00005190
+  /*    SJEKKER OM DIAGNOSE ER UTFYLLT OG GYLDIG.                     */00005200
+  /*                                                                  */00005210
+  /*BRUK:                                                             */00005220
+  /*    CALL P015_SJEKK_DIAG1                                         */00005230
+  /*                                                                  */00005240
+  /* **************************************************************** */00005250
+                                                                        00005260
+    P015_SJEKK_DIAG1:                                                   00005270
+      PROC;                                                             00005280
+                                                                        00005290
+      DCL  W015_DIAG                   CHAR (6)     INIT ('      '),    00005300
+           W015_DIAG_P  DEF W015_DIAG  PIC '(6)9'   POS  (1)       ;    00005310
+                                                                        00005320
+      S001B01O.CICS_INFOO            =   CICSINFO;                      00005330
+      W_KAP18                        =  '0'B;                           00005340
+                                                                        00005350
+      IF S001B01I.DIAG1L   > 0                           THEN           00005360
+         DO;                                                            00005370
+            IF S001B01I.DIAG1I       = '      '          THEN           00005380
+               DO;                                                      00005390
+                  EXEC CICS SEND MAP('S001B01') MAPSET('S001B03')       00005400
+                                                            DATAONLY;   00005410
+                  MAP_MELDING        = 'DIAGNOSE 1 KAN IKKE VÆRE  ' !!  00005420
+                                          'BLANK !!    !! '          ;  00005430
+                  FEILMELDING_SATT   = '1'B;                            00005440
+                  S001B01I.DIAG1L    = -1; /* CURSOR POS       */       00005450
+                  S001B01O.DIAG1A    = 'I';                             00005460
+                  S001B01I.DIAG1I    = LOW ( 6)                     ;   00005470
+                  S001B01O.FNRO      = S001B01I.FNRI;                   00005480
+                  S001B01O.MELDINGO  = MAP_MELDING;                     00005490
+                                                                        00005500
+                  EXEC CICS SEND MAP    ('S001B01')                     00005510
+                                 MAPSET ('S001B03') ERASE CURSOR ALARM; 00005520
+                                                                        00005530
+                  /*-------------------------------------------------*/ 00005540
+                  /*    LESER INN DATA FRA BILDET                    */ 00005550
+                  /*-------------------------------------------------*/ 00005560
+                                                                        00005570
+                  EXEC CICS RECEIVE MAP ('S001B01') MAPSET ('S001B03')  00005580
+                                                    SET    ( BMSMAPBR); 00005590
+                  GO TO RETUR;                                          00005600
+               END;                                                     00005610
+                                                                        00005620
+            /*-------------------------------------------------------*/ 00005630
+            /* SJEKKER OM GYLDIG DIAGNOSE-KODE MOT DIAGNOSE-FILEN    */ 00005640
+            /* SJEKKER OM PRIMÆRDIAGNOSE ER INNEFOR DE INTERVALLER   */ 00005650
+            /* SOM KREVER SEK.DIAG FRA KAP.18                        */ 00005660
+            /*-------------------------------------------------------*/ 00005670
+                                                                        00005680
+            EXEC CICS HANDLE CONDITION         NOTFND (L015NOTF);       00005690
+            EXEC CICS READ DATASET ('DIAGNOS') RIDFLD (S001B01I.DIAG1I) 00005700
+                                               INTO   (W015_DIAG);      00005710
+                                                                        00005720
+                                                                        00005730
+            IF VERIFY (S001B01I.DIAG1I,'0123456789')  = 0 THEN          00005740
+               DO;                                                      00005750
+                  W015_DIAG         =  S001B01I.DIAG1I;                 00005760
+                                                                        00005770
+                  IF (W015_DIAG_P  >=  905000  &                        00005780
+                      W015_DIAG_P  <=  909900   )  !                    00005790
+                     (W015_DIAG_P  >=  998000  &                        00005800
+                      W015_DIAG_P  <=  998901   )      THEN             00005810
+                                                                        00005820
+                      W_KAP18       = '1'B;                             00005830
+               END;                                                     00005840
+                                                                        00005850
+            EXEC CICS ENTER TRACEID(151) FROM(W015_DIAG_P);             00005860
+                                                                        00005870
+            GOTO RETUR;                                                 00005880
+                                                                        00005890
+    L015NOTF:                                                           00005900
+            EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') DATAONLY;   00005910
+            MAP_MELDING        =  'DIAGNOSE 1 ER UGYLDIG ! ';           00005920
+            FEILMELDING_SATT   =  '1'B;                                 00005930
+            S001B01I.DIAG1L    =  -1  ;   /* CURSOR POS       */        00005940
+            S001B01O.DIAG1A    =  'I' ;                                 00005950
+            S001B01O.DIAG1O    =   S001B01I.DIAG1I;                     00005960
+            S001B01O.FNRO      =   S001B01I.FNRI;                       00005970
+            S001B01O.MELDINGO  =   MAP_MELDING;                         00005980
+                                                                        00005990
+            EXEC CICS SEND MAP    ('S001B01')                           00006000
+                           MAPSET ('S001B03') ERASE CURSOR ALARM;       00006010
+                                                                        00006020
+            /*----------------------------------------------------*/    00006030
+            /* LESER INN DATA FRA BILDET                          */    00006040
+            /*----------------------------------------------------*/    00006050
+                                                                        00006060
+            EXEC CICS RECEIVE MAP('S001B01') MAPSET ('S001B03')         00006070
+                                             SET ( BMSMAPBR)   ;        00006080
+            GO TO RETUR;                                                00006090
+      END;                                                              00006100
+                                                                        00006110
+ RETUR:                                                                 00006120
+                                                                        00006130
+ END P015_SJEKK_DIAG1;                                                  00006140
+                                                                        00006150
+                                                                        00006160
+                                                                        00006170
+  /* **************************************************************** */00006180
+  /*HENSIKT:                                                          */00006190
+  /*    SJEKKER OM DIAGNOSE 2 ER UTFYLLT OG GYLDIG.                   */00006200
+  /*                                                                  */00006210
+  /*BRUK:                                                             */00006220
+  /*    CALL P020_SJEKK_DIAG2                                         */00006230
+  /*                                                                  */00006240
+  /* **************************************************************** */00006250
+                                                                        00006260
+    P020_SJEKK_DIAG2:                                                   00006270
+      PROC;                                                             00006280
+                                                                        00006290
+      DCL  W020_DIAG              CHAR ( 6) INIT ('      '),            00006300
+                                                                        00006310
+           W020_DIAG_LENGTH FIXED  BIN (15) INIT ( 6),                  00006320
+           W020_KEY_LENGTH  FIXED  BIN (15) INIT ( 5),                  00006330
+                                                                        00006340
+           W020_D                 CHAR ( 6) INIT ('      '),            00006350
+           W020_S12 DEF W020_D    CHAR ( 2) POS  ( 1)      ,            00006360
+           W020_KEY DEF W020_D    CHAR ( 5) POS  ( 1)      ,            00006370
+           W020_S6  DEF W020_D    CHAR ( 1) POS  ( 6)      ;            00006380
+                                                                        00006390
+                                                                        00006400
+      S001B01O.CICS_INFOO            =   CICSINFO;                      00006410
+      W020_D                         =   '      '        ;              00006420
+                                                                        00006430
+      IF S001B01I.DIAG2L             >   0               THEN           00006440
+         DO;                                                            00006450
+            IF S001B01I.DIAG2I      ^=   '      '        THEN           00006460
+               DO;                                                      00006470
+                  /*-----------------------------------------------*/   00006480
+                  /* SJEKKER OM GYLDIG DIAGNOSE MOT DIAGNOSE-FILEN */   00006490
+                  /* PRIM.DIAG.=> KAP18 GIR OPPSLAG MED DEL-NØKKEL */   00006500
+                  /* KAP18 -KODER SKAL HA: SIFF.1-2=E8/E9, S6=1-9  */   00006510
+                  /*-----------------------------------------------*/   00006520
+                  W020_D             =    S001B01I.DIAG2I;              00006530
+                                                                        00006540
+                  IF W_KAP18                          THEN              00006550
+                     DO;                                                00006560
+                        IF (W020_S12 ^=   'E9'     &                    00006570
+                            W020_S12 ^=   'E8'      ) !                 00006580
+                                                                        00006590
+                            VERIFY (W020_S6,'123456789') > 0 THEN       00006600
+                           DO;                                          00006610
+                              MAP_MELDING = 'DIAGNOSE 2 ^= KAP18.-' !!  00006620
+                                            'DIAGNOSEKODER        ';    00006630
+                              EXEC CICS SEND MAP('S001B01')             00006640
+                                          MAPSET('S001B03') DATAONLY;   00006650
+                              FEILMELDING_SATT  = '1'B;                 00006660
+                              S001B01I.DIAG2L   = -1 ;                  00006670
+                              S001B01O.DIAG2A   = 'I' ;                 00006680
+                              S001B01O.DIAG2O   = S001B01I.DIAG2I;      00006690
+                              S001B01O.FNRO     = S001B01I.FNRI;        00006700
+                              S001B01O.MELDINGO = MAP_MELDING;          00006710
+                                                                        00006720
+                              EXEC CICS SEND MAP ('S001B01')            00006730
+                                 MAPSET ('S001B03') ERASE CURSOR ALARM; 00006740
+                                                                        00006750
+                              /*-------------------------------------*/ 00006760
+                              /* LESER INN DATA FRA BILDET           */ 00006770
+                              /*-------------------------------------*/ 00006780
+                                                                        00006790
+                              EXEC CICS RECEIVE MAP    ('S001B01')      00006800
+                                                MAPSET ('S001B03')      00006810
+                                                SET    ( BMSMAPBR);     00006820
+                              GO TO RETUR;                              00006830
+                           END;                                         00006840
+                                                                        00006850
+                        /*-----------------------------------------*/   00006860
+                        /* OPPSLAG MED SIFFER 1-5 I DIAGNOSE KAP18 */   00006870
+                        /*-----------------------------------------*/   00006880
+                                                                        00006890
+                        EXEC CICS HANDLE  CONDITION   NOTFND(L020NOT1); 00006900
+                        EXEC CICS READ    DATASET   ('DIAGNOS' )        00006910
+                                          RIDFLD    ( W020_KEY )        00006920
+                                          INTO      ( W020_DIAG)        00006930
+                                          LENGTH    ( W020_DIAG_LENGTH) 00006940
+                                          KEYLENGTH ( W020_KEY_LENGTH ) 00006950
+                                          GENERIC                       00006960
+                                          EQUAL;                        00006970
+                     END;                                               00006980
+                  ELSE                                                  00006990
+                     DO;                                                00007000
+                        IF W020_S12  =   'E9'     !                     00007010
+                           W020_S12  =   'E8'                THEN       00007020
+                           DO;                                          00007030
+                              EXEC CICS SEND MAP('S001B01')             00007040
+                                          MAPSET('S001B03') DATAONLY;   00007050
+            EXEC CICS ENTER TRACEID(22) FROM(W020_D);                   00007060
+                              MAP_MELDING = 'DIAGNOSE 2  = KAP18.-' !!  00007070
+                                            'KODER. DIAG.1 ULIK KAP18'; 00007080
+                              FEILMELDING_SATT  = '1'B;                 00007090
+                              S001B01I.DIAG2L   = -1 ;                  00007100
+                              S001B01O.DIAG2A   = 'I' ;                 00007110
+                              S001B01O.DIAG2O   = S001B01I.DIAG2I;      00007120
+                              S001B01O.FNRO     = S001B01I.FNRI;        00007130
+                              S001B01O.MELDINGO = MAP_MELDING;          00007140
+                                                                        00007150
+                              EXEC CICS SEND MAP ('S001B01')            00007160
+                                        MAPSET ('S001B03') ERASE CURSOR 00007170
+                                                                 ALARM; 00007180
+                              /*-------------------------------------*/ 00007190
+                              /* LESER INN DATA FRA BILDET           */ 00007200
+                              /*-------------------------------------*/ 00007210
+                                                                        00007220
+                              EXEC CICS RECEIVE MAP    ('S001B01')      00007230
+                                                MAPSET ('S001B03')      00007240
+                                                SET    ( BMSMAPBR);     00007250
+                              GO TO RETUR;                              00007260
+                           END;                                         00007270
+                                                                        00007280
+                        EXEC CICS HANDLE CONDITION NOTFND ( L020NOT1);  00007290
+                        EXEC CICS READ   DATASET          ('DIAGNOS')   00007300
+                             RIDFLD (S001B01I.DIAG2I) INTO( W020_DIAG); 00007310
+                     END;                                               00007320
+                                                                        00007330
+                  GOTO RETUR;                                           00007340
+                                                                        00007350
+ L020NOT1:                                                              00007360
+                  EXEC CICS SEND MAP('S001B01')                         00007370
+                              MAPSET('S001B03') DATAONLY;               00007380
+                  MAP_MELDING        =  'DIAGNOSE 2 ER UKJENT  ! ';     00007390
+                  FEILMELDING_SATT   =  '1'B;                           00007400
+                  S001B01I.DIAG2L    =  -1  ;   /* CURSOR POS */        00007410
+                  S001B01O.DIAG2A    =  'I' ;                           00007420
+                  S001B01O.DIAG2O    =  S001B01I.DIAG2I;                00007430
+                  S001B01O.FNRO      =  S001B01I.FNRI;                  00007440
+                  S001B01O.MELDINGO  =  MAP_MELDING;                    00007450
+                                                                        00007460
+                  EXEC CICS SEND MAP    ('S001B01')                     00007470
+                                 MAPSET ('S001B03')  ERASE CURSOR       00007480
+                                                           ALARM;       00007490
+                  /*----------------------------------------------*/    00007500
+                  /*    LESER INN DATA FRA BILDET                 */    00007510
+                  /*----------------------------------------------*/    00007520
+                                                                        00007530
+                  EXEC CICS RECEIVE MAP('S001B01') MAPSET ('S001B03')   00007540
+                                                   SET    ( BMSMAPBR);  00007550
+                  GO TO RETUR;                                          00007560
+               END;                                                     00007570
+         END;                                                           00007580
+                                                                        00007590
+      /*-------------------------------------------------------*/       00007600
+      /* SEK.DIAG IKKE UTFYLLT.                                */       00007610
+      /* SJEKKER OM PRIM.DIAG KREVER SEK.DIAG FRA KAP. 18      */       00007620
+      /*-------------------------------------------------------*/       00007630
+                                                                        00007640
+      ELSE IF W_KAP18                              THEN                 00007650
+         DO;                                                            00007660
+            EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') DATAONLY;   00007670
+            MAP_MELDING              = 'DIAGNOSE 1 KREVER DIAGNOSE ' !! 00007680
+                                       '2 UTFYLLT.  REF => KAP. 18 !!'; 00007690
+            FEILMELDING_SATT         = '1'B;                            00007700
+            S001B01I.DIAG2L          = -1; /* CURSOR POS       */       00007710
+            S001B01O.DIAG2A          = 'I';                             00007720
+            S001B01I.DIAG2I          = LOW ( 6)                     ;   00007730
+            S001B01O.FNRO            = S001B01I.FNRI;                   00007740
+            S001B01O.MELDINGO        = MAP_MELDING;                     00007750
+                                                                        00007760
+            EXEC CICS SEND MAP    ('S001B01')                           00007770
+                           MAPSET ('S001B03') ERASE CURSOR ALARM;       00007780
+                                                                        00007790
+            /*-------------------------------------------------*/       00007800
+            /*          LESER INN DATA FRA BILDET              */       00007810
+            /*-------------------------------------------------*/       00007820
+                                                                        00007830
+            EXEC CICS RECEIVE MAP ('S001B01') MAPSET ('S001B03')        00007840
+                                              SET          ( BMSMAPBR); 00007850
+            GO TO RETUR;                                                00007860
+         END;                                                           00007870
+ RETUR:                                                                 00007880
+                                                                        00007890
+ END P020_SJEKK_DIAG2;                                                  00007900
+                                                                        00007910
+                                                                        00007920
+                                                                        00007930
+  /* **************************************************************** */00007940
+  /*HENSIKT:                                                          */00007950
+  /*    SJEKKER OM YRKES-KODE ER UTFYLLT OG GYLDIG.                   */00007960
+  /*                                                                  */00007970
+  /*BRUK:                                                             */00007980
+  /*    CALL P021_SJEKK_YRKESKODE                                     */00007990
+  /*                                                                  */00008000
+  /* **************************************************************** */00008010
+                                                                        00008020
+    P021_SJEKK_YRKESKODE:                                               00008030
+      PROC;                                                             00008040
+                                                                        00008050
+      DCL  W021_YKODE             CHAR (3)  INIT ('   ');               00008060
+                                                                        00008070
+                                                                        00008080
+      S001B01O.CICS_INFOO         =   CICSINFO;                         00008090
+                                                                        00008100
+      IF S001B01I.NORDISK_YKODEL > 0                     THEN           00008110
+         DO;                                                            00008120
+            IF S001B01I.NORDISK_YKODEI ^= '      '       THEN           00008130
+               DO;                                                      00008140
+                  /*-----------------------------------------------*/   00008150
+                  /* SJEKKER OM GYLDIG YRKESKODE MOT KODE  - FILEN */   00008160
+                  /*-----------------------------------------------*/   00008170
+                                                                        00008180
+                  EXEC CICS HANDLE CONDITION NOTFND (L020NOTF);         00008190
+                  EXEC CICS READ   DATASET ('YRKEKOD')                  00008200
+                    RIDFLD (S001B01I.NORDISK_YKODEI) INTO (W021_YKODE); 00008210
+                                                                        00008220
+                  GOTO RETUR;                                           00008230
+                                                                        00008240
+ L020NOTF:                                                              00008250
+                  EXEC CICS SEND MAP('S001B01')                         00008260
+                              MAPSET('S001B03') DATAONLY;               00008270
+                  MAP_MELDING             =  'YRKESKODE  ER UGYLDIG ! ';00008280
+                  FEILMELDING_SATT        =  '1'B;                      00008290
+                  S001B01I.NORDISK_YKODEL =  -1 ; /* CURSOR POS */      00008300
+                  S001B01O.NORDISK_YKODEA =  'I' ;                      00008310
+                  S001B01O.NORDISK_YKODEO =  S001B01I.NORDISK_YKODEI;   00008320
+                  S001B01O.FNRO           =  S001B01I.FNRI;             00008330
+                  S001B01I.FNRL           =  0;     /*CUR.POS=NULL*/    00008340
+                  S001B01O.MELDINGO       =  MAP_MELDING;               00008350
+                                                                        00008360
+                  EXEC CICS SEND MAP    ('S001B01')                     00008370
+                                 MAPSET ('S001B03') ERASE CURSOR ALARM; 00008380
+                                                                        00008390
+                  /*----------------------------------------------*/    00008400
+                  /*    LESER INN DATA FRA BILDET                 */    00008410
+                  /*----------------------------------------------*/    00008420
+                                                                        00008430
+                  EXEC CICS RECEIVE MAP('S001B01') MAPSET ('S001B03')   00008440
+                                                   SET    ( BMSMAPBR);  00008450
+                  GO TO RETUR;                                          00008460
+               END;                                                     00008470
+         END;                                                           00008480
+ RETUR:                                                                 00008490
+                                                                        00008500
+ END P021_SJEKK_YRKESKODE;                                              00008510
+                                                                        00008520
+                                                                        00008530
+                                                                        00008540
+  /* **************************************************************** */00008550
+  /*HENSIKT:                                                          */00008560
+  /*    SJEKKER OM NOEN FELTER ER UTFYLLT OG GYLDIG.                  */00008570
+  /*                                                                  */00008580
+  /*BRUK:                                                             */00008590
+  /*    CALL P023_SJEKK_ALLE                                          */00008600
+  /*                                                                  */00008610
+  /* **************************************************************** */00008620
+                                                                        00008630
+    P023_SJEKK_ALLE:                                                    00008640
+      PROC;                                                             00008650
+                                                                        00008660
+                                                                        00008670
+      S001B01O.CICS_INFOO           =   CICSINFO;                       00008680
+                                                                        00008690
+      IF S001B01I.DIAG1L            < 1            &                    00008700
+         S001B01I.DIAG2L            < 1            &                    00008710
+         S001B01I.NORDISK_YKODEL    < 1                  THEN           00008720
+         DO;                                                            00008730
+            EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') DATAONLY;   00008740
+            MAP_MELDING             =  'INGEN KODE REGISTRERT  !! ';    00008750
+            FEILMELDING_SATT        =  '1'B;                            00008760
+            S001B01I.DIAG1L         =  -1  ;   /* CURSOR POS */         00008770
+            S001B01O.FNRO           =  S001B01I.FNRI;                   00008780
+            S001B01O.MELDINGO       =  MAP_MELDING;                     00008790
+                                                                        00008800
+            EXEC CICS SEND MAP    ('S001B01')                           00008810
+                           MAPSET ('S001B03') ERASE CURSOR ALARM;       00008820
+                                                                        00008830
+            S001B01O.FNRO           =  S001B01I.FNRI;                   00008840
+            /*----------------------------------------------*/          00008850
+            /*          LESER INN DATA FRA BILDET           */          00008860
+            /*----------------------------------------------*/          00008870
+                                                                        00008880
+            EXEC CICS RECEIVE MAP('S001B01') MAPSET ('S001B03')         00008890
+                                             SET    ( BMSMAPBR);        00008900
+                                                                        00008910
+         END;                                                           00008920
+ RETUR:                                                                 00008930
+                                                                        00008940
+ END P023_SJEKK_ALLE;                                                   00008950
+                                                                        00008960
+                                                                        00008970
+                                                                        00008980
+                                                                        00008990
+ P025_DATABASE:                                                         00009000
+   PROC    (STYRING);                                                   00009010
+                                                                        00009020
+   DCL                                                                  00009030
+     STYRING                               CHAR (5)              ;      00009040
+                                                                        00009050
+  /* **************************************************************** */00009060
+  /*     DL1-PARAMETRE SOM BRUKES VED INITIERINGS- OG AVSLUTTNINGS-   */00009070
+  /*     KALL                                                         */00009080
+  /* **************************************************************** */00009090
+                                                                        00009100
+     DCL                                                                00009110
+       W01_PSB_NAVN                CHAR (8)       INIT('B001B001');     00009120
+     DCL                                                                00009130
+       W01_PCB_FUNCTION            CHAR (4)       INIT('PCB ');         00009140
+     DCL                                                                00009150
+       W01_TERM_FUNCTION           CHAR (4)       INIT('TERM');         00009160
+                                                                        00009170
+  /* **************************************************************** */00009180
+  /*     DLI CALL-PARAMETRE                                           */00009190
+  /* **************************************************************** */00009200
+                                                                        00009210
+     DCL 1  W01_DLI_PARAM,                                              00009220
+            2   W02_PARM_CT_1      FIXED BIN (31)  INIT ( 1 ),          00009230
+            2   W02_PARM_CT_3      FIXED BIN (31)  INIT ( 3 ),          00009240
+            2   W02_PARM_CT_4      FIXED BIN (31)  INIT ( 4 );          00009250
+                                                                        00009260
+                                                                        00009270
+     IF STYRING    = 'OPEN '                      THEN                  00009280
+        DO;                                                             00009290
+           CALL   PLITDLI                        (W02_PARM_CT_3,        00009300
+                                                  W01_PCB_FUNCTION,     00009310
+                                                  W01_PSB_NAVN,         00009320
+                                                  UIBPTR);              00009330
+                                                                        00009340
+           IF DLIUIB.UIBFCTR               ^=    '00000000'B THEN       00009350
+              DO;                                                       00009360
+   L120 :                                                               00009370
+                 MAP_MELDING      =                                     00009380
+                    'DB-FEIL PÅ ÅPNINGSKALLET, KODE:' !!                00009390
+                     UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);         00009400
+                 MAP_MELDING_NR   = 500                     ;           00009410
+                 FEIL_VED_LABEL   = 'L120'                  ;           00009420
+                                                                        00009430
+              END;                                                      00009440
+        END;                                                            00009450
+     ELSE                                                               00009460
+        DO;                                                             00009470
+           CALL   PLITDLI                        (W02_PARM_CT_1,        00009480
+                                                  W01_TERM_FUNCTION);   00009490
+           KOM_OMR.PCB_UIB_PEKER  = NULL                            ;   00009500
+        END;                                                            00009510
+                                                                        00009520
+ END P025_DATABASE;                                                     00009530
+                                                                        00009540
+                                                                        00009550
+  /* **************************************************************** */00009560
+  /* LESER RF0PERSN                                                   */00009570
+  /* **************************************************************** */00009580
+                                                                        00009590
+                                                                        00009600
+  P030_LES_RF_ROT:                                                      00009610
+    PROC;                                                               00009620
+                                                                        00009630
+      RF0PERSN                           =   ''        ;                00009640
+      TRANS_OPPL_OMR.FØDSNUMMER          =   S001B01O.FNRO;             00009650
+      SSA1_RF0PERSN.FNR                  =   S001B01O.FNRO;             00009660
+                                                                        00009670
+      CALL PLITDLI                          (FIRE,                      00009680
+                                             W01_GU,                    00009690
+                                             RF1,                       00009700
+                                             RF0PERSN,                  00009710
+                                             SSA1_RF0PERSN);            00009720
+                                                                        00009730
+      IF   DLIUIB.UIBRCODE.UIBFCTR    ^=     UIB_RC_OK    THEN          00009740
+        DO;                                                             00009750
+           /* ************************************************ */       00009760
+           /* FEIL VED DLI-ACCESS FRA CICS                     */       00009770
+           /* ************************************************ */       00009780
+  L130:                                                                 00009790
+           MAP_MELDING_NR              =    500                 ;       00009800
+           FEIL_VED_LABEL              =   'L130'               ;       00009810
+           FEIL                        =   '1'B                 ;       00009820
+                                                                        00009830
+           MAP_MELDING = 'DB-FEIL, LABEL : ' !! FEIL_VED_LABEL !!       00009840
+                         '   UIBFCTR = '     !! UNSPEC(UIBFCTR)!!       00009850
+                         '   UIBDLTR = '     !! UNSPEC(UIBDLTR) ;       00009860
+           GO   TO  RETUR                                       ;       00009870
+        END;                                                            00009880
+                                                                        00009890
+                                                                        00009900
+      IF   RF1.STATUS_KODE             =    'GE'          THEN          00009910
+        DO;                                                             00009920
+           /* ************************************************ */       00009930
+           /* PERSON FINNES IKKE                               */       00009940
+           /* ************************************************ */       00009950
+                                                                        00009960
+           MAP_MELDING = 'PERSON MED FNR = ' !! S001B01O.FNRO !!        00009970
+                        ' FINNES IKKE I DATABASEN !! '          ;       00009980
+           FEIL        = '1'B                                   ;       00009990
+                                                                        00010000
+           CALL P070_OPPDAT_DIAG ('IT');                                00010010
+        END;                                                            00010020
+                                                                        00010030
+      ELSE IF RF1.STATUS_KODE         ^=    '  '          THEN          00010040
+        DO;                                                             00010050
+           /* ************************************************ */       00010060
+           /* UGYLDIG KODE FRA DL1. FEIL MELDES                */       00010070
+           /* ************************************************ */       00010080
+  L140:                                                                 00010090
+           FEIL_VED_LABEL              = 'L140'                ;        00010100
+           FEIL                        = '1'B                  ;        00010110
+           MAP_MELDING_NR              =  500                  ;        00010120
+           MAP_MELDING  = 'DB-FEIL . LABEL : ' !! FEIL_VED_LABEL !!     00010130
+                        '  DB-KODE : ' !!   RF1.STATUS_KODE   ;         00010140
+        END;                                                            00010150
+                                                                        00010160
+  RETUR:                                                                00010170
+                                                                        00010180
+  END P030_LES_RF_ROT;                                                  00010190
+                                                                        00010200
+                                                                        00010210
+  /* **************************************************************** */00010220
+  /* LESER TRANHIST OG GRUNNB - UP / U2                               */00010230
+  /* **************************************************************** */00010240
+                                                                        00010250
+                                                                        00010260
+  P040_LES_OPPDATER_UPTRANS:                                            00010270
+    PROC;                                                               00010280
+                                                                        00010290
+      DCL  W040_UFT         PIC '(4)9'         INIT (0),                00010300
+           W040_IX   FIXED  BIN  (15)          INIT (0);                00010310
+                                                                        00010320
+      /*-------------------------------------------------------*/       00010330
+      /* SJEKKER OM UFØRETRANS FINNES                          */       00010340
+      /*-------------------------------------------------------*/       00010350
+                                                                        00010360
+      TRANHIST_FELT                     =   ''                  ;       00010370
+                                                                        00010380
+      CALL PLITDLI                          (FIRE,                      00010390
+                                             W01_GNP,                   00010400
+                                             RF1,                       00010410
+                                             TRANHIST_FELT,             00010420
+                                             SSA1_TRANHIST);            00010430
+                                                                        00010440
+      IF DLIUIB.UIBRCODE.UIBFCTR      ^=     UIB_RC_OK    THEN          00010450
+        DO;                                                             00010460
+           /* ********************************************* */          00010470
+           /* FEIL VED DL1-ACCESS FRA CICS                  */          00010480
+           /* ********************************************* */          00010490
+  L141:                                                                 00010500
+           MAP_MELDING_NR              =    500                 ;       00010510
+           FEIL_VED_LABEL              =   'L141'               ;       00010520
+           FEIL                        =   '1'B                 ;       00010530
+                                                                        00010540
+           MAP_MELDING = 'DB-FEIL, LABEL : ' !! FEIL_VED_LABEL !!       00010550
+                         '   UIBFCTR = '     !! UNSPEC(UIBFCTR)!!       00010560
+                         '   UIBDLTR = '     !! UNSPEC(UIBDLTR) ;       00010570
+           GO TO P040RET                                        ;       00010580
+        END;                                                            00010590
+                                                                        00010600
+                                                                        00010610
+      IF   RF1.STATUS_KODE             =    'GE'          THEN          00010620
+        DO;                                                             00010630
+           /*--------------------------------------------------*/       00010640
+           /* PERSON HAR INGEN UFØRETRANS                      */       00010650
+           /* OPPDATERER DIAGNOSE-KONTROLL FIL MED KODE IT     */       00010660
+           /*--------------------------------------------------*/       00010670
+                                                                        00010680
+           CALL P070_OPPDAT_DIAG ('IT');                                00010690
+           MAP_MELDING                 = 'PERSON MED FNR :  '  !!       00010700
+                                          S001B01O.FNRO        !!       00010710
+                                        ' HAR INGEN UP-/U2-TRANS';      00010720
+           FEIL                        = '1'B                    ;      00010730
+           GO TO P040RET                                         ;      00010740
+        END;                                                            00010750
+                                                                        00010760
+      ELSE IF RF1.STATUS_KODE         ^=    '  '          THEN          00010770
+        DO;                                                             00010780
+           /* ************************************************ */       00010790
+           /* UGYLDIG KODE FRA DL1. FEIL MELDES                */       00010800
+           /* ************************************************ */       00010810
+  L142:                                                                 00010820
+           FEIL_VED_LABEL              ='L142'                ;         00010830
+           FEIL                        ='1'B                  ;         00010840
+           MAP_MELDING_NR              = 500                  ;         00010850
+           MAP_MELDING  = 'DB-FEIL . LABEL : ' !! FEIL_VED_LABEL !!     00010860
+                        '  DB-KODE : ' !!   RF1.STATUS_KODE   ;         00010870
+           GO TO P040RET                                        ;       00010880
+        END;                                                            00010890
+                                                                        00010900
+      IF TRANHIST_FELT.GRUNN_BLKODE     =   'UP' THEN                   00010910
+         SSA1_UNQUAL                    =   'GRUNNBUP '         ;       00010920
+      ELSE                                                              00010930
+         SSA1_UNQUAL                    =   'GRUNNBU2 '         ;       00010940
+                                                                        00010950
+      GRUNNB_UP_U2                      =   ''                  ;       00010960
+                                                                        00010970
+      CALL PLITDLI                          (FIRE,                      00010980
+                                             W01_GHNP,                  00010990
+                                             RF1,                       00011000
+                                             GRUNNB_UP_U2,              00011010
+                                             SSA1_UNQUAL);              00011020
+                                                                        00011030
+      IF DLIUIB.UIBRCODE.UIBFCTR      ^=     UIB_RC_OK    THEN          00011040
+        DO;                                                             00011050
+           /* ********************************************* */          00011060
+           /* FEIL VED DL1-ACCESS FRA CICS                  */          00011070
+           /* ********************************************* */          00011080
+  L143:                                                                 00011090
+           MAP_MELDING_NR              =    500                 ;       00011100
+           FEIL_VED_LABEL              =   'L143'               ;       00011110
+           FEIL                        =   '1'B                 ;       00011120
+                                                                        00011130
+           MAP_MELDING = 'DB-FEIL, LABEL : ' !! FEIL_VED_LABEL !!       00011140
+                         '   UIBFCTR = '     !! UNSPEC(UIBFCTR)!!       00011150
+                         '   UIBDLTR = '     !! UNSPEC(UIBDLTR) ;       00011160
+           GO TO P040RET                                        ;       00011170
+        END;                                                            00011180
+                                                                        00011190
+                                                                        00011200
+      IF   RF1.STATUS_KODE             =    'GE'          THEN          00011210
+        DO;                                                             00011220
+           /*--------------------------------------------------*/       00011230
+           /* TRANHIST INDIKERER EN UFØRE-TRANS,               */       00011240
+           /* MEN DET LIGGER INGEN BLANKETT UNDER.             */       00011250
+           /*--------------------------------------------------*/       00011260
+  L144:                                                                 00011270
+           FEIL_VED_LABEL              ='L144'                ;         00011280
+           FEIL                        ='1'B                  ;         00011290
+           MAP_MELDING_NR              = 500                  ;         00011300
+           MAP_MELDING  = 'FEIL VED LABEL: ' !! FEIL_VED_LABEL !!       00011310
+                        '. LOGISK FEIL I RF-DB !'             ;         00011320
+           GO TO P040RET                                         ;      00011330
+        END;                                                            00011340
+                                                                        00011350
+      ELSE IF RF1.STATUS_KODE         ^=    '  '          THEN          00011360
+        DO;                                                             00011370
+           /* ************************************************ */       00011380
+           /* UGYLDIG KODE FRA DL1. FEIL MELDES                */       00011390
+           /* ************************************************ */       00011400
+  L146:                                                                 00011410
+           FEIL_VED_LABEL              ='L146'                ;         00011420
+           FEIL                        ='1'B                  ;         00011430
+           MAP_MELDING_NR              = 500                  ;         00011440
+           MAP_MELDING  = 'DB-FEIL . LABEL : ' !! FEIL_VED_LABEL !!     00011450
+                        '  DB-KODE : ' !!   RF1.STATUS_KODE   ;         00011460
+           GO TO P040RET                                        ;       00011470
+        END;                                                            00011480
+                                                                        00011490
+      /*---------------------------------------------------------*/     00011500
+      /* SISTE UFØRE TRANS EKSISTERTE . OPPDATERER HVIS DIAGNOSE */     00011510
+      /* ER UTFYLT OG BLANKE I TRANSEN.                          */     00011520
+      /* DIAGNOSE  = TRANSEN'S DIAGNOSE :   INGEN BEHANDLING     */     00011530
+      /* DIAGNOSE ^= TRANSEN'S DIAGNOSE :   SKRIV PÅ KONTROLLFIL */     00011540
+      /*---------------------------------------------------------*/     00011550
+                                                                        00011560
+      IF S001B01I.DIAG1L               > 0                   !          00011570
+         S001B01I.DIAG2L               > 0                     THEN     00011580
+         DO;                                                            00011590
+            IF GRUNNB_UP_U2.PRIMDIAG = S001B01I.DIAG1I       &          00011600
+                                                                        00011610
+              (GRUNNB_UP_U2.SEKUDIAG = S001B01I.DIAG2I !                00011620
+              (GRUNNB_UP_U2.SEKUDIAG = '      '          &              00011630
+               S001B01I.DIAG2L         = 0               )   ) THEN     00011640
+               DO;                                                      00011650
+                 IF S001B01I.NORDISK_YKODEL > 0                THEN     00011660
+                    DO;                                                 00011670
+        L147:                                                           00011680
+                       W040_UFT        = GRUNNB_UP_U2.UFT_MÅ      ;     00011690
+                       FEIL_VED_LABEL  = 'L147'                   ;     00011700
+                       FEIL            = '1'B                     ;     00011710
+                       MAP_MELDING_NR  =  500                     ;     00011720
+                       MAP_MELDING = 'REG. AVVIST ! UFT = ' !!          00011730
+                                      W040_UFT !! ' NORDISK YRKE' !!    00011740
+                                     'SKODE MÅ REG. FOR SEG !'    ;     00011750
+                    END;                                                00011760
+                                                                        00011770
+                 GO TO P040RET                                   ;      00011780
+               END;                                                     00011790
+                                                                        00011800
+            ELSE IF                                                     00011810
+               GRUNNB_UP_U2.PRIMDIAG ^= '      '        !               00011820
+               GRUNNB_UP_U2.SEKUDIAG ^= '      '          THEN          00011830
+               DO;                                                      00011840
+                 /*---------------------------------------------------*/00011850
+                 /* SKRIVER NY OG EKSISTERENDE DIAG. TIL KOTROLL-FIL */ 00011860
+                 /*---------------------------------------------------*/00011870
+                                                                        00011880
+                 CALL P070_OPPDAT_DIAG ('AT');                          00011890
+        L148:                                                           00011900
+                 W040_UFT              = GRUNNB_UP_U2.UFT_MÅ      ;     00011910
+                 FEIL_VED_LABEL        = 'L148'                   ;     00011920
+                 FEIL                  = '1'B                     ;     00011930
+                 MAP_MELDING_NR        =  500                     ;     00011940
+                 MAP_MELDING = 'REG. AVVIST ! UFT-MÅ = '       !!       00011950
+                                W040_UFT    !! '  PRIMDIAG = ' !!       00011960
+                                GRUNNB_UP_U2.PRIMDIAG          !!       00011970
+                              ' SEKUDIAG = '                   !!       00011980
+                                GRUNNB_UP_U2.SEKUDIAG             ;     00011990
+                 GO TO P040RET                                    ;     00012000
+               END;                                                     00012010
+                                                                        00012020
+            /*-------------------------------------------------------*/ 00012030
+            /* SJEKKER OM UP-TRANSEN ER EN REN UP ELLER EN M/YSKADE  */ 00012040
+            /*-------------------------------------------------------*/ 00012050
+                                                                        00012060
+            IF GRUNNB_UP_U2.YSKADE_TILLEGG      = 'J'        THEN       00012070
+               W01_YTELSE                       = 'YS'            ;     00012080
+            ELSE                                                        00012090
+               W01_YTELSE                       = 'UP'            ;     00012100
+                                                                        00012110
+            GRUNNB_UP_U2.PRIMDIAG         = S001B01I.DIAG1I;            00012120
+                                                                        00012130
+            IF S001B01I.DIAG2L            > 0                 THEN      00012140
+               GRUNNB_UP_U2.SEKUDIAG      = S001B01I.DIAG2I;            00012150
+                                                                        00012160
+            /*-------------------------------------------------------*/ 00012170
+            /* REPLACE PÅ UP-TRANS .                                 */ 00012180
+            /*-------------------------------------------------------*/ 00012190
+                                                                        00012200
+            CALL PLITDLI                    (TRE,                       00012210
+                                             W01_REPL,                  00012220
+                                             RF1,                       00012230
+                                             GRUNNB_UP_U2);             00012240
+                                                                        00012250
+            IF DLIUIB.UIBRCODE.UIBFCTR ^=    UIB_RC_OK    THEN          00012260
+              DO;                                                       00012270
+                 /*-------------------------------------------------*/  00012280
+                 /* FEIL VED DL1-ACCESS FRA CICS                    */  00012290
+                 /*-------------------------------------------------*/  00012300
+        L150:                                                           00012310
+                 MAP_MELDING_NR        =    500                 ;       00012320
+                 FEIL_VED_LABEL        =   'L150'               ;       00012330
+                 FEIL                  =   '1'B                 ;       00012340
+                                                                        00012350
+                 MAP_MELDING = 'DB-FEIL, LABEL : ' !! FEIL_VED_LABEL !! 00012360
+                               '   UIBFCTR = ' !! UNSPEC(UIBFCTR)!!     00012370
+                               '   UIBDLTR = ' !! UNSPEC(UIBDLTR) ;     00012380
+                 GO TO P040RET                                  ;       00012390
+              END;                                                      00012400
+                                                                        00012410
+                                                                        00012420
+            IF RF1.STATUS_KODE   ^=    '  '          THEN               00012430
+              DO;                                                       00012440
+                 /*-------------------------------------------------*/  00012450
+                 /* UGYLDIG KODE FRA DL1. FEIL MELDES               */  00012460
+                 /*-------------------------------------------------*/  00012470
+        L160:                                                           00012480
+                 FEIL_VED_LABEL        ='L160'                ;         00012490
+                 FEIL                  ='1'B                  ;         00012500
+                 MAP_MELDING_NR        = 500                  ;         00012510
+                 MAP_MELDING = 'DB-FEIL . LABEL : ' !! FEIL_VED_LABEL !!00012520
+                              '  DB-KODE : ' !! RF1.STATUS_KODE ;       00012530
+                 GO TO P040RET                                ;         00012540
+              END;                                                      00012550
+         END;                                                           00012560
+                                                                        00012570
+      /*------------------------------------------------------------*/  00012580
+      /* REPL. / WRITE TIL KONTROLL-FIL MED KODE  :  UM / MK        */  00012590
+      /*------------------------------------------------------------*/  00012600
+                                                                        00012610
+      UP_TRANS_BEHANDLET               =    '1'B              ;         00012620
+      CALL P070_OPPDAT_DIAG ('UM');                                     00012630
+                                                                        00012640
+  P040RET:                                                              00012650
+                                                                        00012660
+  END P040_LES_OPPDATER_UPTRANS;                                        00012670
+                                                                        00012680
+                                                                        00012690
+  /* **************************************************************** */00012700
+  /* LESER OPPDATERER TR-DB                                           */00012710
+  /* **************************************************************** */00012720
+                                                                        00012730
+                                                                        00012740
+  P050_OPPDATER_TR:                                                     00012750
+    PROC;                                                               00012760
+                                                                        00012770
+    /*---------------------------------------------------------*/       00012780
+    /* LEGGER INN ROTSEGMENT                                   */       00012790
+    /* HVIS RETURKODE = 'II' EKSISTERER DET FRA FØR.           */       00012800
+    /*---------------------------------------------------------*/       00012810
+                                                                        00012820
+      SSA1_UNQUAL                     =     'TR0ROT   '   ;             00012830
+      SSA1_TR0ROT.FNR                 =      S001B01O.FNRO;             00012840
+      TR0ROT.FNR                      =      S001B01O.FNRO;             00012850
+                                                                        00012860
+      CALL PLITDLI                          (FIRE,                      00012870
+                                             W01_ISRT,                  00012880
+                                             TR1,                       00012890
+                                             TR0ROT,                    00012900
+                                             SSA1_UNQUAL);              00012910
+                                                                        00012920
+      IF DLIUIB.UIBRCODE.UIBFCTR      ^=     UIB_RC_OK    THEN          00012930
+         DO;                                                            00012940
+            /* ************************************************ */      00012950
+            /* FEIL VED DL1-ACCESS FRA CICS                     */      00012960
+            /* ************************************************ */      00012970
+  L200:                                                                 00012980
+            MAP_MELDING_NR              =    500                 ;      00012990
+            FEIL_VED_LABEL              =   'L200'               ;      00013000
+            FEIL                        =   '1'B                 ;      00013010
+                                                                        00013020
+            MAP_MELDING = 'DB-FEIL, LABEL : ' !! FEIL_VED_LABEL !!      00013030
+                          '   UIBFCTR = '     !! UNSPEC(UIBFCTR)!!      00013040
+                          '   UIBDLTR = '     !! UNSPEC(UIBDLTR) ;      00013050
+            GO   TO  P050RET                                     ;      00013060
+         END;                                                           00013070
+                                                                        00013080
+      IF TR1.STATUS_KODE               ^=    '  '     &                 00013090
+         TR1.STATUS_KODE               ^=    'II'          THEN         00013100
+         DO;                                                            00013110
+            /* ************************************************ */      00013120
+            /* UGYLDIG KODE FRA DL1. FEIL MELDES                */      00013130
+            /* ************************************************ */      00013140
+  L210:                                                                 00013150
+            FEIL_VED_LABEL              = 'L210'                ;       00013160
+            FEIL                        = '1'B                  ;       00013170
+            MAP_MELDING_NR              =  500                  ;       00013180
+            MAP_MELDING  = 'DB-FEIL . LABEL : ' !! FEIL_VED_LABEL !!    00013190
+                         '  DB-KODE : ' !!   TR1.STATUS_KODE     ;      00013200
+            GO   TO  P050RET                                     ;      00013210
+         END;                                                           00013220
+                                                                        00013230
+                                                                        00013240
+      /*---------------------------------------------------------*/     00013250
+      /* LEGGER INN REGTIDSPUNKT-SEGM.                           */     00013260
+      /*---------------------------------------------------------*/     00013270
+                                                                        00013280
+      DATO                      =     DATE                          ;   00013290
+      KLOKKE                    =     TIME                          ;   00013300
+                                                                        00013310
+      REGTPKT                   =     ''                            ;   00013320
+      REGTPKT.DATOKL            =     DATO_KLOKKE                   ;   00013330
+      REGTPKT.VIRKDATO          =     TRANHIST_FELT.VIRK_DATO_ÅM    ;   00013340
+      REGTPKT.DELMRK_ALT        =     'D'                           ;   00013350
+                                                                        00013360
+      SSA1_UNQUAL               =     'REGTPKT  '                   ;   00013370
+      SSA1_REGTPKT.DATOKL_KEY   =     DATO_KLOKKE                   ;   00013380
+                                                                        00013390
+      CALL PLITDLI                          (FEM,                       00013400
+                                             W01_ISRT,                  00013410
+                                             TR1,                       00013420
+                                             REGTPKT,                   00013430
+                                             SSA1_TR0ROT,               00013440
+                                             SSA1_UNQUAL);              00013450
+                                                                        00013460
+      IF DLIUIB.UIBRCODE.UIBFCTR      ^=     UIB_RC_OK    THEN          00013470
+         DO;                                                            00013480
+            /* ************************************************ */      00013490
+            /* FEIL VED DL1-ACCESS FRA CICS                     */      00013500
+            /* ************************************************ */      00013510
+  L220:                                                                 00013520
+            MAP_MELDING_NR              =    500                 ;      00013530
+            FEIL_VED_LABEL              =   'L220'               ;      00013540
+            FEIL                        =   '1'B                 ;      00013550
+                                                                        00013560
+            MAP_MELDING = 'DB-FEIL, LABEL : ' !! FEIL_VED_LABEL !!      00013570
+                          '   UIBFCTR = '     !! UNSPEC(UIBFCTR)!!      00013580
+                          '   UIBDLTR = '     !! UNSPEC(UIBDLTR) ;      00013590
+            GO   TO  P050RET                                     ;      00013600
+         END;                                                           00013610
+                                                                        00013620
+      IF TR1.STATUS_KODE         ^=    '  '          THEN               00013630
+         DO;                                                            00013640
+            /* ************************************************ */      00013650
+            /* UGYLDIG KODE FRA DL1. FEIL MELDES                */      00013660
+            /* ************************************************ */      00013670
+  L230:                                                                 00013680
+            FEIL_VED_LABEL              = 'L230'                ;       00013690
+            FEIL                        = '1'B                  ;       00013700
+            MAP_MELDING_NR              =  500                  ;       00013710
+            MAP_MELDING  = 'DB-FEIL . LABEL : ' !! FEIL_VED_LABEL !!    00013720
+                         '  DB-KODE : ' !!   TR1.STATUS_KODE     ;      00013730
+            GO   TO  P050RET                                     ;      00013740
+         END;                                                           00013750
+                                                                        00013760
+                                                                        00013770
+                                                                        00013780
+      /*---------------------------------------------------------*/     00013790
+      /* LEGGER INN DIAGNOSE OG/ELLER YRKES-KODE                 */     00013800
+      /*---------------------------------------------------------*/     00013810
+                                                                        00013820
+      DIAGNOSE                         =     ''                  ;      00013830
+                                                                        00013840
+      IF GRUNNB_UP_U2.YSKADE_TILLEGG     = ' '           THEN           00013850
+         DO;                                                            00013860
+            IF S001B01I.DIAG1L           >   0           THEN           00013870
+               DIAGNOSE.PRIMDIAG         =   S001B01O.DIAG1O     ;      00013880
+                                                                        00013890
+            IF S001B01I.DIAG2L           >   0           THEN           00013900
+               DIAGNOSE.SEKUDIAG         =   S001B01O.DIAG2O     ;      00013910
+                                                                        00013920
+            IF S001B01I.NORDISK_YKODEL   >   0           THEN           00013930
+               DIAGNOSE.NORDISK_YKODE_UP =   S001B01O.NORDISK_YKODEO ;  00013940
+         END;                                                           00013950
+                                                                        00013960
+      ELSE                                                              00013970
+         DO;                                                            00013980
+            IF S001B01I.DIAG1L           >   0           THEN           00013990
+               DIAGNOSE.PRIMDIAG_YRKE    =   S001B01O.DIAG1O     ;      00014000
+                                                                        00014010
+            IF S001B01I.DIAG2L           >   0           THEN           00014020
+               DIAGNOSE.SEKUDIAG_YRKE    =   S001B01O.DIAG2O     ;      00014030
+                                                                        00014040
+            IF S001B01I.NORDISK_YKODEL   >   0           THEN           00014050
+               DIAGNOSE.NORDISK_YKODE_YS =   S001B01O.NORDISK_YKODEO ;  00014060
+         END;                                                           00014070
+                                                                        00014080
+      SSA1_UNQUAL                     =     'DIAGNOSE '   ;             00014090
+                                                                        00014100
+      CALL PLITDLI                          (SEKS,                      00014110
+                                             W01_ISRT,                  00014120
+                                             TR1,                       00014130
+                                             DIAGNOSE,                  00014140
+                                             SSA1_TR0ROT,               00014150
+                                             SSA1_REGTPKT,              00014160
+                                             SSA1_UNQUAL);              00014170
+                                                                        00014180
+      IF DLIUIB.UIBRCODE.UIBFCTR      ^=     UIB_RC_OK    THEN          00014190
+         DO;                                                            00014200
+            /* ************************************************ */      00014210
+            /* FEIL VED DL1-ACCESS FRA CICS                     */      00014220
+            /* ************************************************ */      00014230
+  L240:                                                                 00014240
+            MAP_MELDING_NR              =    500                 ;      00014250
+            FEIL_VED_LABEL              =   'L240'               ;      00014260
+            FEIL                        =   '1'B                 ;      00014270
+                                                                        00014280
+            MAP_MELDING = 'DB-FEIL, LABEL : ' !! FEIL_VED_LABEL !!      00014290
+                          '   UIBFCTR = '     !! UNSPEC(UIBFCTR)!!      00014300
+                          '   UIBDLTR = '     !! UNSPEC(UIBDLTR) ;      00014310
+            GO   TO  P050RET                                     ;      00014320
+         END;                                                           00014330
+                                                                        00014340
+      IF TR1.STATUS_KODE         ^=    '  '          THEN               00014350
+         DO;                                                            00014360
+            /* ************************************************ */      00014370
+            /* UGYLDIG KODE FRA DL1. FEIL MELDES                */      00014380
+            /* ************************************************ */      00014390
+  L250:                                                                 00014400
+            FEIL_VED_LABEL              = 'L250'                ;       00014410
+            FEIL                        = '1'B                  ;       00014420
+            MAP_MELDING_NR              =  500                  ;       00014430
+            MAP_MELDING  = 'DB-FEIL . LABEL : ' !! FEIL_VED_LABEL !!    00014440
+                         '  DB-KODE : ' !!   TR1.STATUS_KODE     ;      00014450
+            GO   TO  P050RET                                     ;      00014460
+         END;                                                           00014470
+                                                                        00014480
+                                                                        00014490
+  P050RET:                                                              00014500
+                                                                        00014510
+  END P050_OPPDATER_TR;                                                 00014520
+                                                                        00014530
+                                                                        00014540
+                                                                        00014550
+                                                                        00014560
+  /* **************************************************************** */00014570
+  /* SJEKKER FUNKSJONSKODE OG STYREKODE                               */00014580
+  /* **************************************************************** */00014590
+                                                                        00014600
+                                                                        00014610
+  P060_SJEKK_FUNK_STYR:                                                 00014620
+    PROC;                                                               00014630
+                                                                        00014640
+    /*----------------------------------------------------------------*/00014650
+    /* SJEKKE FUNKSJONSKODE OG SETTE IN FNR, HVIS KODE ER UTFYLT      */00014660
+    /*----------------------------------------------------------------*/00014670
+                                                                        00014680
+    IF S001B01I.FUNKSJONSKODEL           >   0                     THEN 00014690
+       DO;                                                              00014700
+          FUNKSJONSKODE = S001B01I.FUNKSJONSKODEI  ;                    00014710
+                                                                        00014720
+          /*---------------------------------------------------------*/ 00014730
+          /* VIA CICS TILBAKE TIL R0010301, VELG NY FUNKSJONSKODE    */ 00014740
+          /*---------------------------------------------------------*/ 00014750
+                                                                        00014760
+          EXEC CICS XCTL  PROGRAM('R0010301') COMMAREA(KOM_OMR);        00014770
+                                                                        00014780
+       END;                                                             00014790
+                                                                        00014800
+    IF STYREKODEL   > 0 THEN                                            00014810
+       DO;                                                              00014820
+          STYREKODE = STYREKODEI;                                       00014830
+          TRANSKODE = 'R041';                                           00014840
+          EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);         00014850
+       END;                                                             00014860
+                                                                        00014870
+  END P060_SJEKK_FUNK_STYR;                                             00014880
+                                                                        00014890
+                                                                        00014900
+                                                                        00014910
+  /* **************************************************************** */00014920
+  /* RUTINE SOM SKRIVER / OPPDATERER VSAM-KONTROLL-FILEN FOR DIAGNOSE */00014930
+  /* **************************************************************** */00014940
+                                                                        00014950
+  P070_OPPDAT_DIAG:                                                     00014960
+    PROC  (W070_KODE);                                                  00014970
+                                                                        00014980
+       DCL W070_KODE         CHAR(2);                                   00014990
+                                                                        00015000
+       DCL W070_REC_LENGTH   FIXED  BIN (15) INIT (48),                 00015010
+           W070_KEY_LENGTH   FIXED  BIN (15) INIT (11);                 00015020
+                                                                        00015030
+       DCL W070_DATO         CHAR(6),                                   00015040
+                                                                        00015050
+           W070_ÅM   DEF     W070_DATO   POS(1)   PIC'(4)9',            00015060
+           W070_ÅMD  DEF     W070_DATO   POS(1)   PIC'(6)9',            00015070
+                                                                        00015080
+         1 W070_D2   DEF     W070_DATO   POS(1),                        00015090
+             2 ÅR            PIC '99',                                  00015100
+             2 MN            PIC '99',                                  00015110
+             2 DG            PIC '99',                                  00015120
+                                                                        00015130
+         1 W070_SNU_KLOKKE,                                             00015140
+             2 TT            PIC '99',                                  00015150
+             2 MM            PIC '99',                                  00015160
+             2 SS            PIC '99',                                  00015170
+             2 S1            PIC '999',                                 00015180
+                                                                        00015190
+            W070_KLOKKE  DEF W070_SNU_KLOKKE PIC '(9)9';                00015200
+                                                                        00015210
+        DCL (DATE , TIME )   BUILTIN;                                   00015220
+                                                                        00015230
+        DCL                                                             00015240
+           01 W070_REC,                                                 00015250
+              10 KEY,                                                   00015260
+                 15 FNR      PIC '(11)9',                               00015270
+                 15 REGDATO  PIC '( 6)9',                               00015280
+                 15 KLOKKE   PIC '( 9)9',                               00015290
+              10 TKNR        PIC '( 4)9',                               00015300
+              10 VIRKDATO    PIC '( 4)9',                               00015310
+              10 PRIMDIAG    CHAR ( 6)  ,                               00015320
+              10 SEKUDIAG    CHAR ( 6)  ,                               00015330
+              10 BL_KODE     CHAR ( 2)  ;                               00015340
+                                                                        00015350
+    /*----------------------------------------------------------------*/00015360
+    /* SJEKKE FUNKSJONSKODE OG SETTE IN FNR, HVIS KODE ER UTFYLT      */00015370
+    /*----------------------------------------------------------------*/00015380
+                                                                        00015390
+    W070_REC                   =  ''             ;                      00015400
+    W070_DATO                  =  DATE ()        ;                      00015410
+    W070_KLOKKE                =  TIME           ;                      00015420
+                                                                        00015430
+    W070_SNU_KLOKKE.TT         =  24  - W070_SNU_KLOKKE.TT;             00015440
+    W070_SNU_KLOKKE.MM         =  60  - W070_SNU_KLOKKE.MM;             00015450
+    W070_SNU_KLOKKE.SS         =  60  - W070_SNU_KLOKKE.SS;             00015460
+    W070_SNU_KLOKKE.S1         =  999 - W070_SNU_KLOKKE.S1;             00015470
+    W070_REC.KEY.FNR           =  S001B01I.FNRI;                        00015480
+                                                                        00015490
+    IF W070_KODE               = 'UM'               THEN                00015500
+       DO;                                                              00015510
+          EXEC CICS HANDLE   CONDITION   NOTFND(L070NOTF);              00015520
+          EXEC CICS READ     DATASET   ('DIAGKON')                      00015530
+                             RIDFLD    ( W070_REC.KEY.FNR)              00015540
+                             INTO      ( W070_REC)                      00015550
+                             LENGTH    ( W070_REC_LENGTH)               00015560
+                             KEYLENGTH ( W070_KEY_LENGTH)               00015570
+                             GENERIC                                    00015580
+                             EQUAL                                      00015590
+                             UPDATE;                                    00015600
+                                                                        00015610
+          W070_REC.PRIMDIAG    =  S001B01I.DIAG1I;                      00015620
+          W070_REC.BL_KODE     =  W070_KODE;                            00015630
+                                                                        00015640
+          IF S001B01I.DIAG2L   >  0                   &                 00015650
+             S001B01I.DIAG2I  ^=  '      '             THEN             00015660
+             W070_REC.SEKUDIAG =  S001B01I.DIAG2I;                      00015670
+                                                                        00015680
+          EXEC CICS REWRITE  DATASET   ('DIAGKON')                      00015690
+                             FROM      ( W070_REC);                     00015700
+          GOTO L070END;                                                 00015710
+                                                                        00015720
+    L070NOTF:                                                           00015730
+          W070_KODE            = 'MK';                                  00015740
+                                                                        00015750
+       END;                                                             00015760
+                                                                        00015770
+    W070_REC.KEY.REGDATO       =  999999 - W070_ÅMD;                    00015780
+    W070_REC.KEY.KLOKKE        =  W070_KLOKKE;                          00015790
+                                                                        00015800
+    IF W070_KODE               = 'IT'               THEN                00015810
+       W070_REC.TKNR           =  RF0PERSN.TKNR;                        00015820
+    ELSE                                                                00015830
+       DO;                                                              00015840
+          W070_REC.TKNR        =  TRANHIST_FELT.TKNR;                   00015850
+          W070_REC.VIRKDATO    =  TRANHIST_FELT.VIRK_DATO_ÅM;           00015860
+       END;                                                             00015870
+                                                                        00015880
+    IF W070_KODE               = 'AT'               THEN                00015890
+       DO;                                                              00015900
+          W070_REC.PRIMDIAG    =  GRUNNB_UP_U2.PRIMDIAG;                00015910
+          W070_REC.SEKUDIAG    =  GRUNNB_UP_U2.SEKUDIAG;                00015920
+          W070_REC.BL_KODE     =  W070_KODE;                            00015930
+          EXEC CICS WRITE DATASET ('DIAGKON') RIDFLD (W070_REC.KEY)     00015940
+                                              FROM   (W070_REC);        00015950
+          W070_KODE            = 'AR';                                  00015960
+                                                                        00015970
+          IF W070_SNU_KLOKKE.S1 = 999                 THEN              00015980
+             W070_SNU_KLOKKE.S1 = 0                     ;               00015990
+          ELSE                                                          00016000
+             W070_SNU_KLOKKE.S1 = W070_SNU_KLOKKE.S1 + 1;               00016010
+                                                                        00016020
+          W070_REC.KEY.KLOKKE   = W070_KLOKKE;                          00016030
+       END;                                                             00016040
+                                                                        00016050
+    W070_REC.PRIMDIAG          =  S001B01I.DIAG1I;                      00016060
+    W070_REC.BL_KODE           =  W070_KODE;                            00016070
+                                                                        00016080
+    IF S001B01I.DIAG2L         >  0                   &                 00016090
+       S001B01I.DIAG2I        ^=  '      '             THEN             00016100
+       W070_REC.SEKUDIAG       =  S001B01I.DIAG2I;                      00016110
+                                                                        00016120
+    EXEC CICS WRITE DATASET ('DIAGKON') RIDFLD (W070_REC.KEY)           00016130
+                                        FROM   (W070_REC    );          00016140
+                                                                        00016150
+  L070END:                                                              00016160
+                                                                        00016170
+  END P070_OPPDAT_DIAG;                                                 00016180
+                                                                        00016190
+                                                                        00016200
+                                                                        00016210
+  /* **************************************************************** */00016220
+  /*  UTGANGER VED FEIL.                                              */00016230
+  /* **************************************************************** */00016240
+                                                                        00016250
+                                                                        00016260
+  PF2:                                                                  00016270
+     MAP_MELDING              = 'TRANSAKSJONEN ER FORKASTET';           00016280
+     FEILMELDING_SATT         = '1'B                        ;           00016290
+     S001B01O.STYREKODEO      = 'MK'                        ;           00016300
+     S001B01I.FNRL            = -1 ;         /* CURSOR POS */           00016310
+     S001B01I.FNRI            = LOW (11)                    ;           00016320
+     S001B01I.DIAG1I          = LOW( 6)                     ;           00016330
+     S001B01I.DIAG2I          = LOW( 6)                     ;           00016340
+     S001B01I.NORDISK_YKODEI  = LOW( 3)                     ;           00016350
+     S001B01O.CICS_INFOO      = CICSINFO                    ;           00016360
+     S001B01O.MELDINGO        = MAP_MELDING                 ;           00016370
+                                                                        00016380
+     EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') CURSOR ERASE;      00016390
+                                                                        00016400
+     TRANSKODE                = 'RB00';                                 00016410
+     EXEC CICS XCTL PROGRAM('R001B001') COMMAREA(KOM_OMR);              00016420
+                                                                        00016430
+                                                                        00016440
+                                                                        00016450
+  ERRBEH:                                                               00016460
+     EXEC CICS SYNCPOINT ROLLBACK;                                      00016470
+     EXEC CICS HANDLE    CONDITION ERROR;                               00016480
+     EXEC CICS PURGE     MESSAGE;                                       00016490
+     EXEC CICS ABEND     ABCODE('FEIL');                                00016500
+                                                                        00016510
+                                                                        00016520
+  L999:                                                                 00016530
+     ALLOCATE S001B01O;                                                 00016540
+     ALLOCATE S001B01I;                                                 00016550
+                                                                        00016560
+     EXEC CICS LOAD PROGRAM('S001B03');                                 00016570
+                                                                        00016580
+     S001B01I.STYREKODEL   = -1;                                        00016590
+                                                                        00016600
+     EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') CURSOR ERASE;      00016610
+                                                                        00016620
+     EXEC CICS RETURN;                                                  00016630
+                                                                        00016640
+                                                                        00016650
+  FEILUT:                                                               00016660
+     EXEC CICS SYNCPOINT ROLLBACK;                                      00016670
+                                                                        00016680
+     S001B01O.CICS_INFOO      = CICSINFO;                               00016690
+     S001B01O.MELDINGO        = MAP_MELDING                 ;           00016700
+                                                                        00016710
+     EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') DATAONLY;          00016720
+                                                                        00016730
+     FEILMELDING_SATT         = '1'B                        ;           00016740
+     S001B01I.FNRL            = -1;          /* CURSER POS */           00016750
+     S001B01O.FNRO            = S001B01I.FNRI;                          00016760
+     S001B01O.DIAG1O          = S001B01I.DIAG1I;                        00016770
+     S001B01O.DIAG2O          = S001B01I.DIAG2I;                        00016780
+     S001B01O.NORDISK_YKODEO  = S001B01I.NORDISK_YKODEI;                00016790
+     HENT_FRAM_MAP            = '0'B;                                   00016800
+                                                                        00016810
+     EXEC CICS SEND MAP('S001B01') MAPSET('S001B03') ERASE CURSOR ALARM;00016820
+                                                                        00016830
+     KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER =  ADDR(KOM_OMR.DIV_PARAM_OMR);00016840
+     TRANSKODE                           = 'RB00';                      00016850
+     EXEC CICS RETURN TRANSID(TRANSKODE)    COMMAREA(KOM_OMR);          00016860
+                                                                        00016870
+                                                                        00016880
+  %INCLUDE R0019904;          /*  F_GYLDIG_FNR                    */    00016890
+  %INCLUDE R0019910;          /*  F_NUMERISK                      */    00016900
+  %INCLUDE R0019960;          /*  F_CICSINFO                      */    00016910
+                                                                        00016920
+                                                                        00016930
+ END R001B00;                                                           00016940

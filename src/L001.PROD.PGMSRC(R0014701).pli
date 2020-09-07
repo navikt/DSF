@@ -1,0 +1,495 @@
+ /*   SIST ENDRET PÅ PROD   2004.01.27 11.28.56 AV   JDA2970          */        
+ /*       SIST ENDRET 20/07-98 13.06.49 AV   JDA7339                  */        
+ /*       SIST ENDRET 06/07-98 11.46.34 AV   JDA7339                  */        
+ /* **************************************************************** */         
+ /*IDENTIFIKASJON:                                                   */         
+ /*    R0014701 - PROSEDYRE I PLI                                    */         
+ /*    PROGRAMMERER: JAN, JUNI 82                                    */         
+ /* **************************************************************** */         
+ /*HENSIKT:                                                          */         
+ /*    BEREGNE ETTERLATTEPENSJON BARN BEGGE FORELDRE DØDE            */         
+ /*PROGRAMTILKNYTNING:                                               */         
+ /*    KALLES OPP AV PROGRAM R0013520                                */         
+ /*BRUK:                                                             */         
+ /*    EXEC CICS XCTL PROGRAM ('R0014701') COMMAREA (KOM_OMR)        */         
+ /* **************************************************************** */         
+ /* REVIDERT 27.4.90 HL                                              */         
+ /* **************************************************************** */         
+ %PAGE;                                                                         
+ REGN_FB:                                                                       
+   PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                        
+ %PAGE;                                                                         
+      %INCLUDE P0011001;                                                        
+      %INCLUDE P0019906;                                                        
+      %INCLUDE P0019908;                                                        
+      %INCLUDE P0019910;                                                        
+      %INCLUDE P0019912;                                                        
+      %INCLUDE P0019924;                                                        
+      %INCLUDE P0014002;                                                        
+      %INCLUDE P0014003;                                                        
+      %INCLUDE P0014009;                                                        
+ %PAGE;                                                                         
+   DCL 1 B01 BASED(B01_PEKER), %INCLUDE P0019921;                               
+   DCL COMMAREA_PEKER PTR;                                                      
+ %PAGE;                                                                         
+   DCL 1 B02 BASED(B02_PEKER), %INCLUDE P0019921;                               
+ %PAGE;                                                                         
+   DCL                                                                          
+      (CSTG,DATE,ROUND,SUBSTR,SUM,ADDR,STRING) BUILTIN;          /*Y2K*/        
+                                                                                
+  DCL W_PENSJON_ETTER                     CHAR     (1),                         
+      W_GP                                DEC FIXED(9,2) INIT (0),              
+      W_TP                                DEC FIXED(7)  INIT (0),               
+      W_BP_GARANTI                        DEC FIXED(7)  INIT (0),               
+      W_GARANTI                           DEC FIXED(7)  INIT (0),               
+      GARANTI_M                           DEC FIXED(7)  INIT (0),               
+      GARANTI_F                           DEC FIXED(7)  INIT (0),               
+      GARANTI_M2                          DEC FIXED(7)  INIT (0),               
+      GARANTI_F2                          DEC FIXED(7)  INIT (0),               
+      GARANTI                             DEC FIXED(7)  INIT (0),               
+      GARANTI_TILLEGG                     DEC FIXED(7)  INIT (0),               
+      W_ST                                DEC FIXED(7)  INIT (0),               
+      W_KT                                DEC FIXED(7)  INIT (0),               
+      W_TP_MOR                            DEC FIXED(7) INIT (0),                
+      W_TP_FAR                            DEC FIXED(7) INIT (0),                
+      W_TP_MF                             DEC FIXED(7) INIT (0),                
+      W_ST_UFØR                           DEC FIXED(7)  INIT (0),               
+      W_KT_UFØR                           DEC FIXED(7)  INIT (0),               
+      W_GP_UFØR                           DEC FIXED(7)  INIT (0),               
+      W_SUM_UFØR                          DEC FIXED(7)  INIT (0),               
+      W_SUM_BP                            DEC FIXED(7)  INIT (0),               
+      W_ANTALL_BARN                       DEC FIXED(3)  INIT (0),               
+      MOR_IND                             FIXED BIN(15),                        
+      FAR_IND                             FIXED BIN(15),                        
+      I                                   FIXED BIN(15),                        
+      FNR                                 PIC '(11)9' INIT (0);                 
+   DCL                                                                          
+    1 FNR_R   DEF FNR POS(1),                                                   
+      2 DAG                   PIC '(2)9',                                       
+      2 MND                   PIC '(2)9',                                       
+      2 ÅR                    PIC '(2)9',                                       
+      2 ÅRHUNDRE              PIC '9',                                          
+      2 FILLER                PIC '(4)9';                                       
+   DCL                                                                          
+    1 FNR_ÅM,                                                                   
+      2 FNR_Å                 PIC '(2)9',                                       
+      2 FNR_M                 PIC '(2)9';                                       
+                                                                                
+   DCL 1 W_FNR13              PIC'(13)9';                        /*Y2K*/        
+   DCL 1 W_FNR_R13 DEF W_FNR13,                                  /*Y2K*/        
+        2 DAG                 PIC '99',                          /*Y2K*/        
+        2 MND                 PIC '99',                          /*Y2K*/        
+        2 ÅR                  PIC '9999',                        /*Y2K*/        
+        2 ÅRHUNDRE            PIC '9',                           /*Y2K*/        
+        2 FILLER              PIC '(4)9';                        /*Y2K*/        
+                                                                                
+   DCL DØDSTP_ÅMD             PIC '(6)9';                                       
+   DCL DØDSTP_ÅR DEF DØDSTP_ÅMD POS(1)      PIC '99';                           
+   DCL DØDSÅR                 FIXED DEC (5);                     /*Y2K*/        
+   /*9708 HL :*/                                                                
+   DCL VIRK_ÅMD               PIC '(8)9'     INIT (0);                          
+   DCL VIRK_ÅM                PIC '(6)9'     DEF VIRK_ÅMD;                      
+   DCL ALDER                  PIC 'S99999'   INIT (0);                          
+   DCL SPT_GARANTI         FIXED DEC (3,2)   INIT (0);                          
+   DCL GARANTI_HØYEST(2)      CHAR (1)       INIT ('N');                        
+                                                                                
+ %PAGE;                                                                         
+ /* ***************************************************************** */        
+ /* PROGRAMMET STARTER HER.                                           */        
+ /* ***************************************************************** */        
+                                                                                
+    MOR_IND  = 1;                                                               
+    FAR_IND  = 2;                                                               
+    VIRK_ÅMD = B02.VIRK_DATO_ÅMD(BER_SØ_IND);                                   
+                                                                                
+    W_GP            = 0;                                                        
+    W_TP_MOR        = 0;                                                        
+    W_TP_FAR        = 0;                                                        
+    W_TP_MF         = 0;                                                        
+    W_GARANTI       = 0;                                                        
+    W_GP_UFØR       = 0;                                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL SOM BEREGNER GRUNNPENSJON FOR BARN1.                         */        
+ /* GP ER ÅRSBELØP OG IKKE DELT PÅ ANTALL BARN, IKKE FORHØYET.        */        
+ /* ***************************************************************** */        
+                                                                                
+    CALL BEREGN_GP_BARN1;                                                       
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL SOM BEREGNER TILLEGGSPENSJON FOR BARN.                       */        
+ /* ***************************************************************** */        
+ /* W_TP ER MÅNEDSBELØP DELT PÅ ANTALL BARN, MEN IKKE FORHØYET.       */        
+ /* ***************************************************************** */        
+                                                                                
+    FNR             = B02.FNR(MOR_IND);                                         
+    W_FNR13 = KONV_FNR11_FNR13(FNR);                             /*Y2K*/        
+    POTALL_OPPL.IND = MOR_IND;                                                  
+                                                                                
+    IF FNR > 0 THEN                                                             
+       DO;                                                                      
+          DØDSÅR    = B02.DØDSDATO_ÅMD(MOR_IND) / 10000;                        
+          CALL BEREGN_TP_BARN                                    /*Y2K*/        
+                       (W_TP_MF,W_FNR_R13.ÅR,POREKKE(MOR_IND)); /*Y2K*/         
+                    /* (W_TP_MOR,W_FNR_R13.ÅR,POREKKE(MOR_IND))*/               
+                                                                                
+          W_TP_MOR  = W_TP_MF;                                                  
+          IF FEIL_MELD_NR > 0  THEN                                             
+             GO TO L999;                                                        
+          ELSE                                                                  
+             PROGRAM_ID = 'R0014701';                                           
+       END;                                                                     
+                                                                                
+    FNR             = B02.FNR(FAR_IND);                                         
+    W_FNR13 = KONV_FNR11_FNR13(FNR);                             /*Y2K*/        
+    POTALL_OPPL.IND = FAR_IND;                                                  
+                                                                                
+    IF FNR > 0 THEN                                                             
+       DO;                                                                      
+          W_TP_MF  = 0;                                                         
+          DØDSÅR    = B02.DØDSDATO_ÅMD(FAR_IND) / 10000;                        
+          CALL BEREGN_TP_BARN(W_TP_MF,W_FNR_R13.ÅR,POREKKE(FAR_IND));           
+                     /* (W_TP_FAR,W_FNR_R13.ÅR,POREKKE(FAR_IND))*/              
+          W_TP_FAR  = W_TP_MF;                                                  
+          IF FEIL_MELD_NR > 0  THEN                                             
+             GO TO L999;                                                        
+          ELSE                                                                  
+             PROGRAM_ID = 'R0014701';                                           
+       END;                                                                     
+                                                                                
+    W_ANTALL_BARN   = B02.ANTALL_BARN(BER_SØ_IND);                              
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM MORENS PENSJON ER MINDRE ENN FARENS PENSJON.               */        
+ /* ***************************************************************** */        
+                                                                                
+  IF B02.FNR(MOR_IND) > 0 & B02.FNR(FAR_IND) > 0 THEN                           
+   DO;                                                                          
+     /* MOREN OG FAREN ER REGISTRERT SOM DØDE */                                
+    IF W_TP_MOR  < W_TP_FAR        THEN                                         
+       DO;                                                                      
+          W_PENSJON_ETTER = 'F';                                                
+          W_TP            = W_TP_FAR / W_ANTALL_BARN + 0.5;                     
+          POTALL_OPPL.IND = FAR_IND;                                            
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* MORENS PENSJON ER STØRST.                                         */        
+ /* ***************************************************************** */        
+                                                                                
+    ELSE                                                                        
+       DO;                                                                      
+          W_PENSJON_ETTER = 'M';                                                
+          W_TP            = W_TP_MOR / W_ANTALL_BARN + 0.5;                     
+          POTALL_OPPL.IND = MOR_IND;                                            
+       END;                                                                     
+   END;                                                                         
+  ELSE                                                                          
+   DO;                                                                          
+     /* MOREN OG ELLER FAREN ER UOPPGITT */                                     
+     IF B02.FNR(MOR_IND) > 0 THEN                                               
+        /* MOREN ER REGISTRERT SOM DØD */                                       
+        DO;                                                                     
+          W_PENSJON_ETTER = 'M';                                                
+          W_TP            = W_TP_MOR / W_ANTALL_BARN + 0.5;                     
+          POTALL_OPPL.IND = MOR_IND;                                            
+        END;                                                                    
+     ELSE                                                                       
+        DO;                                                                     
+          IF B02.FNR(FAR_IND) > 0 THEN                                          
+          /* FAREN ER REGISTRERT SOM DØD */                                     
+             DO;                                                                
+               W_PENSJON_ETTER = 'F';                                           
+               W_TP            = W_TP_FAR / W_ANTALL_BARN + 0.5;                
+               POTALL_OPPL.IND = MOR_IND;                                       
+             END;                                                               
+          ELSE                                                                  
+             DO;  /* INGEN AV FORELDRENE ER KJENT */                            
+                  /* OG VI HAR LAGT PENSJONEN INN I MORENS GP */                
+                W_PENSJON_ETTER = ' ';                                          
+                W_TP            = 0;                                            
+                POTALL_OPPL.IND = MOR_IND;                                      
+             END;                                                               
+        END;                                                                    
+   END;                                                                         
+                                                                                
+   IF GARANTI_HØYEST(MOR_IND) = 'J'       &                                     
+      W_PENSJON_ETTER = 'M'                  THEN                               
+      B02.TP_GAR_KODE(SØKER_IND) = 'E';                                         
+   ELSE                                                                         
+   IF GARANTI_HØYEST(FAR_IND) = 'J'       &                                     
+      W_PENSJON_ETTER = 'F'                  THEN                               
+      B02.TP_GAR_KODE(SØKER_IND) = 'E';                                         
+   ELSE                                                                         
+      B02.TP_GAR_KODE(SØKER_IND) = ' ';                                         
+                                                                                
+ /* ***************************************************************** */        
+ /* F_BEREGN_SÆRTILLEGG_BARN ER EN FUNKSJON SOM BEREGNER SÆRTILLEGG   */        
+ /* FOR BARN.                                                         */        
+ /* ST ER MÅNEDSBELØP DELT PÅ ANTALL BARN OG FORHØYET.                */        
+ /* ***************************************************************** */        
+                                                                                
+    W_ST = F_BEREGN_SÆRTILLEGG_BARN(B02.VIRK_DATO_ÅMD(BER_SØ_IND),              
+   B02.TT_ANV(BER_SØ_IND),W_TP,G,ST_PROSENT_ENSLIG,W_ANTALL_BARN);              
+                                                                                
+ /* ***************************************************************** */        
+ /* F_BEREGN_KOMPENSASJONSTILLEGG ER EN FUNKSJON SOM BEREGNER         */        
+ /* KOMPENSASJONSTILLEGG.                                             */        
+ /* KT ER MÅNEDSBELØP DELT PÅ ANTALL BARN OG FORHØYET.                */        
+ /* ***************************************************************** */        
+                                                                                
+ /* ENDRET 10.02.88 SATISH                                            */        
+ /* W_KT = F_BEREGN_KOMPENSASJONSTILLEGG(                            */         
+ /*                              'Y',TT_ANV_BP,W_ANTALL_BARN,1,'J'); */         
+ /* HIT TIL 10.02.88                                                  */        
+                                                                                
+    W_KT = F_BEREGN_KOMPENSASJONSTILLEGG('B',                                   
+          'P',B02.TT_ANV(BER_SØ_IND),W_ANTALL_BARN,1,'J');                      
+                                                                                
+ /* ***************************************************************** */        
+ /* HVIS BARNA ER BOSATT I UTLANDET SKAL DET IKKE YTES KOMP.TILLEGG.  */        
+ /* DEN ENESTE MULIGHETEN FOR Å TESTE PÅ DETTE, ER Å TESTE MOT TKNR.  */        
+ /* ERIK, 16.3.87.                                                    */        
+ /* ***************************************************************** */        
+                                                                                
+    IF B02.TKNR(BER_SØ_IND) > '2100' THEN                                       
+       DO;                                                                      
+          W_KT = 0 ;                                                            
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM DET ER FLERE ENN ETT BARN I B02                            */        
+ /* ***************************************************************** */        
+                                                                                
+    IF W_ANTALL_BARN > 1 THEN                                                   
+       DO;                                                                      
+          W_GP = W_GP + G * 0.4;                                                
+          IF W_ANTALL_BARN > 2 THEN                                             
+             W_GP = W_GP + G * 0.25 * (W_ANTALL_BARN - 2);                      
+       END;                                                                     
+    W_GP = W_GP / (W_ANTALL_BARN * 12) + 0.5;                                   
+                                                                                
+ /*KOMP.TILLEGGET ENDRET FRA 1.5.91 ( G > 34100 ) */                            
+                                                                                
+  IF G > 34100 THEN                                                             
+     IF W_KT > W_ST THEN                                                        
+        W_KT = W_KT - W_ST;                                                     
+     ELSE                                                                       
+        W_KT = 0;                                                               
+    W_SUM_BP = W_GP + W_TP + W_ST + W_KT;                                       
+                                                                                
+ /* ***************************************************************** */        
+ /* GARANTI-BEREGNINGER.                                              */        
+ /* ***************************************************************** */        
+                                                                                
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM DET ER MINDRE ENN 3 BARN I B02.                            */        
+ /* ***************************************************************** */        
+                                                                                
+    IF W_ANTALL_BARN < 2 THEN                                                   
+          W_BP_GARANTI = 0.4 * G / 12 + 0.5;                                    
+    ELSE                                                                        
+       DO;                                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* ANTALL BARN I B02 ER STØRRE ENN 2.                                */        
+ /* ***************************************************************** */        
+                                                                                
+          W_BP_GARANTI = 0.4 * G * 2;                                           
+          W_BP_GARANTI = W_BP_GARANTI   +                                       
+                         0.25 * G * (W_ANTALL_BARN - 2);                        
+          W_BP_GARANTI = W_BP_GARANTI /                                         
+                         (W_ANTALL_BARN * 12) + 0.5;                            
+       END;                                                                     
+    IF W_SUM_BP < W_BP_GARANTI THEN                                             
+       DO;                                                                      
+          W_GARANTI         = W_BP_GARANTI - W_SUM_BP;                          
+          W_SUM_BP          = W_BP_GARANTI;                                     
+       END;                                                                     
+    ELSE                                                                        
+    IF B02.GT_LOV92(1) > 0        !                                             
+       B02.GT_LOV92(2) > 0        !                                             
+       B02.GT_LOV92(3) > 0          THEN                                        
+       DO;                                                                      
+          FNR       = B02.FNR(MOR_IND);                                         
+          W_FNR13 = KONV_FNR11_FNR13(FNR);                       /*Y2K*/        
+          GARANTI_M = F_TILLEGGSPENSJON(W_FNR_R13.ÅR,35500,                     
+                               B02.SPT_1291_MOR(3),                             
+                               B02.OPT_1291_MOR(3),                             
+                               B02.PÅ_1291_MOR(3),100,55,'J');                  
+          GARANTI_M2 = F_TILLEGGSPENSJON(W_FNR_R13.ÅR,35500,                    
+                               B02.UFØRPENS.SPT_1291(1),                        
+                               B02.UFØRPENS.OPT_1291(1),                        
+                               B02.UFØRPENS.PÅ_1291(1),                         
+                               100,55,'J');                                     
+          IF GARANTI_M2 > GARANTI_M        THEN                                 
+             GARANTI_M = GARANTI_M2;                                            
+          FNR       = B02.FNR(FAR_IND);                                         
+          W_FNR13 = KONV_FNR11_FNR13(FNR);                       /*Y2K*/        
+          GARANTI_F = F_TILLEGGSPENSJON(W_FNR_R13.ÅR,35500,                     
+                               B02.SPT_1291_FAR(3),                             
+                               B02.OPT_1291_FAR(3),                             
+                               B02.PÅ_1291_FAR(3),100,55,'J');                  
+          GARANTI_F2 = F_TILLEGGSPENSJON(W_FNR_R13.ÅR,35500,                    
+                               B02.UFØRPENS.SPT_1291(2),                        
+                               B02.UFØRPENS.OPT_1291(2),                        
+                               B02.UFØRPENS.PÅ_1291(2),                         
+                               100,55,'J');                                     
+          IF GARANTI_F2 > GARANTI_F        THEN                                 
+             GARANTI_F = GARANTI_F2;                                            
+                                                                                
+          IF GARANTI_M > GARANTI_F         THEN                                 
+             GARANTI = GARANTI_M;                                               
+          ELSE                                                                  
+             GARANTI = GARANTI_F;                                               
+                                                                                
+          GARANTI   =  GARANTI/ W_ANTALL_BARN  + 0.5;                           
+          IF GARANTI >  W_TP                  THEN                              
+             DO;                                                                
+                GARANTI_TILLEGG =  GARANTI - W_TP;                              
+                IF W_ST > GARANTI_TILLEGG     THEN                              
+                   W_ST = W_ST - GARANTI_TILLEGG;                               
+                ELSE                                                            
+                   DO;                                                          
+                      W_SUM_BP = W_SUM_BP + GARANTI_TILLEGG - W_ST;             
+                      W_ST = 0;                                                 
+                   END;                                                         
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+                GARANTI = 0;                                                    
+                GARANTI_TILLEGG = 0;                                            
+             END;                                                               
+                                                                                
+       END;                                                                     
+    DO I = 3 TO 14;                                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM BARNET HAR BARNEPENSJON                                    */        
+ /* ***************************************************************** */        
+                                                                                
+       IF B02.PENSJONSTYPE1 (I) = 'B' THEN                                      
+          DO;                                                                   
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM BARNET ER ETTERLATT MED UFØREPENSJON                       */        
+ /* ***************************************************************** */        
+                                                                                
+             IF B02.PENSJONSTYPE3(I) = 'U' THEN                                 
+                DO;                                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* SYSTEMET KAN IKKE BEREGNE TILLEGGSPENSJON I SLIKE TILFELLE,       */        
+ /* MELDING PÅ STØNADSBREVET OM DETTE.                                */        
+ /* ***************************************************************** */        
+                                                                                
+                    CALL BEREGN_GP_UFØR_ETTERLATT_BARN( I,                      
+                                             B02.TT_ANV(I), W_GP_UFØR);         
+                    W_ST_UFØR   = F_BEREGN_SÆRTILLEGG_BARN(                     
+                                             B02.VIRK_DATO_ÅMD(I),              
+                                             B02.TT_ANV(I),                     
+                                             0,G,ST_PROSENT_ENSLIG,1);          
+   /*  ENDRET 15.03.88  SATISH                                       */         
+   /*               W_KT_UFØR   = F_BEREGN_KOMPENSASJONSTILLEGG('Y', */         
+   /*                                         B02.TT_ANV(I),         */         
+   /*                                         1,1,'J');              */         
+   /*  HITTIL 15.03.88                                               */         
+                    W_KT_UFØR   = F_BEREGN_KOMPENSASJONSTILLEGG('B',            
+                                          'P',B02.TT_ANV(I),                    
+                                              1,1,'J');                         
+ /*KOMP.TILLEGGET ENDRET FRA 1.5.91 ( G > 34100 ) */                            
+                                                                                
+  IF G > 34100 THEN                                                             
+     IF W_KT_UFØR > W_ST_UFØR THEN                                              
+        W_KT_UFØR = W_KT_UFØR - W_ST_UFØR;                                      
+     ELSE                                                                       
+        W_KT_UFØR = 0;                                                          
+                    W_SUM_UFØR  =  W_GP_UFØR                                    
+                                   + W_ST_UFØR                                  
+                                   + W_KT_UFØR;                                 
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM YTELSENE FOR UFØR ER W_STØRRE ENN SOM ETTERLATT BARN.      */        
+ /* ***************************************************************** */        
+                                                                                
+                    IF W_SUM_UFØR > W_SUM_BP THEN                               
+                       DO;                                                      
+                          B02.UFØRPENS.GP  (I) = W_GP_UFØR;                     
+                          B02.UFØRPENS.ST  (I) = W_ST_UFØR;                     
+                          B02.UFØRPENS.KT  (I) = W_KT_UFØR;                     
+                          B02.SUM_YTELSE   (I) = W_SUM_UFØR;                    
+                                                                                
+ /* **************************************************************** */         
+ /* ETTEBARN-SEGMENTET NULLES                                        */         
+ /* **************************************************************** */         
+                                                                                
+                          B02.ETTEBARN(I) = '';                                 
+                       END;                                                     
+                    ELSE                                                        
+                       DO;                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* GARANTITILLEGGET LEGGES INN SOM GP.                               */        
+ /* ***************************************************************** */        
+                                                                                
+                          B02.PENSJON_ETTER(I) = W_PENSJON_ETTER;               
+                          B02.ETTEBARN.GP (I) = W_GP + W_GARANTI;               
+                          B02.ETTEBARN.TP (I) = W_TP;                           
+                          B02.ETTEBARN.ST (I) = W_ST;                           
+                          B02.ETTEBARN.KT (I) = W_KT;                           
+                          B02.SUM_YTELSE  (I) = W_SUM_BP;                       
+                          B02.SPT_MOR     (I) = POREKKE.SPT(MOR_IND);           
+                          B02.OPT_MOR     (I) = POREKKE.OPT(MOR_IND);           
+                          B02.PÅ_MOR      (I) = POREKKE.PÅ (MOR_IND);           
+                 B02.PÅ_ETTER91_MOR(I) = POREKKE.PÅ_ETTER91(MOR_IND);           
+                          B02.SPT_FAR     (I) = POREKKE.SPT(FAR_IND);           
+                          B02.OPT_FAR     (I) = POREKKE.OPT(FAR_IND);           
+                          B02.PÅ_FAR      (I) = POREKKE.PÅ (FAR_IND);           
+                 B02.PÅ_ETTER91_FAR(I) = POREKKE.PÅ_ETTER91(FAR_IND);           
+                       END;                                                     
+                 END;                                                           
+              ELSE                                                              
+                 DO;                                                            
+                                                                                
+ /* ***************************************************************** */        
+ /* GARANTITILLEGGET LEGGES INN SOM GP.                               */        
+ /* ***************************************************************** */        
+                                                                                
+                    B02.PENSJON_ETTER(I) = W_PENSJON_ETTER;                     
+                    B02.ETTEBARN.GP (I) = W_GP + W_GARANTI;                     
+                    B02.ETTEBARN.TP (I) = W_TP;                                 
+                    B02.ETTEBARN.ST (I) = W_ST;                                 
+                    B02.ETTEBARN.KT (I) = W_KT;                                 
+                          B02.GT_LOV92    (I) = GARANTI;                        
+                    B02.GT_TILLEGG_LOV92  (I) = GARANTI_TILLEGG;                
+                    B02.SUM_YTELSE  (I) = W_SUM_BP;                             
+                    B02.SPT_MOR     (I) = POREKKE.SPT(MOR_IND);                 
+                    B02.OPT_MOR     (I) = POREKKE.OPT(MOR_IND);                 
+                    B02.PÅ_MOR      (I) = POREKKE.PÅ (MOR_IND);                 
+                 B02.PÅ_ETTER91_MOR(I) = POREKKE.PÅ_ETTER91(MOR_IND);           
+                    B02.SPT_FAR     (I) = POREKKE.SPT(FAR_IND);                 
+                    B02.OPT_FAR     (I) = POREKKE.OPT(FAR_IND);                 
+                    B02.PÅ_FAR      (I) = POREKKE.PÅ (FAR_IND);                 
+                 B02.PÅ_ETTER91_FAR(I) = POREKKE.PÅ_ETTER91(FAR_IND);           
+                 END;                                                           
+          END;                                                                  
+    END;                                                                        
+                                                                                
+ L999:                                                                          
+                                                                                
+ EXEC CICS RETURN;                                                              
+                                                                                
+        %INCLUDE R0014142; /* F_TILLEGGSPENSJON */                              
+        %INCLUDE R0014148; /* F_TP92            */                              
+        %INCLUDE R0014721;                                                      
+        %INCLUDE R0014722;                                                      
+        %INCLUDE R0014723;                                                      
+        %INCLUDE R0014724;                                                      
+        %INCLUDE R0014134;                                                      
+        %INCLUDE R0014145;                                                      
+        %INCLUDE R0014199;/*  SPT_GARANTI_E      */                             
+        %INCLUDE R0019905;/*  F_ALDER            */                             
+        %INCLUDE R0019995;/*  KONV_FNR11_FNR13   */              /*Y2K*/        
+   END REGN_FB;                                                                 

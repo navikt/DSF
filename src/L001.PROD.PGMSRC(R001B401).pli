@@ -1,0 +1,202 @@
+ /*   SIST ENDRET PÅ PROD   2001.10.22 12.55.05 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.11.14 14.07.36 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 13.13.57 AV   JDA7339          */        
+ /*       SIST ENDRET 09/06-98 08.39.50 AV   SPA7339                  */        
+ R01B401:                                                                       
+   PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                          
+ %SKIP;                                /*  */                                   
+ /****************PROGRAM ER DEL AV R0010401************************* */        
+ /*IDENTIFIKASJON:                                                    */        
+ /************************                                            */        
+ /*  PROGRAM-IDENT : R001B401-REGISTRERING NYE BLANKETTER-HOVEDPROGR. */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : ?                                                */        
+ /*  PROGRAMMET BLE DELET AV  : PATHAK                                */        
+ /*  ENDRINGERSDATO :                                                 */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */        
+ /*                                                                   */        
+ /******************************************************************* */        
+ /*HENSIKT:*/                                                                   
+ /************                                                        */        
+ /*  PROGRAMMET ER DEL AV R0010401                                    */        
+ /*  PROGRAMMET LESER INN STYRINGSKODEN, KONTROLLERER DEN             */        
+ /*  OG SENDER UT DET FØRSTE BILDET AV DEN BLANKETTEN SOM SKAL        */        
+ /*  REGISTRERES:                                                     */        
+ /*    A1 ---> MAP S001N51 MAPSET S001N53 - GRBL. ALDERSPENSJON       */        
+ /*    U2 ---> MAP S001N61 MAPSET S001N63 - GRBL. UFØREPENSJON        */        
+ /*    E3 ---> MAP S001N81 MAPSET S001N83 - GRBL. ETTERL. EF.   NY    */        
+ /*    E4 ---> MAP S001N91 MAPSET S001N93 - GRBL. ETTERL.FAM.PLEIER NY*/        
+ /*    F5 ---> MAP S001NA1 MAPSET S001NA3 - GRBL. FORELDREL. BARN-NY  */        
+ /*    B6 ---> MAP S001NB1 MAPSET S001NB3 - GRBL. ETTERLATTE BARN-NY  */        
+ /*                                                                   */        
+ /******************************************************************* */        
+ /*PROGRAMTILKNYTTING:*/                                                        
+ /**********************                                              */        
+ /*  PROGRAMMET BLIR AKTIVISERT FRA CICS MED TRANSID = R040 OG R041.  */        
+ /*  R040: KONTROLLEN KOMMER FRA R0010301                             */        
+ /*  R041: KONTROLLEN KOMMER FRA                                      */        
+ /*  PROGRAMMET GÅR VIA CICS TIL FORSKJELLIGE PROGRAMMER AVHENGIG     */        
+ /*  HVILKEN STYRINGSKODE SOM BLIR SATT AV OPERATØREN ELLER           */        
+ /*  ETTER BLANKETTKONTROLLEN TRANSKODE SATT AV PROGRAMMENE:          */        
+ /*  A1 - ALDERSPENSJON    - RN50 - R001N501                          */        
+ /*  U2 - UFØREPENSJON     - RN60 - R001N601                          */        
+ /*  E3 - ETTERLATT EK     - RN80 - R001N801                          */        
+ /*  E4 - ETTERLATT FP     - RN90 - R001N901                          */        
+ /*  F5 - FORELDRELØSE BARN- RNA0 - R001NA01                          */        
+ /*  B6 - ETTERLATTE  BARN - RNB0 - R001NB01                          */        
+ /*                                                                   */        
+ /******************************************************************* */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /*************************                                           */        
+ /*  DET BLIR IKKE BRUKT NOEN DATASETT I DETTE PROGRAMMET             */        
+ /*                                                                   */        
+ /******************************************************************* */        
+ /*FEILMELDINGER:*/                                                             
+ /*********************                                               */        
+ /* 'UGYLDIG STYREKODE' BLIR SKREVET PÅ SKJERMBILDET NÅR STYRINGSKODE */        
+ /*  IKKE HAR GYLDIG VERDI                                            */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+      %INCLUDE S00101;     /*  MENY            */                               
+ %PAGE;                                                                         
+      %INCLUDE S001N5;     /*  ALDER MAPSETTET */                               
+ %PAGE;                                                                         
+      %INCLUDE S001N6;     /*  UFØRE MAPSETTET */                               
+ %PAGE;                                                                         
+      %INCLUDE S001N8;     /*  ETTERLATT EKTEFELLE MAPSETTET  */                
+ %PAGE;                                                                         
+      %INCLUDE S001N9;     /*  ETTERLATT FAMILIEPLEIER MAPSETTET   */           
+ %PAGE;                                                                         
+   /* %INCLUDE S001NA;         FORELDRELØSE BARN MAPSETTET    */                
+ %PAGE;                                                                         
+      %INCLUDE S001NB;     /*  ETTERLATTE BARN MAPSETTET      */                
+      %INCLUDE S001NC;     /*                                 */                
+ %PAGE;                                                                         
+ %PAGE;                                                                         
+      %INCLUDE P0019906;   /*  TRANS_OPPL_OMRÅDE  (BASED) */                    
+ %PAGE;                                                                         
+      %INCLUDE P0019908;   /*  KOM_OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+      %INCLUDE P0019910;   /*  STYRINGS_OMRÅDE (BASED) */                       
+ %PAGE;                                                                         
+      %INCLUDE P0019912;   /*  DIV_PARAM_OMRÅDE (BASED) */                      
+ %PAGE;                                                                         
+      %INCLUDE DFHBMSCA;   /*  MAP HJELPEFELT           */                      
+ %PAGE;                                                                         
+   DCL                                                                          
+      (COMMAREA_PEKER,IDENT_PEKER,                                              
+      BMSMAPBR)      PTR;                                                       
+   DCL                                                                          
+      IDENT_BIT BIT(32) BASED (IDENT_PEKER);                                    
+   DCL   W_TERMINAL   CHAR (4);                                                 
+   DCL                                                                          
+      (NULL,CSTG,ADDR,SUBSTR,STG) BUILTIN;                                      
+   DCL DATO     PIC '(6)9' INIT (0);                                            
+                                                                                
+      DATO   =   KONV_HÅMD_ÅMD(DIV_PARAM_OMR.DATO_2000);                        
+      W_TERMINAL =  DIV_PARAM_OMR.TERMINAL_NR;                                  
+ /*   DIV_PARAM_OMR.TERMINAL_NR = W_TERMINAL;  */                               
+      SELECT(STYREKODE);                                                        
+         WHEN('A1')                                                             
+            DO;                                                                 
+               TRANSKODE = 'RN50';                                              
+               ALLOCATE S001N51O ;                                              
+               S001N51O.REGDATOO = DATO;                                        
+               S001N51O.TERMIDO    = W_TERMINAL;                                
+               S001N51O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                  
+                                                                                
+               /* SKRIVER REGISTRERINGSBILDE FOR GRUNNBLANKETT */               
+               /* ALDERSPENSJON                                */               
+               EXEC CICS SEND MAP('S001N51') MAPSET('S001N53')                  
+                                             ERASE;                             
+            END;                                                                
+         WHEN('U2')                                                             
+            DO;                                                                 
+               TRANSKODE = 'RN60';                                              
+               ALLOCATE S001N61O ;                                              
+               S001N61O.REGDATOO = DATO;                                        
+               S001N61O.TERMIDO    = W_TERMINAL;                                
+               S001N61O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                  
+                                                                                
+               /* SKRIVER REGISTRERINGSBILDE FOR GRUNNBLANKETT */               
+               /* UFØREPENSJON                                 */               
+               EXEC CICS SEND MAP('S001N61') MAPSET('S001N63')                  
+                                             ERASE;                             
+            END;                                                                
+         WHEN('E3')                                                             
+            DO;                                                                 
+               TRANSKODE = 'RN80';                                              
+               ALLOCATE S001N81O ;                                              
+               S001N81O.REGDATOO = DATO;                                        
+               S001N81O.TERMIDO    = W_TERMINAL;                                
+               S001N81O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                  
+                                                                                
+               /* SKRIVER REGISTRERINGSBILDE FOR GRUNNBLANKETT */               
+               /* ETTERLATT EKTEFELLE                                */         
+               EXEC CICS SEND MAP('S001N81') MAPSET('S001N83')                  
+                                             ERASE ;                            
+            END;                                                                
+         WHEN('E4')                                                             
+            DO;                                                                 
+               TRANSKODE = 'RN90';                                              
+               ALLOCATE S001N91O ;                                              
+               S001N91O.REGDATOO = DATO;                                        
+               S001N91O.TERMIDO    = W_TERMINAL;                                
+               S001N91O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                  
+                                                                                
+               /* SKRIVER REGISTRERINGSBILDE FOR GRUNNBLANKETT */               
+               /* ETTERLATT FAMILIEPLEIER                            */         
+               EXEC CICS SEND MAP('S001N91') MAPSET('S001N93')                  
+                                             ERASE ;                            
+            END;                                                                
+   /*    WHEN('F5')                                                             
+            DO;                                                                 
+               TRANSKODE = 'RNA0';                                              
+               ALLOCATE S001NA1O ;                                              
+               S001NA1O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                  
+                                                                                
+                                                                                
+                                                                                
+               EXEC CICS SEND MAP('S001NA1') MAPSET('S001NA3')                  
+                                             ERASE ;                            
+            END;                                         */                     
+         WHEN('B6')                                                             
+            DO;                                                                 
+               TRANSKODE = 'RNB0';                                              
+               ALLOCATE S001NB1O ;                                              
+               S001NB1O.TERMIDO    = W_TERMINAL;                                
+               S001NB1O.REGDATOO   = DATO;                                      
+               S001NB1O.TERMIDO    = W_TERMINAL;                                
+               S001NB1O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                  
+                                                                                
+               /* SKRIVER REGISTRERINGSBILDE FOR GRUNNBLANKETT */               
+               /* ETTERLATTE BARN, EN AV FORELDRENE ER DØDE          */         
+               EXEC CICS SEND MAP('S001NB1') MAPSET('S001NB3')                  
+                                             ERASE ;                            
+            END;                                                                
+         WHEN('F7')                                                             
+            DO;                                                                 
+               TRANSKODE = 'RNC0';                                              
+               ALLOCATE S001NC1O ;                                              
+               S001NC1O.REGDATOO = DATO;                                        
+               S001NC1O.TERMIDO    = W_TERMINAL;                                
+               S001NC1O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                  
+                                                                                
+               /* SKRIVER REGISTRERINGSBILDE FOR GRUNNBLANKETT */               
+               /* FORSØRGINGTILLEGG                                  */         
+               EXEC CICS SEND MAP('S001NC1') MAPSET('S001NC3')                  
+                                             ERASE ;                            
+            END;                                                                
+         OTHERWISE                                                              
+            DO;                                                                 
+               TRANSKODE = 'R040';                                              
+               RETURN                  ;                                        
+            END;                                                                
+      END;                                                                      
+                                                                                
+      EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);                    
+                                                                                
+  %INCLUDE R0019988;                /* KONV_HÅMD_ÅMD   */                       
+                                                                                
+ END R01B401;                                                                   

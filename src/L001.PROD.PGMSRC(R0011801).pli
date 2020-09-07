@@ -1,0 +1,308 @@
+ /*   SIST ENDRET PÅ PROD   2004.10.07 14.27.05 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.14 13.02.35 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.09.19 12.55.35 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.08.22 13.41.40 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.08.13 10.19.02 AV   JDA2970          */        
+  /* **************************************************************** */        
+ /*  DENNE PROGRAM ER ENDRET OG DELT I TO PROGRAM                     */        
+ /*   1. AUTO KJøRING FRA DATASET (AUSTART)    R0019A01               */        
+ /*   2. ATUO KJøRING FOR ENKELT FNR                                  */        
+ /*      DENNE PROGRAM FOR ENKELT FNR                                 */        
+ /*                                                                   */        
+ /*                                                                   */        
+  /* **************************************************************** */        
+  /*IDENTIFIKASJON:                                                   */        
+  /*     R0011801 - HOVEDPROGRAM I CICS/PLI                           */        
+  /*                                                                  */        
+  /*PROGRAMMERER:                                                     */        
+  /*     KRISTENSEN, NOVEMBER 1982                                    */        
+  /*                                                                  */        
+  /*HENSIKT:                                                          */        
+  /*     INNEHOLDER STYREPROGRAM FOR STYRT - AUTOHENDELSE             */        
+  /*                                                                  */        
+  /*PROGRAMTILKNYNING:                                                */        
+  /*     BLIR AKTIVISERT FRA CICS MED TRANSID 'R180'                  */        
+  /*                                                                  */        
+  /*BRUK:                                                             */        
+  /*     EXEC CICS RETURN TRANSID('R180') COMMAREA(KOM_OMR);          */        
+  /*     EXEC CICS LINK   PROG('R0012002') COMMAREA(KOM_OMR);         */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+                                                                                
+                                                                                
+ R00118:                                                                        
+   PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                          
+ %PAGE;                                                                         
+      %INCLUDE S00118;                 /* AU-MAPSETTET   */                     
+ %PAGE;                                                                         
+      %INCLUDE P0011801;               /* TRANS-OMR FOR STYRT AUTOHE.*/         
+ %PAGE;                                                                         
+      %INCLUDE P0019906;               /* TRANS_OPPL_OMR (BASED) */             
+ %PAGE;                                                                         
+      %INCLUDE P0019908;               /* KOM_OMRÅDE (BASED) */                 
+ %PAGE;                                                                         
+      %INCLUDE P0019910;               /* STYRINGS_OMRÅDE (BASED) */            
+ %PAGE;                                                                         
+      %INCLUDE P0019912;               /*  DIV_OMRÅDE (BASED)      */           
+ %PAGE;                                                                         
+      %INCLUDE DFHBMSCA;                                                        
+ %PAGE;                                                                         
+   DCL                                                                          
+      (BMSMAPBR,                                                                
+      COMMAREA_PEKER) PTR;                                                      
+   DCL                                                                          
+      (CSTG,                                                                    
+      ADDR,                                                                     
+      VERIFY,                                                                   
+      UNSPEC,                                                                   
+      ONCODE,                                                                   
+      STG,                                                                      
+      SUBSTR) BUILTIN;                                                          
+                                                                                
+   DCL SYSPRINT EXTERNAL FILE;                                                  
+                                                                                
+   DCL 01 FEIL_MELD,                                                            
+          02 FEIL               CHAR(61);                                       
+   DCL                                                                          
+      FEIL_FUNNET                 BIT(1),                                       
+      ONKODE                      PIC'9999',                                    
+      CURSOR_POS                  FIXED BIN(15) INIT(-1),                       
+      ONK DEF ONKODE              CHAR(4),                                      
+      FEILKODE                    CHAR(4),                                      
+      DSNAVN                      CHAR(8),                                      
+      ANT_FEIL_SKREVET        FIXED DEC (3)  INIT (0);                          
+    DCL  START_TID        PIC '99B99B99';                                       
+ %PAGE;                                                                         
+      ON ERROR SNAP BEGIN       ;                                               
+         ON ERROR SYSTEM        ;                                               
+         ONKODE=ONCODE          ;                                               
+         FEILKODE = ONK         ;                                               
+         DSNAVN   = EIBDS       ;                                               
+         GO TO FEILBEH          ;                                               
+      END;                                                                      
+                                                                                
+ FEILKODE  = 'FEIL'     ;                                                       
+ DSNAVN    = '      '   ;                                                       
+ ACF2_AUTO        = ' ';                                                        
+                                                                                
+ EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                                     
+ /*                                                                             
+ EXEC CICS HANDLE AID PF14(PF14) PF15(PF15) PF12(PF12);                         
+ */                                                                             
+ KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);            
+                                                                                
+ IF FRA_CICS THEN                                                               
+  DO;                                                                           
+    KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);        
+    KOM_OMR.PEKER_LISTE.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);             
+    KOM_OMR.PEKER_LISTE.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);          
+    ATK_KOM_PTR           = ADDR  (KOM_OMR.ATK_COM_OMR  ) ;                     
+  END;                                                                          
+                                                                                
+ IF HENT_FRAM_MAP  THEN                                                         
+   DO;                                                                          
+     EXEC CICS SEND MAP('S001181') MAPSET('S001183') MAPONLY                    
+     SET (BMSMAPBR);                                                            
+     ALLOCATE S001181O;                                                         
+     S001181O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN;                             
+   END;                                                                         
+                                                                                
+ RECEIVE_MAP:                                                                   
+                                                                                
+ IF ^ HENT_FRAM_MAP THEN                                                        
+   DO;                                                                          
+       EXEC CICS RECEIVE MAP('S001181')                                         
+                      MAPSET('S001183') SET(BMSMAPBR);                          
+       FEIL_MELD_NR = 0    ;                                                    
+       CALL BLANK_AU_MELDNR;                                                    
+                                                                                
+   END;                                                                         
+                                                                                
+ IF FUNKSJONSKODEL > 0 THEN                                                     
+    DO;                                                                         
+       FUNKSJONSKODE = FUNKSJONSKODEI;                                          
+       EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);                    
+    END;                                                                        
+                                                                                
+ /*IF STYRE_KODEL > 0 THEN                                                      
+  *  DO;                                                                        
+  *     STYREKODE = STYRE_KODEI;                                                
+  *     TRANSKODE = 'R041';                                                     
+  *     EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);                   
+  *  END;                                                                       
+  */                                                                            
+ IF STYREKODE ^= 'AU'  &  FRA_CICS THEN                                         
+    TRANSKODE = 'R031';                                                         
+                                                                                
+ ELSE                                                                           
+                                                                                
+  DO;                                                                           
+   TRANS_RETURKODE  = TRANSKODE;                                                
+                                                                                
+            SELECT (TRANSKODE);                                                 
+               WHEN('R180')                                                     
+                  DO;                                                           
+                     CALL BLANK_AU_MELDNR;                                      
+                     CALL BLANK_AU_SØKER;                                       
+                     CALL OVERFØR_AU_SØKER;                                     
+                     CALL KONTROLLER_AU_SØKER(FEIL_FUNNET);                     
+                  END;                                                          
+               WHEN('R181')                                                     
+                  DO;                                                           
+                     CALL BLANK_AU_MELDNR;                                      
+                     CALL OVERFØR_AU_SØKER;                                     
+                     CALL KONTROLLER_AU_SØKER(FEIL_FUNNET);                     
+                  END;                                                          
+               OTHERWISE                                                        
+                  ;                                                             
+ /* INGEN UTGANG DA CICS IKKE GODTAR UGYLDIGE TRANSAKSJONSKODER */              
+            END;                                                                
+                                                                                
+    FEIL_BEH:                                                                   
+            IF FEIL_FUNNET ! HENT_FRAM_MAP ! FRA_UTEN_DIALOG !                  
+            TRANS_RETURKODE ^= TRANSKODE THEN                                   
+                                                                                
+               DO;                                                              
+                  IF TRANSKODE = 'R180' THEN                                    
+                     TRANSKODE = 'R181';                                        
+                  CALL BLANK_AU_MAP;                                            
+                  CALL OVERFØR_AUSØKER_MAP;                                     
+                                                                                
+                IF HENT_FRAM_MAP THEN                                           
+                  EXEC CICS SEND MAP('S001181') MAPSET('S001183')               
+                  ERASE CURSOR;                                                 
+                ELSE                                                            
+                  EXEC CICS SEND MAP('S001181') MAPSET('S001183')               
+                  DATAONLY ERASEAUP CURSOR;                                     
+                  HENT_FRAM_MAP = '0'B;                                         
+                                                                                
+                IF  FRA_CICS THEN                                               
+                  EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);        
+                ELSE                                                            
+                  GOTO RECEIVE_MAP;                                             
+                                                                                
+               END;                                                             
+                                                                                
+            ELSE                                                                
+                                                                                
+              DO;                                                               
+                                                                                
+                IF TRANSKODE = 'R180' THEN                                      
+                  TRANS_RETURKODE = 'R181';                                     
+                ELSE                                                            
+                  TRANS_RETURKODE = TRANSKODE;                                  
+                IF  FRA_CICS  THEN                                              
+                  DO;                                                           
+                    BLANKETTYPE = STYREKODE;                                    
+                    TRANSKODE = 'R200';                                         
+                  END;                                                          
+              END;                                                              
+                                                                                
+  END;                                                                          
+                                                                                
+  CALL UTGANG;                                                                  
+                                                                                
+  UTGANG: PROC;                                                                 
+    IF  FRA_CICS THEN                                                           
+      EXEC CICS XCTL PROGRAM('R0012001') COMMAREA(KOM_OMR);                     
+    ELSE                                                                        
+      EXEC CICS RETURN;                                                         
+  END UTGANG;                                                                   
+                                                                                
+  FEILBEH:                                                                      
+                                                                                
+                                                                                
+      FEIL_MELD.FEIL  =   AUS.FNR !!'     MED SYSTEM FEIL ' ;                   
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+                                                                                
+      FEIL_MELD.FEIL  = ' ONKODE ' !! ONCODE ;                                  
+                                ;                                               
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+                                ;                                               
+      FEIL_MELD.FEIL  = ' FEILKODE  ' !! ONK ;                                  
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+                                                                                
+      FEIL_MELD.FEIL  = ' DSNAVN    ' !! EIBDS  ;                               
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+                                                                                
+                                                                                
+     EXEC CICS HANDLE CONDITION ERROR(ABEND);                                   
+     IF FEIL_MELD_NR = 0 THEN /* AB 01.08.16 */                                 
+        PROGRAM_ID = 'R0011801';                                                
+                                                                                
+     S001181O.MELDING2O =                                                       
+              'F E I L  H A R  O P P S T Å T T ! ! !.';                         
+                                                                                
+      FEIL_MELD.FEIL  =        S001181O.MELDING2O;                              
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+     S001181O.MELDING3O =                                                       
+              'EIBRCODE : ' !! UNSPEC(EIBRCODE);                                
+                                                                                
+      FEIL_MELD.FEIL  =        S001181O.MELDING3O;                              
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+     S001181O.MELDING4O =                                                       
+          'EIBFN    : ' !! UNSPEC(EIBFN) !! '. FEILKODE : ' !! FEILKODE         
+                                         !! '. DATASETT : ' !! DSNAVN;          
+      FEIL_MELD.FEIL  =        S001181O.MELDING4O;                              
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+                                                                                
+     S001181O.MELDING5O =                                                       
+                   'PROGRAMNAVN :  ' !! PROGRAM_ID    !!                        
+                   '.INGEN OPPDATERING ER BLITT UTFØRT.';                       
+                                                                                
+      FEIL_MELD.FEIL  =        S001181O.MELDING5O;                              
+      EXEC CICS WRITE DATASET ('OMRFEIL')                                       
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+                                                                                
+     S001181O.MELDING6O =                                                       
+                   'TA UTSKRIFT!!!. TRYKK DERETTER "ENTER".';                   
+                                                                                
+                                                                                
+     EXEC CICS SEND MAP('S001181')                                              
+                                                 MAPSET('S001183');             
+                                                                                
+     EXEC CICS RECEIVE MAP('S001181')                                           
+                                    MAPSET('S001183') SET(BMSMAPBR);            
+                                                                                
+                                                                                
+     EXEC CICS SYNCPOINT ROLLBACK;                                              
+                                                                                
+                                                                                
+     TERMINERINGS_IND = 'F';                                                    
+                                                                                
+     TRANSKODE  = 'R031';                                                       
+     EXEC CICS RETURN;                                                          
+   /*CALL UTGANG;    */                                                         
+                                                                                
+                                                                                
+                                                                                
+  ABEND:                                                                        
+    EXEC CICS ABEND ABCODE(FEIL);                                               
+ %PAGE;                                                                         
+      %INCLUDE R0011802;               /* BLANK  ARBEIDSOMRÅDE      */          
+ %PAGE;                                                                         
+      %INCLUDE R0011803;               /* KONTROLL AV SØKERDELEN    */          
+ %PAGE;                                                                         
+      %INCLUDE R0011806;               /* ARBEIDSOMRÅDE -> MAP      */          
+ %PAGE;                                                                         
+      %INCLUDE R0011809;               /* MAP -> ARBEIDSOMRÅDE      */          
+ %PAGE;                                                                         
+      %INCLUDE R0019904;               /* FØDSELSNUMMERKONTROLL     */          
+ %PAGE;                                                                         
+      %INCLUDE R0019910;               /* NUMERISK KONTROLL         */          
+ %PAGE;                                                                         
+      %INCLUDE R0019912;               /* KONVERTERING CHAR ==> PIC /           
+                                          PIC ==> CHAR              */          
+ %PAGE;                                                                         
+      %INCLUDE R0019944;               /* SKRIV_FEIL      */                    
+      %INCLUDE R0019945;               /* ATK_TILLGANG_KONTROLL   */            
+      %INCLUDE R0019999;               /* KONTROLL_ACF2           */            
+                                                                                
+   END R00118;                                                                  

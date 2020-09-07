@@ -1,0 +1,297 @@
+ /*   SIST ENDRET PÅ PROD   2004.03.16 13.59.30 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 13.30.12 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.10.30  8.55.48 AV   JDA2970          */        
+ /*       SIST ENDRET 09/06-98 08.30.23 AV   SPA7339                  */        
+ /*       SIST ENDRET 20/05-98 11.23.19 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /*               R 0 0 1 N 6 0 5                                     */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R001N605   KONTROLL_U2_SPES   SUBPROGRAM         */        
+ /*  PROGRAM-SPRÅK : PLI                                              */        
+ /*  PROGRAMMERER  : JAN Y. DYBVIK                                    */        
+ /*  PROGRAMMET BLE LAGET : NOV.  1990                                */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  KONTROLLERER GRUNNBLANKETT U2 - DEN SPESIELLE DEL.               */        
+ /*  RETURNERER FEIL_FUNNET = '1'B VED FEIL, ELLERS '0'B.             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMET INCLUDES AV R001N601 - KONTROLL_GRUNNBLANKETT_U2      */        
+ /*  ARBEIDSOMRÅDET P001N601 ER INCLUDET I HOVEDPROG.                 */        
+ /*  BRUK :                                                           */        
+ /*      CALL KONTROLL_U2_SPES(FEIL_FUNNET);                          */        
+ /*                                                                   */        
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN INCLUDES I HOVEDPROG :       */        
+ /*      R0019910 - F_NUMERISK                                        */        
+ /*      R0019912 - F_FELT_PIC_CHARNN                                 */        
+ /*      VERIFY   - BUILTIN-FUNCTION                                  */        
+ /*                                                                   */        
+ /*  EKSTERN PROSEDYRE SOM CALLES :                                   */        
+ /*      R0010608 - TT_U2_EP     (INCLUDE I HOVEDPROG)                */        
+ /*                                                                   */        
+ /*  INTERNE PROSEDYRER :                                             */        
+ /*      KONTROLL_U2_SPES(FEIL_FUNNET)                                */        
+ /*      SJEKK_TT_NUMERISK                                            */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*   STATTAB - STATSBORGERSKAPSTABELL - EXEC CICS READ DATASET       */        
+ /*                                      ('STATTAB')........          */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */        
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */        
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDINGER PÅ SKJERMBILDET.   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ KONTROLL_U2_SPES:                                                              
+   PROC(FEIL_FUNNET);                                                           
+                                                                                
+   DCL                                                                          
+      FEIL_FUNNET         BIT(1);                                               
+   DCL                                                                          
+      KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),                    
+      KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),                    
+      KEY_PEKER1                 POINTER,                                       
+      KEY_PEKER2                 POINTER,                                       
+      ST_RECL                    CHAR (35);                                     
+                                                                                
+   DCL   FNR13               PIC'(13)9';                                        
+                                                                                
+   DCL   F_AAR   DEF FNR13 POS(5)   PIC'(4)9';                                  
+                                                                                
+   DCL T_FNR               PIC'(11)9';                                          
+    DCL                                                                         
+       1 FNR DEF T_FNR,                                                         
+          2 DG             PIC'99',                                             
+          2 MN             PIC'99',                                             
+          2 ÅR             PIC'99',                                             
+          2 PERSNR,                                                             
+             3 ÅRHUNDRE    PIC'999',                                            
+             3 REST        PIC'99';                                             
+   DCL                                                                          
+      FYLT_SEKSTISJU      PIC'(6)9',                                            
+      FYLT_SYTTI          PIC'(6)9';                                            
+   DCL                                                                          
+      HJ_UFT_ÅMD          PIC'(8)9',                                            
+      HJ_UFT_Å DEF HJ_UFT_ÅMD POS(1)   PIC'9999',                               
+      HJ_UFT_M DEF HJ_UFT_ÅMD POS(5)   PIC'99',                                 
+      HJ_VIRK_ÅMD         PIC'(8)9',                                            
+      HJ_STI_ÅMD          PIC'(8)9',                                            
+      FEIL                BIT(1);                                               
+   DCL                                                                          
+      TT_MAKS_TIL_DATO    PIC'(8)9',                                            
+      TIL_DATO_ÅMD        PIC'(8)9',                                            
+      W_TT_MND            PIC'99';                                              
+    /* ============================================================== */        
+      FNR13       = KONV_FNR11_FNR13(U2S.FNR);                                  
+      T_FNR       = U2S.FNR;                                                    
+                                                                                
+ /* ***************************************************************** */        
+ /* TESTER OM FORUTSETNINGENE FOR Å KONTROLLERE FELTENE I SPES.INFO   */        
+ /* DELEN ER TILSTEDE. DVS.:                                          */        
+ /* - ET ELLER FLERE FELT ÅMD VÆRE UTFYLT                             */        
+ /* - NUMERISKE FELT KAN BARE INNEHOLDE NUMERISKE VERDIER             */        
+ /* ***************************************************************** */        
+                                                                                
+    FEIL_FUNNET = '0'B;                                                         
+    KEY_PEKER1  = ADDR(U2SP.STATSBORGER);                                       
+    KEY_PEKER2  = ADDR(U2SP.BOSATT);                                            
+    HJ_UFT_ÅMD  = U2S.UFT_ÅMD ;                                                 
+    HJ_VIRK_ÅMD = U2S.VIRK_DATO_ÅMD ;                                           
+    HJ_STI_ÅMD = U2SP.STI_ÅMD ;                                                 
+    CALL SJEKK_TT_NUMERISK;                                                     
+                                                                                
+    IF ^FEIL_FUNNET THEN                                                        
+      DO;                                                                       
+                                                                                
+ /* ***************************************************************** */        
+ /* FELTKONTROLLER........                                            */        
+ /* ***************************************************************** */        
+                                                                                
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)               
+                                               INTO(ST_RECL);                   
+              GOTO STAT_UT;                                                     
+          NOTFND1:                                                              
+              FEIL_FUNNET        = '1'B;                                        
+              U2SP.STATSBORGERNR = 24;                                          
+              GOTO STAT_UT;                                                     
+          STAT_UT:                                                              
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT2)               
+                                               INTO(ST_RECL);                   
+              GOTO BO_UT;                                                       
+          NOTFND2:                                                              
+              FEIL_FUNNET   = '1'B;                                             
+              U2SP.BOSATTNR = 25;                                               
+              GOTO BO_UT;                                                       
+          BO_UT:                                                                
+                                                                                
+            IF U2SP.PENSJONSTRYGDET = 'N'           THEN                        
+               U2SP.PENSJONSTRYGDET = ' ';                                      
+            IF ^(U2SP.PENSJONSTRYGDET = ' ' !                                   
+                 U2SP.PENSJONSTRYGDET = 'J')  THEN                              
+               DO;                                                              
+                  FEIL_FUNNET            = '1'B;                                
+                  U2SP.PENSJONSTRYGDETNR = 354;                                 
+               END;                                                             
+            IF U2SP.MINST_20_ÅR     = 'N'            THEN                       
+               U2SP.MINST_20_ÅR     = ' ';                                      
+            IF ^(U2SP.MINST_20_ÅR     = ' ' !                                   
+                 U2SP.MINST_20_ÅR     = 'J')  THEN                              
+               DO;                                                              
+                  FEIL_FUNNET            = '1'B;                                
+                  U2SP.MINST_20_ÅRNR     = 355;                                 
+               END;                                                             
+            IF U2SP.BEREGNING_KONV = 'N'            THEN                        
+               U2SP.BEREGNING_KONV = ' ';                                       
+            IF ^(U2SP.BEREGNING_KONV = ' ' !                                    
+                 U2SP.BEREGNING_KONV = 'J')  THEN                               
+               DO;                                                              
+                  FEIL_FUNNET            = '1'B;                                
+                  U2SP.BEREGNING_KONVNR  = 356;                                 
+               END;                                                             
+            IF U2SP.KONVENSJON = 'N'             THEN                           
+               U2SP.KONVENSJON = ' ';                                           
+            IF ^(U2SP.KONVENSJON = ' ' ! U2SP.KONVENSJON = 'J') THEN            
+               DO;                                                              
+                  FEIL_FUNNET       = '1'B;                                     
+                  U2SP.KONVENSJONNR = 125;                                      
+               END;                                                             
+            IF ^(U2SP.FRAVIK_FLYKT = ' ' ! U2SP.FRAVIK_FLYKT = 'J')             
+               THEN                                                             
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  U2SP.FRAVIK_FLYKTNR = 26;                                     
+               END;                                                             
+            IF ^(U2SP.OVERKOMP_UTL = 'J' ! U2SP.OVERKOMP_UTL = 'N' ) &          
+                  F_AAR < 1937                                                  
+                                                  THEN                          
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  U2SP.OVERKOMP_UTLNR = 35;                                     
+               END;                                                             
+            IF ^(U2SP.OVERKOMP_UTL = ' ' ) &                                    
+                  F_AAR > 1936                                                  
+                                                 THEN                           
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  U2SP.OVERKOMP_UTLNR = 623;                                    
+               END;                                                             
+            IF ^(U2SP.IKKE_GP = ' ' ! U2SP.IKKE_GP = 'J') THEN                  
+               DO;                                                              
+                  FEIL_FUNNET    = '1'B;                                        
+                  U2SP.IKKE_GPNR = 36;                                          
+               END;                                                             
+            IF ^(U2SP.TT_NORDEN_ANNET = ' ' !                                   
+                 U2SP.TT_NORDEN_ANNET = 'J')  THEN                              
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  U2SP.TT_NORDEN_ANNETNR = 361;                                 
+               END;                                                             
+            IF U2SP.FRAVIK_8_1_NR3  = 'N'            THEN                       
+               U2SP.FRAVIK_8_1_NR3  = ' ';                                      
+            IF ^(U2SP.FRAVIK_8_1_NR3  = ' ' !                                   
+                 U2SP.FRAVIK_8_1_NR3  = 'J')  THEN                              
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  U2SP.FRAVIK_8_1_NR3NR = 367;                                  
+               END;                                                             
+            IF U2SP.STI_ÅMD > 0 THEN                                            
+               IF  ^(HJ_STI_ÅMD >= HJ_UFT_ÅMD &                                 
+                     HJ_STI_ÅMD <= HJ_VIRK_ÅMD) THEN                            
+                  DO;                                                           
+                     FEIL_FUNNET        = '1'B;                                 
+                     U2SP.STI_ÅMDNR = 362;                                      
+                  END;                                                          
+        END;                                                                    
+                                                                                
+ /* ***************************************************************** */        
+ /*              DIV. KRYSSKONTROLLER                                 */        
+ /* ***************************************************************** */        
+                                                                                
+      IF ^FEIL_FUNNET THEN                                                      
+         DO;                                                                    
+            IF U2SP.KONVENSJON = 'J' & U2SP.FRAVIK_FLYKT = 'J' THEN             
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                   U2SP.KONVENSJONNR = 155;                                     
+                  U2SP.FRAVIK_FLYKTNR  = 999;                                   
+               END;                                                             
+            IF U2SP.FRAVIK_FLYKT = 'J' &                                        
+              (U2SP.TT_FRA1937_ÅR > 0 ! U2SP.TT_FRA1937_MND > 0) THEN           
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  U2SP.FRAVIK_FLYKTNR = 157;                                    
+                  U2SP.TT_FRA1937_ÅRNR = 999;                                   
+                  U2SP.TT_FRA1937_MNDNR = 999;                                  
+               END;                                                             
+                                                                                
+            IF U2SP.FRAVIK_FLYKT = 'J' & U2SP.KONVENSJON = 'J' THEN             
+               DO;                                                              
+                  FEIL_FUNNET        = '1'B;                                    
+                  U2SP.FRAVIK_FLYKTNR  = 155;                                   
+                  U2SP.KONVENSJONNR  = 999;                                     
+               END;                                                             
+            IF U2SP.FRAVIK_FLYKT = 'J' & U2SP.BOSATT ^= 0 THEN                  
+               DO;                                                              
+                  FEIL_FUNNET           = '1'B;                                 
+                  U2SP.BOSATTNR         = 106;                                  
+                  U2SP.FRAVIK_FLYKTNR   = 999;                                  
+               END;                                                             
+            IF U2SP.FRAVIK_8_1_NR3  ^= 'J'  &                                   
+               U2SP.STI_ÅMD > 0                 THEN                            
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  U2SP.FRAVIK_8_1_NR3NR = 368;                                  
+               END;                                                             
+                                                                                
+        FYLT_SEKSTISJU = ((FNR.ÅR + 67) * 12) + MN;                             
+                                                                                
+        FYLT_SYTTI = FYLT_SEKSTISJU +  36;                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* KONTROLLERER SØKERENS TRYGDETID :                                 */        
+ /* ***************************************************************** */        
+                                                                                
+    TT_MAKS_TIL_DATO = (HJ_UFT_Å - FNR.ÅR - 16) * 100 + HJ_UFT_M;               
+                                                                                
+    W_TT_MND  = U2SP.TT_FRA1937_ÅR * 12 + U2SP.TT_FRA1937_MND;                  
+                                                                                
+    IF W_TT_MND > TT_MAKS_TIL_DATO THEN                                         
+       DO;                                                                      
+          FEIL_FUNNET     = '1'B;                                               
+          U2SP.TT_FRA1937_ÅRNR  = 359;                                          
+       END;                                                                     
+ END;                                                                           
+                                                                                
+   SJEKK_TT_NUMERISK:                                                           
+                                                                                
+    PROC;                                                                       
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(U2SP.TT_FRA1937_ÅR)) THEN                  
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           U2SP.TT_FRA1937_ÅRNR  = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(U2SP.TT_FRA1937_MND)) THEN                 
+        DO;                                                                     
+           FEIL_FUNNET           = '1'B;                                        
+           U2SP.TT_FRA1937_MNDNR = 200;                                         
+        END;                                                                    
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR8((U2SP.STI_ÅMD))) THEN                      
+        DO;                                                                     
+           FEIL_FUNNET        = '1'B;                                           
+           U2SP.STI_ÅMDNR = 200;                                                
+        END;                                                                    
+   END SJEKK_TT_NUMERISK;                                                       
+                                                                                
+  END KONTROLL_U2_SPES;                                                         

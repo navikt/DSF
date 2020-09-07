@@ -1,0 +1,517 @@
+ /*   SIST ENDRET PÅ PROD   2008.11.05 16.23.41 AV   SPA2990          */        
+ /*   SIST ENDRET PÅ PROD   2007.03.19 13.45.38 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2007.01.10 12.32.49 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ TEST   2006.11.20 14.49.50 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2006.02.15 11.39.12 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.12.08 12.12.17 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.08.24 13.43.31 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.08.03 10.00.52 AV   JDA2970          */        
+ /*       SIST ENDRET 25/08-99 08.57.02 AV   JDA7339                  */        
+ /*       SIST ENDRET 14/08-98 08.33.31 AV   JDA7339                  */        
+ /*       SIST ENDRET 20/07-98 10.03.59 AV   JDA7339                  */        
+ /*       SIST ENDRET 17/06-98 09.46.13 AV   RFA9991                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0014522 - SUBRUTINE I PLI                                     */        
+ /*    PROGRAMMERER: PER F. BERGESTAD, JUNI 1982                      */        
+ /*HENSIKT:                                                           */        
+ /*    RUTINEN BEREGNER TP_ETTERLATT_UP                               */        
+ /*TILKNYTTING:                                                       */        
+ /*    PROGRAMMET INCLUDES I 4501                                     */        
+ /*ENDRING:                                                           */        
+ /*    UNGE UFØRE FØR 1967 GARANTI SPT=1.6                            */        
+ /*                                           16.10.89 TRUDE          */        
+ /*ENDRING:                                                           */        
+ /*    UNGE UFØRE FØR 1967 GARANTIEN ØKER TIL 2 FRA 01.91             */        
+ /*                                           23.10.90 TRUDE          */        
+ /* ***************************************************************** */        
+  BEREGN_TP_ETTERLATT_UP:                                                       
+    PROC ;                                                                      
+ %PAGE;                                                                         
+    DCL      W_TP_ALT  FIXED DEC (7)   INIT (0);                                
+    DCL      W_TP      FIXED DEC (7)   INIT (0);                                
+    DCL      NEI              BIT (1)            INIT('0'B); /*UF*/             
+    DCL      SISTE_UFT        FIXED BIN(15);                                    
+    DCL      TP_WORK           FIXED DEC (13,4);                                
+    DCL      FAKTOR1           FIXED DEC (13,5);  /*FRA 13,4 TS*/               
+    DCL      FAKTOR2           FIXED DEC (13,5);  /*FRA 13,4 TS*/               
+    DCL      YRKE_POENG       FIXED DEC (3,2)    INIT (0);                      
+    DCL      PÅ_ETTER91_MERKE  CHAR (1) INIT (' ');                             
+    DCL      W_ÅR_E91         FIXED DEC (3) INIT (0);                           
+    DCL      ÅR_FYLLER_67     FIXED DEC (5) INIT (0);                           
+    DCL      PÅ_ETTER91_EK    CHAR (1) INIT ('N');                              
+    DCL      ALDER            PIC 'S999999';                                    
+    DCL      SISTE_UFØRHIST_EK   FIXED DEC (5)  INIT (0);                       
+    DCL      W_GARANTI        FIXED DEC (3,2)    INIT (0);                      
+                                                                                
+ /*FINN SISTE UFØRETIDSPUNKT*/                                                  
+   /*0697 HL:*/                                                                 
+    DO J = 7 TO 1 BY -1 UNTIL(B02.UFØRHIST.UFT_ÅMD(BER_SØ_IND,J) > 0);          
+       SISTE_UFT = J;                                                           
+    END;                                                                        
+   /*0697 HL:*/                                                                 
+    DO K = 7 TO 1 BY - 1 UNTIL(B02.UFØRHIST.UFT_ÅMD(BER_EK_IND,K) > 0);         
+       SISTE_UFØRHIST_EK  = K;                                                  
+    END;                                                          /*93*/        
+                                                                  /*93*/        
+ /* *****                                                                       
+  ALDER = F_ALDER                                                               
+      (FØDSNUMMER_EK,F_SNU_DATO(B02.VIRK_DATO_ÅM(BER_EK_IND)));                 
+  ******* */                                                                    
+                                                                                
+  IF  FNR13_EK_R.ÅR_EK > 1922 THEN                                              
+     DO;                                                                        
+        ÅR_FYLLER_67    = FNR13_EK_R.ÅR_EK + 67;                                
+     END;                                                                       
+                                                                                
+    B01_B02_IND     = 2;                                                        
+    POTALL_OPPL.IND = BER_SØ_IND;                                               
+    EXEC CICS LINK PROGRAM ('R0014141') COMMAREA(KOM_OMR);                      
+                                                                                
+    IF FEIL_MELD_NR > 0  THEN                                                   
+       GO TO RETUR;                                                             
+    ELSE                                                                        
+       PROGRAM_ID = 'R0014501';                                                 
+                                                                                
+ /*REMEDY 1488 - HER VAR RUBBISH - HL 200509 :  */                              
+   /* FRA HIT TRUDE 220792 . 'UNGE UFØRE' UFT < 6701                            
+    IF B02.BUP_GAR_KODE(BER_SØ_IND,1) = 'B'   THEN                              
+       DO;                                                                      
+          B02.UFØRPENS.PÅ(BER_SØ_IND) = 40;                                     
+          IF (B02.UFØRPENS.SPT(BER_SØ_IND) <                                    
+                          B02.BUP_GARANTI(BER_SØ_IND,1)) THEN                   
+          B02.UFØRPENS.SPT(BER_SØ_IND) = B02.BUP_GARANTI(BER_SØ_IND,1);         
+          POREKKE.SPT(BER_SØ_IND)  = B02.UFØRPENS.SPT(BER_SØ_IND);              
+          POREKKE.OPT(BER_SØ_IND)  = B02.UFØRPENS.OPT(BER_SØ_IND);              
+          POREKKE.PÅ (BER_SØ_IND)  = B02.UFØRPENS.PÅ(BER_SØ_IND);               
+       END;                                                                     
+            TIL HIT TRUDE 220792  */                                            
+                                                                                
+      IF (POREKKE.SPT(BER_SØ_IND) <                                             
+                        B02.BUP_GARANTI(BER_SØ_IND,1)) THEN                     
+   /*ENDRING REMEDY 2455*/                                                      
+      DO;                                                                       
+         POREKKE.SPT(BER_SØ_IND) = B02.BUP_GARANTI(BER_SØ_IND,1);               
+         POREKKE.PÅ (BER_SØ_IND) = B02.UFØRPENS.PÅ(BER_SØ_IND);                 
+      END;                                                                      
+                                                                                
+      IF B02.UFØRHIST.UFT_ÅMD(BER_SØ_IND,1) < 19920000 &                        
+         B02.UFØRPENS.STI_ÅMD(BER_SØ_IND) < 19920000   &                        
+           B02.UFØRPENS.SPT(BER_SØ_IND)   =                                     
+           B02.UFØRHIST.BUP_GARANTI(BER_SØ_IND,1)    THEN                       
+         DO;                                                                    
+            POREKKE.PÅ_ETTER91(BER_SØ_IND) = 0;                                 
+            B02.UFØRPENS.PÅ_ETTER91  (BER_SØ_IND) = 0;                          
+         END;                                                                   
+    /*HIT 200509 HL */                                                          
+                                                                                
+    IF B02.UFØRHIST.UFT_ÅMD(BER_SØ_IND,SISTE_UFT) < 19920000 THEN               
+       POREKKE.PÅ_ETTER91(BER_SØ_IND) = 0;                                      
+                                                                                
+ /*YS  4424 SKAL BARE CALLES VED NY SKADE */                                    
+ /*YS  TRANSTYPE9 = ENDRINGSBLANKETT      */                                    
+                                                                                
+                                                                                
+                                                                                
+        IF (B02.YRKEPENS.YUG(BER_SØ_IND) >                                      
+            B01.YRKEPENS.YUG(BER_SØ_IND)   )  &                                 
+           TRANS_OPPL_OMR.TRANSTYPE ^= 9        THEN                            
+           DO;                                                                  
+              CALL BEREGN_POENG_AV_AÅI;        /*4424*/                         
+              CALL BEREGN_TP_YP;               /*4425*/                         
+           END;                                                                 
+        ELSE                                                                    
+        IF B02.PENSJONSTYPE1(BER_SØ_IND) = 'Y'    THEN                          
+              CALL BEREGN_TP_YP;               /*4425*/                         
+        TP_YP = B02.YRKEPENS.TP(BER_SØ_IND);                                    
+                                                                                
+    TP_UP     =  F_TP92(FNR_R13.ÅR,G,                                           
+                                   POREKKE.SPT(BER_SØ_IND),                     
+                                   POREKKE.OPT(BER_SØ_IND),                     
+                                   POREKKE.PÅ (BER_SØ_IND),                     
+                                   POREKKE.PÅ_ETTER91 (BER_SØ_IND),             
+                                   (UFGRAD),                                    
+                                   100,'J');                                    
+                                                                                
+ /*TILLEGG 1.2.89 HL :  */                                                      
+                                                                                
+          TP_UP_55       = F_TP92(FNR_R13.ÅR,G,                                 
+                                    POREKKE.SPT(BER_SØ_IND),                    
+                                    POREKKE.OPT(BER_SØ_IND),                    
+                                    POREKKE.PÅ(BER_SØ_IND),                     
+                            POREKKE.PÅ_ETTER91(BER_SØ_IND),                     
+                                    (UFGRAD),                                   
+                                    55,'J');                                    
+                                                                                
+ /*HIT 1.2.89 HL */                                                             
+  /* FLYTTER DENNE TIL SLUTT AV PGM PGA UF-GARANTIEN        */                  
+  /* BLIR BEREGNET TIL SLUTT I  PGM . TRUDE 19.12.89        */                  
+ /*YS   TP_EGEN    = B02.YRKEPENS.TP(BER_SØ_IND) + TP_UP;   */                  
+ /*                                       TIL HIT TRUDE     */                  
+                                                                                
+ /*ENDRET TILBAKE 26.3.87 HL - POREKKE MÅ SAVES - FRAPP 487 */                  
+                                                                                
+    POREKKE(14) = POREKKE(BER_SØ_IND);                                          
+                                                                                
+    IF (B02.SIVILSTAND(BER_SØ_IND) = 'S'   &                                    
+        B02.TP_PROSENT(BER_SØ_IND) =  0      )         THEN                     
+                                                                                
+       DO;                                                                      
+          B02.POENGTILLEGG_DATO_ÅMD(BER_SØ_IND) = 0;                            
+          B02.POENGTILLEGG_KODE   (BER_SØ_IND) = ' ';                           
+                                                                                
+          TP_EGEN = TP_UP;                                                      
+          TP_EGEN_55 = TP_UP_55;                                                
+        /*HL 0794  :  */                                                        
+   B02.UFØRPENS.PÅ_ETTER91(BER_SØ_IND) = POREKKE.PÅ_ETTER91(BER_SØ_IND);        
+                                                                                
+          GO TO RETUR;                                                          
+       END;                                                                     
+                                                                                
+    IF B02.SIVILSTAND(BER_SØ_IND) ^= 'S'         THEN                           
+       B02.TP_PROSENT(BER_SØ_IND) =  55;                                        
+                                                                                
+    B01_B02_IND     = 2;                                                        
+    POTALL_OPPL.IND = BER_EK_IND;                                               
+    EXEC CICS LINK PROGRAM ('R0014141') COMMAREA(KOM_OMR);                      
+                                                                                
+    IF FEIL_MELD_NR > 0  THEN                                                   
+       GO TO RETUR;                                                             
+    ELSE                                                                        
+       PROGRAM_ID = 'R0014501';                                                 
+                                                                                
+ /*HVIS PÅ_ETTER91 ER SATT TIL '0' I 4141, SÅ SKAL DEN VÆRE 0*/                 
+ /*HL 22.1.93 :*/                                                               
+                                                                                
+    IF POREKKE.PÅ_ETTER91(BER_EK_IND) = 0   THEN                                
+       PÅ_ETTER91_MERKE = 'J';                                                  
+                                                                                
+                                                                                
+ /* 42 % TP FOR ÅR ETTER 1991 : */                                              
+                                                                                
+    IF ^(W_DØDSDATO_Å > 1991)      &                                            
+         FNR13_EK_R.ÅR_EK > 1925     THEN                                       
+            POREKKE.PÅ_ETTER91(BER_EK_IND) = 0;                                 
+                                                                                
+                                                                                
+          IF POREKKE.SPT(BER_SØ_IND) > 0 &                                      
+             POREKKE.SPT(BER_EK_IND) > 0      THEN                              
+                                                                                
+ /*4143*/    CALL POENG_TILLEGG;                                                
+                                                                                
+                                                                                
+          IF POREKKE.TYPE(BER_SØ_IND) = 'O'     THEN                            
+ /*4153*/    CALL BEREGN_SPT_OPT_PÅ    (BER_SØ_IND,POREKKE(BER_SØ_IND),         
+                   /*                                W_FNR);    */              
+                                              W_FNR13); /*2000*/                
+          ELSE                                                                  
+ /*4156*/    CALL BEREGN_SPT_OPT_PÅ_ALT(BER_SØ_IND,POREKKE(BER_SØ_IND),         
+                  /*                                 W_FNR);    */              
+                                              W_FNR13);/*2000*/                 
+                                                                                
+    IF B02.UFØRHIST.UFT_ÅMD(BER_SØ_IND,SISTE_UFT) < 19920000 THEN               
+       POREKKE.PÅ_ETTER91(BER_SØ_IND) = 0;                                      
+  /*TILLEGG 190796 HL : */                                                      
+                                                                                
+      IF (B02.UFØRHIST.UFT_ÅMD(BER_EK_IND,SISTE_UFØRHIST_EK) <19920000 &        
+         B02.UFØRHIST.UFT_ÅMD(BER_EK_IND,SISTE_UFØRHIST_EK) > 19720000)&        
+        ( B02.OPPHØRSKODE(BER_EK_IND,SISTE_UFØRHIST_EK) ^= 'J'  &               
+         B02.PENSJONSTYPE1(BER_EK_IND)                 = 'D')  THEN             
+                                                                                
+                                                                                
+                                                                                
+           DO;                                                                  
+             IF (ÅR_FYLLER_67  > 1991   &/* 2000-3 */                           
+                 POREKKE.POENG(BER_EK_IND,ÅR_FYLLER_67) > 0)  THEN              
+                 W_ÅR_E91 = 1;                                                  
+                                                                                
+             IF  (ÅR_FYLLER_67 + 1)  > 1991   &/* 2000-3 */                     
+                 POREKKE.POENG(BER_EK_IND,(ÅR_FYLLER_67 + 1)) > 0  THEN         
+                 W_ÅR_E91 = W_ÅR_E91 + 1;                                       
+                                                                                
+             IF  (ÅR_FYLLER_67 + 2)  > 1991   &/* 2000-3 */                     
+                 POREKKE.POENG(BER_EK_IND,(ÅR_FYLLER_67 + 2)) > 0  THEN         
+                 W_ÅR_E91 = W_ÅR_E91 + 1;                                       
+                                                                                
+             IF  W_ÅR_E91 > 0     THEN                                          
+                 DO;                                                            
+                    PÅ_ETTER91_EK = 'J';                                        
+                    POREKKE.PÅ_ETTER91(BER_EK_IND) = W_ÅR_E91;                  
+                 END;                                                           
+             ELSE                                                               
+               DO;                                                              
+                 POREKKE.PÅ_ETTER91(BER_EK_IND) = 0;                            
+                 PÅ_ETTER91_EK = 'N';                                           
+               END;                                                             
+           END;                                                                 
+                                                                                
+                                                                                
+   /* FRA HIT TRUDE 220792 . 'UNGE UFØRE' UFT < 6701*/                          
+    IF B02.BUP_GAR_KODE(BER_SØ_IND,1) = 'B'   THEN                              
+       DO;                                                                      
+          B02.UFØRPENS.PÅ(BER_SØ_IND) = 40;                                     
+          IF (B02.UFØRPENS.SPT(BER_SØ_IND) <                                    
+                          B02.BUP_GARANTI(BER_SØ_IND,1)) THEN                   
+          B02.UFØRPENS.SPT(BER_SØ_IND) = B02.BUP_GARANTI(BER_SØ_IND,1);         
+          POREKKE.SPT(BER_SØ_IND)  = B02.UFØRPENS.SPT(BER_SØ_IND);              
+          POREKKE.OPT(BER_SØ_IND)  = B02.UFØRPENS.OPT(BER_SØ_IND);              
+          POREKKE.PÅ (BER_SØ_IND)  = B02.UFØRPENS.PÅ(BER_SØ_IND);               
+       END;                                                                     
+         /* TIL HIT TRUDE 220792  */                                            
+                                                                                
+                                                                                
+    TP_UP_55       = F_TP92(FNR_R13.ÅR,G,                                       
+                              POREKKE.SPT(BER_SØ_IND),                          
+                              POREKKE.OPT(BER_SØ_IND),                          
+                              POREKKE.PÅ(BER_SØ_IND),                           
+                            POREKKE.PÅ_ETTER91(BER_SØ_IND),                     
+                              (UFGRAD),                                         
+                              55,'J');                                          
+                                                                                
+     IF B02.YRKEPENS.YUG(BER_SØ_IND) > 0       THEN                             
+        DO;                                                                     
+           IF POREKKE.SPT(BER_SØ_IND) >                                         
+                     B02.YRKEPENS.YPT(BER_SØ_IND)     THEN                      
+              YRKE_POENG = POREKKE.SPT(BER_SØ_IND);                             
+           ELSE                                                                 
+              YRKE_POENG = B02.YRKEPENS.YPT(BER_SØ_IND);                        
+                                                                                
+           TP_WORK  = G * YRKE_POENG * 0.55;                                    
+           TP_WORK  = TP_WORK * B02.YRKEPENS.YUG(BER_SØ_IND) /100;              
+           TP_WORK  = TP_WORK / 12;                                             
+           IF B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) = 0       THEN                
+              TP_WORK  = TP_WORK * 0.45;                                        
+           ELSE                                                                 
+              DO;                                                               
+                 FAKTOR1 = (B02.YRKEPENS.PÅ(BER_SØ_IND)                         
+                            - B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) )             
+                            / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.45;               
+                 FAKTOR2 = B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND)                  
+                            / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.42;               
+                 TP_WORK = TP_WORK * (FAKTOR1 + FAKTOR2 + 0.00005);             
+              END;                                                              
+                                                                                
+           TP_YP_55 = TP_WORK + 0.5;                                            
+        END;                                                                    
+                                                                                
+        TP_EGEN_55 = TP_UP_55 + TP_YP_55;                                       
+                                                                                
+                                                                                
+                                                                                
+ /* ENDRET 11.12.86 HL - HVIS ALTERNATIV POREKKE, SOM EVT. ER     */            
+ /*   FRAPP 270          LAGT UT På PLASS 'IND + 11', IKKE HAR 'O'*/            
+ /*                    I TYPE, Så SKAL ALTERNATIV BEREGNING PRøVES*/            
+                                                                                
+          IF POREKKE.TYPE(BER_EK_IND) = 'O' &                                   
+             POREKKE.TYPE(BER_EK_IND + 11) ^= 'D'   THEN                        
+                                       /* O = ORDINÆR */                        
+                                       /* D = UFØR FØR 73 */                    
+             DO;                                                                
+ /*4153*/       CALL BEREGN_SPT_OPT_PÅ (BER_EK_IND,POREKKE(BER_EK_IND),         
+                                                      FØDSNUMMER13_EK);         
+                                                                                
+ /* 42 % TP FOR ÅR ETTER 1991 : */                                              
+                                                                                
+    IF ^(W_DØDSDATO_Å > 1991)    &                                              
+         FNR13_EK_R.ÅR_EK > 1922     THEN                                       
+            POREKKE.PÅ_ETTER91(BER_EK_IND) = 0;                                 
+                                                                                
+    IF PÅ_ETTER91_MERKE = 'J'    THEN                                           
+       POREKKE.PÅ_ETTER91(BER_EK_IND) = 0;                                      
+    ELSE      /* TILLEGG 200407 HL - REMEDY 505 */                              
+    IF PÅ_ETTER91_EK = 'J'  THEN                                                
+       POREKKE.PÅ_ETTER91(BER_EK_IND) = W_ÅR_E91;                               
+                                                                                
+                TP_AVD   = F_TP92(FNR13_EK_R.ÅR_EK,G,                           
+                                       POREKKE.SPT(BER_EK_IND),                 
+                                       POREKKE.OPT(BER_EK_IND),                 
+                                       POREKKE.PÅ (BER_EK_IND),                 
+                                   POREKKE.PÅ_ETTER91 (BER_EK_IND),             
+                                       100,                                     
+                                       (B02.TP_PROSENT(BER_SØ_IND)),            
+                                       'J');                                    
+             END;                                                               
+                                                                                
+          ELSE     /* TYPE ER DA U =  AP SOM VAR UP FØR 1973 */                 
+                   /* ELLER      D = DØD SOM VAR UP FØR 1973 */                 
+                                                                                
+             DO;                                                                
+ /*4156*/       CALL BEREGN_SPT_OPT_PÅ_ALT(                                     
+                                BER_EK_IND,POREKKE(BER_EK_IND),                 
+                                                   FØDSNUMMER13_EK);            
+                                                                                
+                                                                                
+ /*4156*/       CALL BEREGN_SPT_OPT_PÅ_ALT(                                     
+                                BER_EK_IND,POREKKE(BER_EK_IND + 11),            
+                                                   FØDSNUMMER13_EK);            
+                                                                                
+                                                                                
+ /* 42 % TP FOR ÅR ETTER 1991 : */                                              
+                                                                                
+    IF ^(W_DØDSDATO_Å > 1991)    &                                              
+         FNR13_EK_R.ÅR_EK > 1922     THEN                                       
+            DO;                                                                 
+               POREKKE.PÅ_ETTER91(BER_EK_IND) = 0;                              
+               POREKKE.PÅ_ETTER91(BER_EK_IND + 11) = 0;                         
+            END;                                                                
+                                                                                
+    IF PÅ_ETTER91_MERKE = 'J'    THEN                                           
+       DO;                                                                      
+          POREKKE.PÅ_ETTER91(BER_EK_IND) = 0;                                   
+          POREKKE.PÅ_ETTER91(BER_EK_IND + 11) = 0;                              
+       END;                                                                     
+                                                                                
+                                                                                
+                                                                                
+ /*11.12.86 HL- FRAPP 270 - PENSJON ETTER ALTERNATIVE POENGREKKER, */           
+ /*              OG MED POENGTILLEGG, SKAL SAMMENLIGNES.           */           
+                                                                                
+                W_TP     = F_TP92(FNR13_EK_R.ÅR_EK,G,                           
+                                    POREKKE.SPT(BER_EK_IND),                    
+                                    POREKKE.OPT(BER_EK_IND),                    
+                                    POREKKE.PÅ(BER_EK_IND),                     
+                                    POREKKE.PÅ_ETTER91(BER_EK_IND),             
+                                    100,                                        
+                                    (B02.TP_PROSENT(BER_SØ_IND)),'J');          
+                                                                                
+                W_TP_ALT      = F_TP92(FNR13_EK_R.ÅR_EK,G,                      
+                                    POREKKE.SPT(BER_EK_IND + 11),               
+                                    POREKKE.OPT(BER_EK_IND + 11),               
+                                    POREKKE.PÅ(BER_EK_IND + 11),                
+                            POREKKE.PÅ_ETTER91(BER_EK_IND + 11),100,            
+                                    (B02.TP_PROSENT(BER_SØ_IND)),'J');          
+                                                                                
+                IF W_TP_ALT > W_TP                   THEN                       
+                                                                                
+                   DO;                                                          
+                                                                                
+                      POREKKE(BER_EK_IND) =                                     
+                                     POREKKE(BER_EK_IND + 11);                  
+                                                                                
+                                                                                
+                      TP_AVD = W_TP_ALT;                                        
+                                                                                
+                   END;                                                         
+                                                                                
+                ELSE                                                            
+                                                                                
+                      TP_AVD = W_TP;                                            
+             END;                                                               
+  /*KONTROLLER MOT AVDØDES UP SOM UNG UFØR:  200703 HL */                       
+                IF B01.UFØRHIST.BUP_GAR_KODE(BER_EK_IND,1) = 'B' &              
+                B01.UFØRHIST.UFT_ÅMD(BER_EK_IND,1) < 19920000   THEN            
+                   DO;                                                          
+        W_GARANTI = B01.UFØRHIST.BUP_GARANTI(BER_EK_IND,1);                     
+     /*               TP_AVD_UF = F_TP92(FNR13_EK_R.ÅR_EK,G,                    
+                                  3.30,0,40,0,                                  
+                                  100,                                          
+                                (B02.TP_PROSENT(BER_SØ_IND)),'J');*/            
+                      TP_AVD_UF = F_TP92(FNR13_EK_R.ÅR_EK,G,                    
+                                  W_GARANTI,0,40,0,                             
+                                  100,                                          
+                                (B02.TP_PROSENT(BER_SØ_IND)),'J');              
+                                                                                
+                       IF TP_AVD_UF > TP_AVD THEN                               
+                          DO;                                                   
+                             TP_AVD = TP_AVD_UF;                                
+             B02.ETTEPENS.PÅ_ETTER91(BER_SØ_IND) = 0;                           
+             POREKKE.PÅ_ETTER91 (BER_EK_IND) = 0;                               
+                          END;                                                  
+                    END;                                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ /* ****************************************************** */                   
+ /* YS - BEREGNING                                         */                   
+ /* ****************************************************** */                   
+                                                                                
+  IF B02.YRKEPENS.YUG(BER_EK_IND) > 0           THEN                            
+     DO;                                                                        
+                                                                                
+        DCL KAP11_TP_AVD      FIXED DEC (5);                                    
+        DCL VANLIG_TP_AVD     FIXED DEC (5);                                    
+                                                                                
+  B02.YRKEPENS.SPT(BER_EK_IND) = POREKKE.SPT(BER_EK_IND);                       
+                                                                                
+  IF B02.YRKEPENS.YUG(BER_EK_IND) = 100     &                                   
+     B01.YRKEPENS.YUG(BER_EK_IND) < 100     &   /*26.1.90 HL*/                  
+      (POREKKE.SPT(BER_EK_IND) >=                                               
+      B02.YRKEPENS.YPT(BER_EK_IND)  )          THEN                             
+                                                                                
+     DO;                                                                        
+         B02.YRKEPENS.YPT(BER_EK_IND) = POREKKE.SPT(BER_EK_IND);                
+         B02.YRKEPENS.YPT_KODE(BER_EK_IND) = 'V';                               
+     END;                                                                       
+                                                                                
+ /*POENGTALLET KAN OGSÅ ØKES PGA POENGTILLEGG - DETTE MÅ VI I DENNE*/           
+ /*OMGANG NØYE OSS MED Å BEREGNE FOR DE SOM DØR I SAMME ÅR SOM DE  */           
+ /*BLIR 100 PROSENT UFØR (FOR ANDRE HAR VI IKKE TILGJENGELIG DEN   */           
+ /*POENGREKKEN SOM POENGTILLEGGET SKAL LEGGES TIL) - HL 28.1.91    */           
+                                                                                
+ ELSE                                                                           
+    DO;                                                                         
+       W_UFØRETID_ÅMD  = B02.YRKEHIST.YUFT_ÅMD(BER_EK_IND,1);                   
+       IF (W_DØDSDATO_Å = W_UFØRETID_Å)     &                                   
+          (POREKKE.SPT(BER_EK_IND) >=                                           
+          B02.YRKEPENS.YPT(BER_EK_IND)  )          THEN                         
+                                                                                
+         DO;                                                                    
+            B02.YRKEPENS.YPT(BER_EK_IND) = POREKKE.SPT(BER_EK_IND);             
+            B02.YRKEPENS.YPT_KODE(BER_EK_IND) = 'V';                            
+         END;                                                                   
+    END;                                                                        
+                                                                                
+                                                                                
+    TP_WORK  = G * B02.YRKEPENS.YPT(BER_EK_IND);                                
+    TP_WORK  = TP_WORK *  B02.TP_PROSENT(BER_SØ_IND) / 100;                     
+    TP_WORK  = TP_WORK * B02.YRKEPENS.YUG(BER_EK_IND) /100;                     
+    TP_WORK  = TP_WORK / 12;                                                    
+    IF B02.YRKEPENS.PÅ_ETTER91(BER_EK_IND) = 0       THEN                       
+       TP_WORK  = TP_WORK * 45 /100;                                            
+    ELSE                                                                        
+       DO;                                                                      
+          FAKTOR1 = (B02.YRKEPENS.PÅ(BER_EK_IND)                                
+                     - B02.YRKEPENS.PÅ_ETTER91(BER_EK_IND) )                    
+                   / B02.YRKEPENS.PÅ(BER_EK_IND) * 45/100;                      
+          FAKTOR2 = B02.YRKEPENS.PÅ_ETTER91(BER_EK_IND)                         
+                   / B02.YRKEPENS.PÅ(BER_EK_IND) * 42/100;                      
+          TP_WORK = TP_WORK * (FAKTOR1 + FAKTOR2 + 0.00005);                    
+       END;                                                                     
+                                                                                
+       KAP11_TP_AVD     = TP_WORK + 0.5;                                        
+                                                                                
+ /*     KAP11_TP_AVD       = F_TILLEGGSPENSJON(FNR_EK_R.ÅR_EK,G,                
+                             B02.YRKEPENS.YPT(BER_EK_IND),0,40,                 
+                             B02.YRKEPENS.YUG(BER_EK_IND),                      
+                             B02.TP_PROSENT(BER_SØ_IND),'J');   */              
+                                                                                
+        VANLIG_TP_AVD = TP_AVD *                                                
+                (100 - B02.YRKEPENS.YUG(BER_EK_IND)) / 100 + 0.5;               
+                                                                                
+        IF (KAP11_TP_AVD + VANLIG_TP_AVD) > TP_AVD     THEN                     
+                                                                                
+           DO;                                                                  
+              TP_AVD = KAP11_TP_AVD + VANLIG_TP_AVD;                            
+              DIV_PARAM_OMR.BEREGNINGS_ALT_AVD = '3';                           
+                                                                                
+ /*YS ********************************************************* */              
+ /*YS         DIV_PARAM_OMR.BEREGNINGS_ALT_AVD = '3' BETYR AT   */              
+ /*YS         DET LØNNER SEG MED YRKE-BEREGNING AV AVDØDES TP   */              
+ /*YS ********************************************************* */              
+                                                                                
+           END;                                                                 
+                                                                                
+         END;                                                                   
+                                                                                
+  /* VI HADDE GLEMT Å OPPDATERE PÅ_ETTER91 PÅ EGEN UFØRHIST*/                   
+  /* TRUDE, 080992                                         */                   
+                                                                                
+   B02.UFØRPENS.PÅ_ETTER91(BER_SØ_IND) = POREKKE.PÅ_ETTER91(BER_SØ_IND);        
+                                                                                
+                                                                                
+        TP_EGEN    = B02.YRKEPENS.TP(BER_SØ_IND) + TP_UP;                       
+                                                                                
+    RETUR:                                                                      
+                                                                                
+  END BEREGN_TP_ETTERLATT_UP;                                                   

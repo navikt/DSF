@@ -1,0 +1,2230 @@
+ /*   SIST ENDRET PÅ PROD   2006.07.18 11.36.37 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.12.17 14.04.43 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.06.21  9.11.28 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.04.27 14.13.30 AV   JDA7339          */        
+ /*       SIST ENDRET 23/04-2001 13.05.34 AV  SEB7339                 */        
+ /*   SIST ENDRET PÅ PROD   2000.12.07 12.35.34 AV   JDA7339          */        
+ /*       SIST ENDRET 28/11-2000 11.17.18 AV  SEB7339                 */        
+ /*   SIST ENDRET PÅ PROD   2000.02.21 10.32.02 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   1999.11.25 10.58.21 AV   JDA7339          */        
+ /*       SIST ENDRET 04/05-98 13.14.18 AV   JDA7339                  */        
+ /*       SIST ENDRET 12/03-98 10.28.53 AV   SLA9300                  */        
+ /*********************************************************************/        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0016022                                                       */        
+ /*                                                                   */        
+ /*    PROGRAMMERER: P. BREIVIK, NOV 1982.                            */        
+ /*                                                                   */        
+ /* HENSIKT:                                                          */        
+ /*    OPPDATERER STAT_TRANS PÅ FORSKJELLEN MELLOM B01 OG B02.        */        
+ /*    PROSEDYREN BEHANDLER BARE MOR OG FAR.                          */        
+ /*                                                                   */        
+ /* NB!!  NB!!:                                                       */        
+ /*    VED UTREGNING AV FAKTORER AV G ): SUM-YTELSE * 12 / G , MÅ     */        
+ /*                                      --------------------         */        
+ /*    FØLGENDE PASSES PÅ: HVIS SUM-YTELSE ER ET REGNESTYKKE MED MER  */        
+ /*    ENN 3 FELT, MÅ UTREGNINGEN DELES OPP OG HJELPEFELT BRUKES      */        
+ /*    FORDI PL1'S ARBEIDSFELTER IKKE BLIR STORE NOK TIL SÅ MANGE     */        
+ /*    REGNEOPERASJONER MED FELT DEFINERT SOM ANGJELDENDE ER.         */        
+ /*    JFR. FORØVRIG KOMMENTAR KNYTTET TIL BT-SEGMENTET.  BØ9104.     */        
+ /*                                                                   */        
+ /* PROGRAMTILKNYTNING:                                               */        
+ /*    LOKAL PROSEDYRE I R0016001                                     */        
+ /*                                                                   */        
+ /* BRUK:                                                             */        
+ /*    INKLUDERES VED KOMPILERING AV R0016001                         */        
+ /*                                                                   */        
+ /* ENDRET : 10.06.96 AV S.LUNDEBY, DATA-UTVIKLING                    */        
+ /*          VED UFT < 9200 HENTES BUP FRA POREKKE                    */        
+ /*                                                                   */        
+ /* ENDRET : 02.04.97 AV SVEIN B. OPSAHL                              */        
+ /*          LAGT TIL KALL AV U3_OPPDAT                               */        
+ /*                                                                   */        
+ /* ENDRET :   .  .97 AV SVEIN B. OPSAHL (IKKE IMP.)                  */        
+ /*          PENSJONS-SEGMENT SKRIVES OGSÅ HVIS BELØP I B01 OG B02    */        
+ /*          ER 0                                                     */        
+ /* ENDRET : UKE 25 1998 AV  SVERRE LUNDEBY, DATA-UTVIKLING AS        */        
+ /*          DANNER IKKE TILKN VED OMREGNING ): TRANSKODE='RH01'      */        
+ /*          TAR VARE PÅ PROGRAM_ID SOM KALLER 6001 FORDI TILKN.SEGM  */        
+ /*          IKKE BEHØVER DANNER VED OMREGNING                        */        
+ /* ENDRET : UKE 47 1999 AV  SVERRE LUNDEBY, DATA-UTVIKLING AS        */        
+ /*          SAK 120/99 SETTER TT_ANV = TT_AVDØD                      */        
+ /*          SETTER RIKTIG KOMMNR. UT I FRA TKNR. BARE 0301 BLE TATT  */        
+ /*          HENSYN TIL.                                              */        
+ /* ENDRET : UKE 05 2000 AV  SVERRE LUNDEBY, DATA-UTVIKLING AS        */        
+ /*          SAK 0013-2000 DAG I VIRKDATO > 00                        */        
+ /* ENDRET : 28 NOV.2000 (UKE 48)   AV  SITTIK ERGEN                  */        
+ /*          ALDERSP.ST TIL ALDERSP.AP_ST_NETTO                       */        
+ /*          ALDERSP.ET TIL ALDERSP.AP_ET_NETTO                       */        
+ /* ENDRET: 01.04.2004 AV SEA2970   LAGT INN TEST FOR B02_TT_EGEN     */        
+ /* ENDRET: 05.08.2004 AV SEA2970   INNTEKTSÅR_EØS FRA 1967 TIL 2006  */        
+ /*********************************************************************/        
+                                                                                
+ OPPDAT_MOR_FAR: PROC OPTIONS (REENTRANT);                                      
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /* ENDREDE DATA OM MOR OG FAR FRA B01 TIL B02 DANNER OPPDATERING     */        
+ /* I ARBEIDS-OMRÅDET 'STAT_TRANS' SAMT SETTER EN BRYTER.             */        
+ /* DENNE BRYTEREN AVGJØR OM DET SKAL DANNES SEGMENT ELLER IKKE.      */        
+ /*                                                                   */        
+ /*    MOR : I HAR VERDIEN 1                                          */        
+ /*    FAR : I HAR VERDIEN 2                                          */        
+ /*-------------------------------------------------------------------*/        
+ DCL W01_CH_5 BASED (W01_CH_PTR) CHAR (5),                                      
+     W02_CH_5 BASED (W02_CH_PTR) CHAR (5),                                      
+                                                                                
+    (W01_CH_PTR  ,   W02_CH_PTR) POINTER ;                                      
+                                                                                
+ DCL W01_ULIK_INNTEKTSÅR_EØS     BIT (1);                                       
+                                                                                
+ DANN_TILKN_A: PROC;                                                            
+    SEGMENT_TABELL.TILKN             = TRUE;                                    
+    TILKN.TKNYTT(1).TILKNYTNINGSKODE = 'A';                                     
+    TILKN.TKNYTT(1).FNR_TILKN        =                                          
+                                       B02.PERSON(3-I).RF0PERSN.FNR;            
+ END; /* DANN_TILKN_A */                                                        
+                                                                                
+                                                                                
+ DANN_TILKN_F: PROC;                                                            
+    SEGMENT_TABELL.TILKN             = TRUE;                                    
+    TILKN.TKNYTT(6).TILKNYTNINGSKODE = 'F';                                     
+    TILKN.TKNYTT(6).FNR_TILKN        =                                          
+                                       B02.PERSON(3-I).RF0PERSN.FNR;            
+ END; /* DANN_TILKN_F */                                                        
+                                                                                
+                                                                                
+ DO I=1,2;                                                                      
+    IF B02.PERSON(I).FNR > 0 THEN                                               
+    DO;                                                                         
+ /*-------------------------------------------------------------------*/        
+ /*    CLEAR SEGMENT-TABELLEN OG ARBEIDSFELTENE FOR BASE-SEGMENTENE.  */        
+ /*-------------------------------------------------------------------*/        
+       DIV_PARAM_OMR.POS_I_B01 = I;                                             
+       SEGMENT_TABELL = '';                                                     
+       TR0ROT         = '';                                                     
+       REGTPKT        = '';                                                     
+       PTYPE          = '';                                                     
+       SIVILST        = '';                                                     
+       APOPPL         = '';                                                     
+       UPPER          = '';                                                     
+       PENSJON        = '';                                                     
+       KT             = '';                                                     
+       VT             = '';                                                     
+       ET             = '';                                                     
+       BT             = '';                                                     
+       TILKN          = '';                                                     
+       ETTERL         = '';                                                     
+       DIAGNOSE       = '';                                                     
+       SPESOPPL       = '';                                                     
+       YSKADE         = '';                                                     
+       TR.EØSINFO     = '';                                   /*2000*/          
+       SAVE_B01_B02   = 0;                                                      
+                                                                                
+ /* *-*-* NB!! REGTPKT.FILLER INNEHOLDER TRANSKODE + TRANSTYPE I TEST */        
+ /*BØ-TEST                                                                      
+          REGTPKT.FILLER             = TRANS_OPPL_OMR.TRANSKODE !!              
+                                       TRANS_OPPL_OMR.TRANSTYPE ;               
+   BØ-TEST                                                                      
+                               (B02.PERSON(I).STATUS.VIRK_DATO_ÅMD) ;           
+                                                                                
+       W_VIRKD = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;                              
+                                                                                
+   BØ-TEST                                                                      
+ */                                                                             
+ /*    NULLSTILLER HJELPEVARIABLE TIL REGTPKT-SEGMENT                 */        
+                                                                                
+       B01_PÅ      = 0;                                                         
+       B02_PÅ      = 0;                                                         
+    /*                                                                          
+       B01_SPT     = 0.0;                                                       
+       B02_SPT     = 0.0;                                                       
+       B01_OPT     = 0.0;                                                       
+       B02_OPT     = 0.0;                                                       
+       B01_YPT     = 0.0;                                                       
+       B02_YPT     = 0.0;                                                       
+   */                                                                           
+       B01_SPT     = 0;                                                         
+       B02_SPT     = 0;                                                         
+       B01_OPT     = 0;                                                         
+       B02_OPT     = 0;                                                         
+       B01_YPT     = 0;                                                         
+       B02_YPT     = 0;                                                         
+                                                                                
+ /*BØ9201:*/                                                                    
+       B01_PÅ_E91  = 0;                                                         
+       B02_PÅ_E91  = 0;                                                         
+                                                                                
+      /*                                                                        
+       B01_SPT_GML = 0.0;                                                       
+       B02_SPT_GML = 0.0;                                                       
+      */                                                                        
+       B01_SPT_GML = 0;                                                         
+       B02_SPT_GML = 0;                                                         
+       /* --------------------------------------------------------- */          
+       /* HVIS OPPHØR I B01 ELLER I B02 FOR LEVENDE PERSONER -      */          
+       /* HERUNDER OPPHØRTE UFØRHIST-/YRKEHIST-SEGMENTER:           */          
+       /* I ENDEL TILFELLER "BLANKES" B01 EVT. B02 OG/ELLER DEN ENE */          
+       /* STRUKTUREN LEGGES OVER I DEN ANDRE. DA TAS B01/B02 VARE   */          
+       /* PÅ I X01/X02 OG REETABLERES I SLUTTEN AV PROGRAMMET.      */          
+       /* --------------------------------------------------------- */          
+       ALLOCATE X01;                                                            
+       ALLOCATE X02;                                                            
+       X01.PERSON(I) = '';                                                      
+       X02.PERSON(I) = '';                                                      
+                                                                                
+                                                                                
+       IF B02.PERSON(I).STATUS.DØDSDATO_ÅMD  = 0 THEN                           
+         DO;                                                                    
+           CALL FINN_UP_YP_OPPHØR ;       /* R0016034 */                        
+                                                                                
+           IF (B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'A' !                       
+               B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'K' !                       
+               B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'Y' !                       
+               B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'U' ) &                     
+               B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'G'   THEN                  
+                                                                                
+               CALL DANN_OPPHØR_GIFT ;    /* R0016035 */                        
+           /* ----------------------------------------------------- */          
+           /*  MULIG OPPHØR AV UP/YP PGA. UFØRHIST-OPPH.DATO ^= 0 - */          
+           /*  SAMT PERSONER MED "O"/"X" I STATUS_KODE_HIST         */          
+           /* ----------------------------------------------------- */          
+                                                                                
+           IF B02.PERSON(I).UFØRHIST(J).OPPHØRSDATO_ÅMD ^= 0 &                  
+                                                                                
+            ((B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'G' &                        
+              B02.PERSON(I).UFØRHIST(J).OPPHØRSDATO_ÅMD >                       
+              B02.PERSON(I).UFØRHIST(K).UFT_ÅMD)          !                     
+                                                                                
+              /* --------------------------------------------------- */         
+              /* UFØRHIST INNEHOLDER TILSTREKKELIGE OPPLYSNINGER -   */         
+              /* OGSÅ FOR "REN" YP                                   */         
+              /* --------------------------------------------------- */         
+                                                                                
+            ((B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'U' !                        
+              B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'Y' ) &                      
+              B02.PERSON(I).UFØRHIST(J).OPPHØRSDATO_ÅMD >                       
+              B02.PERSON(I).UFØRHIST(K).UFT_ÅMD)          !                     
+                                                                                
+            ((B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'A' !                        
+              B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'K') &                       
+              B02.PERSON(I).UFØRHIST(J).OPPHØRSDATO_ÅMD >                       
+              B02.PERSON(I).STATUS.VIRK_DATO_ÅMD)         !                     
+                                                                                
+            ((B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'A' !                        
+              B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'K') &                       
+              B02.PERSON(I).UFØRHIST(J).OPPHØRSDATO_ÅMD =                       
+              B02.PERSON(I).STATUS.VIRK_DATO_ÅMD)         ) !                   
+                                                                                
+              B02.PERSON(I).STATUS.STATUS_KODE_HIST = 'O'   !                   
+              B02.PERSON(I).STATUS.STATUS_KODE_HIST = 'X'   THEN                
+             CALL DANN_OPPHØR ;           /* R0016036 */                        
+                                                                                
+           ELSE                                                                 
+                                                                                
+             /* ----------------------------------------------- */              
+             /*  OPPHØR I NEST SISTE STATUS                     */              
+             /* ----------------------------------------------- */              
+             IF (B01.PERSON(I).STATUS.STATUS_KODE_HIST = 'O' !                  
+                 B01.PERSON(I).STATUS.STATUS_KODE_HIST = 'X') THEN              
+               DO;                                                              
+                 IF ((B01.PERSON(1).STATUS.PENSJONSTYPE1 = 'U' &                
+                      B01.PERSON(1).STATUS.PENSJONSTYPE3 = 'A') !               
+                     (B01.PERSON(2).STATUS.PENSJONSTYPE1 = 'U' &                
+                      B01.PERSON(2).STATUS.PENSJONSTYPE3 = 'A')) !              
+                    ((B01.PERSON(1).STATUS.PENSJONSTYPE1 = 'Y' &                
+                      B01.PERSON(1).STATUS.PENSJONSTYPE3 = 'A') !               
+                     (B01.PERSON(2).STATUS.PENSJONSTYPE1 = 'Y' &                
+                      B01.PERSON(2).STATUS.PENSJONSTYPE3 = 'A')) THEN ;         
+                    /* -------------------------------- */                      
+                    /* OPPHØR AV ATTFØRING ?   BØ.      */                      
+                    /* -------------------------------- */                      
+                                                                                
+                 ELSE                                                           
+                   CALL DANN_TILGANG ;    /* R0016037 */                        
+                                                                                
+               END;           /* AV OPPHØRSMERKET NEST SISTE STATUS */          
+                                                                                
+         END;                 /* AV SJEKK OPPHØR - LEVENDE PERSON   */          
+                                                                                
+                                                                                
+       /* --------------------------------------------------------- */          
+       /* SÆRBEHANDLING AV OVERGANG FRA ATV TIL UP/YP FOR Å FÅ      */          
+       /* DANNET NYE SEGMENTER VED SIDEN AV ATV-SEGMENTET I SRMAIN  */          
+       /* --------------------------------------------------------- */          
+       IF (B01.PERSON(I).STATUS.STATUS_KODE_HIST = ' '  &                       
+           B02.PERSON(I).STATUS.STATUS_KODE_HIST = ' ' )  &                     
+         ((B01.PERSON(I).STATUS.PENSJONSTYPE1    = 'U' !                        
+           B01.PERSON(I).STATUS.PENSJONSTYPE1    = 'Y') &                       
+           B01.PERSON(I).STATUS.PENSJONSTYPE3    = 'A' )  &                     
+         ((B02.PERSON(I).STATUS.PENSJONSTYPE1    = 'U' !                        
+           B02.PERSON(I).STATUS.PENSJONSTYPE1    = 'Y') &                       
+           B02.PERSON(I).STATUS.PENSJONSTYPE3    = ' ' )  &                     
+           SAVE_B01_B02                          = 0      THEN                  
+         DO;                                                                    
+           /* ---------------------------------- */                             
+           /* "REN" OVERGANG FRA ATV TIL UP/YP   */                             
+           /* ---------------------------------- */                             
+                                                                                
+           ALLOCATE X01;                                                        
+           SAVE_B01_B02   = 1;                                                  
+           X01.PERSON(I)  = B01.PERSON(I);                                      
+           B01.PERSON(I)  = '';                                                 
+                                                                                
+         END;                                                                   
+                                                                                
+       /*---------------------------------------------------*/                  
+       /* FORBEREDELSE TIL PTYPE- OG APOPPL-SEGMENT. BØ9201 */                  
+       /* - UTVIDET MED ALLE BELØPSFELT PENSJON      BØ9207 */                  
+       /*---------------------------------------------------*/                  
+                                                                                
+       B01_PENSJON = B01.PERSON(I).ALDERSP.AP_GP_NETTO  +                       
+                     B01.PERSON(I).ETTEPENS.GP_NETTO    +                       
+                     B01.PERSON(I).UFØRPENS.GP          +                       
+                     B01.PERSON(I).YRKEPENS.GP          +                       
+                     B01.PERSON(I).ALDERSP.AP_ST_NETTO  + /* SEB7339 */         
+                     B01.PERSON(I).UFØRPENS.ST          +                       
+                     B01.PERSON(I).ETTEPENS.ST          +                       
+                     B01.PERSON(I).ALDERSP.AP_TP_NETTO  +                       
+                     B01.PERSON(I).ETTEPENS.TP_NETTO    +                       
+                     B01.PERSON(I).UFØRPENS.TP          +                       
+                     B01.PERSON(I).YRKEPENS.TP          +                       
+                     B01.PERSON(I).STATUS.GARANTI_TP    +                       
+                     B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 ;                    
+                                                                                
+       B02_PENSJON = B02.PERSON(I).ALDERSP.AP_GP_NETTO  +                       
+                     B02.PERSON(I).ETTEPENS.GP_NETTO    +                       
+                     B02.PERSON(I).UFØRPENS.GP          +                       
+                     B02.PERSON(I).YRKEPENS.GP          +                       
+                     B02.PERSON(I).ALDERSP.AP_ST_NETTO  + /* SEB7339 */         
+                     B02.PERSON(I).UFØRPENS.ST          +                       
+                     B02.PERSON(I).ETTEPENS.ST          +                       
+                     B02.PERSON(I).ALDERSP.AP_TP_NETTO  +                       
+                     B02.PERSON(I).ETTEPENS.TP_NETTO    +                       
+                     B02.PERSON(I).UFØRPENS.TP          +                       
+                     B02.PERSON(I).YRKEPENS.TP          +                       
+                     B02.PERSON(I).STATUS.GARANTI_TP    +                       
+                     B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 ;                    
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*    PTYPE-SEGMENT. SEP.93 PT1=Q/R UT. PT3 INNFØRES . SL,DU         */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       B01_STAT_PT1 = B01.PERSON(I).STATUS.PENSJONSTYPE1;                       
+       B02_STAT_PT1 = B02.PERSON(I).STATUS.PENSJONSTYPE1;                       
+                                                                                
+       IF (B01_STAT_PT1  = 'U' !                                                
+           B01_STAT_PT1  = 'Y' )                    &                           
+           B01.PERSON(I).STATUS.PENSJONSTYPE3 = 'A' THEN                        
+           B01_STAT_PT1  = 'V';                                                 
+                                                                                
+       IF (B02_STAT_PT1 = 'U' !                                                 
+           B02_STAT_PT1 = 'Y' )                     &                           
+           B02.PERSON(I).STATUS.PENSJONSTYPE3 = 'A' THEN                        
+           B02_STAT_PT1 = 'V';                                                  
+                                                                                
+       IF B02.PERSON(I).STATUS.DØDSDATO_ÅMD     =  0   &                        
+         (B02.PERSON(I).STATUS.STATUS_KODE_HIST = 'O' !                         
+          B02.PERSON(I).STATUS.STATUS_KODE_HIST = 'X') THEN                     
+                                                                                
+          IF B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'U' !                         
+             B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'Y' !                         
+             B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'A' !                         
+             B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'K' THEN                      
+                                                                                
+             IF B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'G' THEN                   
+                B02_STAT_PT1 = 'G';                                             
+             ELSE                                                               
+                B02_STAT_PT1 = ' ';                                             
+          ELSE                                                                  
+             B02_STAT_PT1    = ' ';                                             
+                                                                                
+       IF  B01_STAT_PT1               = 'D'     &                               
+           B02_STAT_PT1               = 'D'     &                               
+                                                                                
+           /*BØ9012: UTVIDET MED NYE BLANKETTER */                              
+          (TRANS_OPPL_OMR.BLANKETTYPE = 'F5'  !                                 
+           TRANS_OPPL_OMR.BLANKETTYPE = 'B6'  !                                 
+           TRANS_OPPL_OMR.BLANKETTYPE = 'E3'  !                                 
+                                                                                
+           TRANS_OPPL_OMR.BLANKETTYPE = 'FB'  !                                 
+           TRANS_OPPL_OMR.BLANKETTYPE = 'BP'  !                                 
+           TRANS_OPPL_OMR.BLANKETTYPE = 'EP'   )  THEN                          
+                                                                                
+           DO;                                                                  
+              B01_STAT_PT1               = ' ';                                 
+           END;                                                                 
+                                                                                
+                                                                                
+       ENDRET = (B01_STAT_PT1 ^= B02_STAT_PT1) !                                
+                (B01.PERSON(I).STATUS.PENSJONSTYPE2 ^=                          
+                 B02.PERSON(I).STATUS.PENSJONSTYPE2) !                          
+                (B01.PERSON(I).STATUS.PENSJONSTYPE3 ^=                          
+                 B02.PERSON(I).STATUS.PENSJONSTYPE3) !                          
+                (B01.PERSON(I).STATUS.GP_REDUKSJON_KODE ^= /* SE 0502 */        
+                 B02.PERSON(I).STATUS.GP_REDUKSJON_KODE )! /* SE 0502 */        
+                (B01_PENSJON = 0 & B02_PENSJON > 0) !                           
+                (B01_PENSJON > 0 & B02_PENSJON = 0);                            
+                                                                                
+                                                                                
+       IF ENDRET THEN                                                           
+       DO;                                                                      
+          SEGMENT_TABELL.PTYPE = TRUE;                                          
+          PTYPE.PT1   = B02_STAT_PT1;                                           
+          PTYPE.PT2   = B02.PERSON(I).STATUS.PENSJONSTYPE2;                     
+          PTYPE.PT3   = B02.PERSON(I).STATUS.PENSJONSTYPE3;                     
+          PTYPE.GPRED = B02.PERSON(I).STATUS.GP_REDUKSJON_KODE; /* SE */        
+                                                        /* 14.05.2002 */        
+          IF PTYPE.PT1 = 'G' !                                                  
+             PTYPE.PT1 = 'D' !                                                  
+             PTYPE.PT1 = 'F' !                                                  
+             PTYPE.PT1 = ' '      THEN                                          
+             DO;                                                                
+                PTYPE.PT2   = ' ';                                              
+                PTYPE.PT3   = ' ';                                              
+                PTYPE.GPRED = ' ';    /* SEA2970 14.05.2002 */                  
+             END;                                                               
+          ELSE IF B02_PENSJON = 0 THEN PTYPE.PT2 = 'N';                         
+       END;                                                                     
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*    SIVILST_SEGMENT                                                */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       IF B02.PERSON (I).STATUS.SIVILSTAND                   ^= ' ' THEN        
+          DO;                                                                   
+             ENDRET =    (B01.PERSON(I).STATUS.SIVILSTAND    ^=                 
+                          B02.PERSON(I).STATUS.SIVILSTAND)             ;        
+                                                                                
+             IF ^ENDRET & B02.PERSON(I).STATUS.SIVILSTAND     = 'G' THEN        
+                DO;                                                             
+                   ENDRET =    (B01.PERSON(I).STATUS.PENSJONSTYPE1 ^=           
+                                B02.PERSON(I).STATUS.PENSJONSTYPE1)  ;          
+                   IF ^ENDRET    THEN                                           
+                     ENDRET =    (B01.PERSON(I).STATUS.PENSJONSTYPE2 ^=         
+                                  B02.PERSON(I).STATUS.PENSJONSTYPE2)  ;        
+                END;                                                            
+                                                                                
+             IF ^ENDRET THEN                                                    
+                DO;                                                             
+                   ENDRET =  (B01.PERSON(3-I).STATUS.PENSJONSTYPE1 ^=           
+                              B02.PERSON(3-I).STATUS.PENSJONSTYPE1)  ;          
+                   IF ^ENDRET    THEN                                           
+                     ENDRET =  (B01.PERSON(3-I).STATUS.PENSJONSTYPE2 ^=         
+                                B02.PERSON(3-I).STATUS.PENSJONSTYPE2)  ;        
+                END;                                                            
+                                                                                
+             IF ENDRET &                                                        
+                B02.PERSON(I).STATUS.PENSJONSTYPE1 ^= 'D' THEN                  
+                DO;                                                             
+                   SEGMENT_TABELL.SIVILST                     =  TRUE  ;        
+  /* R0016031 */   SIVILST.SIVILSTAND                         =                 
+                   F_KONV_SIVILSTAND (B02.PERSON(I).STATUS.SIVILSTAND) ;        
+                   IF SIVILST.SIVILSTAND = '30' THEN                            
+                      DO;                                                       
+                         W_FNR   = TRANS_OPPL_OMR.FØDSNUMMER;                   
+                         W_VIRKD = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;            
+                         TRANS_OPPL_OMR.FØDSNUMMER = B02.PERSON(I).FNR;         
+                         TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD =                     
+                                     B02.PERSON(I).STATUS.VIRK_DATO_ÅMD;        
+                         EXEC CICS LINK PROGRAM                                 
+                                    ('R0016601') COMMAREA(KOM_OMR);             
+                         TRANS_OPPL_OMR.FØDSNUMMER    = W_FNR;                  
+                         TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = W_VIRKD;            
+                      END;                                                      
+                END;                                                            
+          END;                                                                  
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*    APOPPL-SEGMENT                                                 */        
+ /*    I FORBINDELSE MED LOVENDRING 1.1.92 BYTTES FAI_MAX UT MED      */        
+ /*    TAI_FAK, FAI OMGJØRES TIL G-FAKTOR (FAI_FAK) SAMT AT NYTT      */        
+ /*    FELT: BEREGN_ALT SKAL SI BENYTTET BEREGNINGSALTERNATIV. BØ9201 */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       ENDRET = (B01.PERSON(I).ALDERSP.APD ^=                                   
+                 B02.PERSON(I).ALDERSP.APD)        !                            
+                (B01.PERSON(I).ALDERSP.FAI ^=                                   
+                 B02.PERSON(I).ALDERSP.FAI)        !                            
+ /*BØ9201:*/  (((B02.PERSON(I).STATUS.PENSJONSTYPE1  = 'A' !                    
+                 B02.PERSON(I).STATUS.PENSJONSTYPE1  = 'K' ) !                  
+                (B01.PERSON(I).STATUS.PENSJONSTYPE1  = 'A' !                    
+                 B01.PERSON(I).STATUS.PENSJONSTYPE1  = 'K' ) ) &                
+               ((B01.PERSON(I).STATUS.PENSJONSTYPE1 ^=                          
+                 B02.PERSON(I).STATUS.PENSJONSTYPE1        ) !                  
+                (B01.PERSON(I).STATUS.PENSJONSTYPE2 ^=                          
+                 B02.PERSON(I).STATUS.PENSJONSTYPE2        ) ) ) ;              
+                                                                                
+                                                                                
+       /*BØ9201:*/                                                              
+       IF ^ENDRET                                      &                        
+          (B02.PERSON(I).STATUS.PENSJONSTYPE1  = 'A' !                          
+           B02.PERSON(I).STATUS.PENSJONSTYPE1  = 'K' ) &                        
+          /* SØRGE FOR TEST PE=0 (AN) TIL PE>0.            BØ9207*/             
+          (B02_PENSJON > 0)                            & /*BØ9207*/             
+          (B02.PERSON(I).ALDERSP.APD   = 0)            THEN                     
+          ENDRET = F_REGN_APD_B01_B02 ;        /* R0016053 */                   
+                                                                                
+       IF ENDRET THEN                                                           
+       DO;                                                                      
+          SEGMENT_TABELL.APOPPL = TRUE;                                         
+ /*BØ9201-START: */                                                             
+          IF B02.PERSON(I).STATUS.PENSJONSTYPE1    = 'A' !                      
+             B02.PERSON(I).STATUS.PENSJONSTYPE1    = 'K' THEN                   
+            DO;                                                                 
+              CALL FASTSETT_AP_BEREGN ;   /* R0016038 */                        
+                                                                                
+              /*--------------------------------------------------*/            
+              /* PROSEDYREN GIR APOPPL.FAI_FAK, -.TAI_FAK, -.APD  */            
+              /* OG -.BEREGN_ALT. FOR DE 2 SISTE FELTENE ER       */            
+              /* LOGIKKEN AVHENGIG AV OM TILFELLET "TILHØRER"     */            
+              /* LOVENDRING FRA 1.1.92 ELLER IKKE.   BØ9201       */            
+              /*--------------------------------------------------*/            
+                                                                                
+            END;                                                                
+ /*BØ9201-SLUTT*/                                                               
+                                                                                
+       END;                                                                     
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*    PENSJON-SEGMENT,                                               */        
+ /*    ET-SEGMENT OG                                                  */        
+ /*    KT-SEGMENT ER AVHENGIG AV 'PENSJONSTYPE1'                      */        
+ /*                                                                   */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       TEST_B02_PT1 = B02.PERSON(I).STATUS.PENSJONSTYPE1;                       
+       IF TEST_B02_PT1 = ' ' THEN                                               
+          TEST_B02_PT1 = B01.PERSON(I).STATUS.PENSJONSTYPE1;                    
+                                                                                
+       SELECT(TEST_B02_PT1);                                                    
+          WHEN ('D')                                                            
+            DO;                                                                 
+              /*-----------------------------------------------------*/         
+              /* IKKE PENSJON- OG KT-SEGMENT UTEN TIDL. YTELSE.      */         
+              /* YPT MÅ HENTES HVIS AKTUELT (GJØRES ENKLERE??).BØ9011*/         
+              /*-----------------------------------------------------*/         
+                                                                                
+              IF B01_STAT_PT1   ^= 'D'  &                                       
+                 B01_STAT_PT1   ^= ' '  &                                       
+                 B01_STAT_PT1   ^= 'G'  &                                       
+                 B01_STAT_PT1   ^= 'F'  &                                       
+                 B01_STAT_PT1   ^= 'L'  THEN                                    
+                DO;                                                             
+                  SEGMENT_TABELL.PENSJON = TRUE;                                
+                  SEGMENT_TABELL.KT      = TRUE;                                
+                END;                                                            
+                                                                                
+              IF B01.PERSON(I).STATUS.DØD_AV_YRKESSKADE = 'J' THEN              
+                 B01_YPT = B01.PERSON(I).YRKEPENS.YPT;                          
+              IF B02.PERSON(I).STATUS.DØD_AV_YRKESSKADE = 'J' THEN              
+                 B02_YPT = B02.PERSON(I).YRKEPENS.YPT;                          
+            END;                                                                
+                                                                                
+                                                                                
+          WHEN ('A','K')                                                        
+          DO;                                                                   
+             /*------------------------------------------------------*/         
+             /*FORBEREDELSE TIL REGTPKT-SEGMENT                      */         
+             /*------------------------------------------------------*/         
+             B01_PÅ      = B01.PERSON(I).ALDERSP.PÅ;                            
+             B02_PÅ      = B02.PERSON(I).ALDERSP.PÅ;                            
+             B01_SPT     = B01.PERSON(I).ALDERSP.SPT;                           
+             B02_SPT     = B02.PERSON(I).ALDERSP.SPT;                           
+             B01_OPT     = B01.PERSON(I).ALDERSP.OPT;                           
+             B02_OPT     = B02.PERSON(I).ALDERSP.OPT;                           
+             B01_YPT     = B01.PERSON(I).YRKEPENS.YPT;                          
+             B02_YPT     = B02.PERSON(I).YRKEPENS.YPT;                          
+ /*BØ9201:*/                                                                    
+             B01_PÅ_E91  = B01.PERSON(I).ALDERSP.PÅ_ETTER91;                    
+             B02_PÅ_E91  = B02.PERSON(I).ALDERSP.PÅ_ETTER91;                    
+             B01_SPT_GML = B01.PERSON(I).ALDERSP.SPT_1291;                      
+             B02_SPT_GML = B02.PERSON(I).ALDERSP.SPT_1291;                      
+ /*-------------------------------------------------------------------*/        
+ /*          PENSJON-SEGMENT  ( PT1 = A / K )                         */        
+ /*-------------------------------------------------------------------*/        
+ /*BØ9201:*/ ENDRET = (B01.PERSON(I).ALDERSP.AP_GP_NETTO ^=                     
+                       B02.PERSON(I).ALDERSP.AP_GP_NETTO) !                     
+                      (B01.PERSON(I).ALDERSP.AP_ST_NETTO ^= /*SEB7339*/         
+                       B02.PERSON(I).ALDERSP.AP_ST_NETTO) ! /*SEB7339*/         
+                      (B01.PERSON(I).ALDERSP.AP_TP_NETTO +                      
+                       B01.PERSON(I).ETTEPENS.TP_NETTO ^=                       
+                       B02.PERSON(I).ALDERSP.AP_TP_NETTO +                      
+                       B02.PERSON(I).ETTEPENS.TP_NETTO)   !                     
+                      (B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 ^=                 
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 )  !               
+                      (B01_PENSJON ^= B02_PENSJON )  ;        /*BØ9207*/        
+                                                                                
+ /*SOB0000 FRA */                                                               
+ /*                                                                  */         
+ /*          IF ^ENDRET THEN                                         */         
+ /*            ENDRET = (B01.PERSON(I).ALDERSP.AP_GP_NETTO     = 0 & */         
+ /*                      B01.PERSON(I).ALDERSP.ST              = 0 & */         
+ /*                      B01.PERSON(I).ALDERSP.AP_TP_NETTO     = 0 & */         
+ /*                      B01.PERSON(I).ETTEPENS.TP_NETTO       = 0 & */         
+ /*                      B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 = 0 & */         
+ /*                      B01_PENSJON                           = 0); */         
+ /*SOB0000 TIL */                                                               
+                                                                                
+                      /*----------------------------------------------*/        
+                      /*V/ALDERSKONV-P67 (RED.YT) PE>0 TIL PE=0. NÅR  */        
+                      /*UP/YP EVT. EP > 0 OG AP = 0, HOLDER DET IKKE Å*/        
+                      /*TESTE PÅ AP-FELTER FORDI DE ALLE ER 0.  BØ9207*/        
+               /*---------------------------------------------------*/          
+               /* AFP-STATSPENSJON HAR BELØP I RF, SKAL IKKE HA DET */          
+               /* DET I SR. FJERNER DANNING AV BELØPSSEGM. 9009 BØ  */          
+               /* AFP KREVER OPPHØRSTRANS PÅ ANNEN YTELSE FØRST. SL */          
+               /*---------------------------------------------------*/          
+                                                                                
+             IF ENDRET &                                                        
+               ^(B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'K' &                     
+                 B02.PERSON(I).STATUS.PENSJONSTYPE2 = 'N' ) THEN                
+             DO;                                                                
+                SEGMENT_TABELL.PENSJON = TRUE;                                  
+                                                                                
+             /*------------------------------------*/                           
+             /* HER REGNES DET BARE UT VERDIER     */                           
+             /* HVIS TRANSTYPE < 50.                                            
+             /*------------------------------------*/                           
+                                                                                
+                IF TRANS_OPPL_OMR.TRANSTYPE < 50  THEN                          
+                  DO;                                                           
+  /*BØ9201:*/       PENSJON.GP_FAK =                                            
+                       B02.PERSON(I).ALDERSP.AP_GP_NETTO * 12 /                 
+                                             DIV_PARAM_OMR.G;                   
+                                                                                
+                    PENSJON.ST_FAK =                                            
+        /* SEB7339 */  B02.PERSON(I).ALDERSP.AP_ST_NETTO * 12 /                 
+                                             DIV_PARAM_OMR.G;                   
+                                                                                
+                  /*-------------------------------------------------*/         
+                  /* TP-GARANTI 1:                                   */         
+                  /* 1.GANG 9104 - RYDDING GAMLE INNTEKTER - GJELDER */         
+                  /* PERSON 1 OG 2 FOR AP OG UP/YP, IKKE EP          */         
+                  /* FELT:          STATUS.GARANTI_TP        BØ9104. */         
+                  /* TP-GARANTI 2:                                   */         
+                  /* LOVENDRING 9201 - FRYS FOR ENDRETE BEREGNETE    */         
+                  /* FRAMTIDIGE PENSJONSPOENG                        */         
+                  /* FULL GARANTI:  STATUS.GT_LOV_92                 */         
+                  /* REST-GARANTI:  STATUS.GT_TILLEGG_LOV92  BØ9201. */         
+                  /*-------------------------------------------------*/         
+                                                                                
+                    W_B02_SUM =                                                 
+                       B02.PERSON(I).STATUS.GARANTI_TP       +                  
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 +                  
+                       B02.PERSON(I).ALDERSP.AP_TP_NETTO     +                  
+                       B02.PERSON(I).ETTEPENS.TP_NETTO       ;                  
+                                                                                
+                    PENSJON.TP_FAK = W_B02_SUM * 12 / DIV_PARAM_OMR.G;          
+                                                                                
+                    PENSJON.TP_GAR_FAK =                                        
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 * 12 /             
+                                                      DIV_PARAM_OMR.G;          
+                                                                                
+                  END;                                                          
+             END;                                                               
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          KT-SEGMENT  ( PT1 = A / K )                              */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).ALDERSP.KT ^=                              
+                       B02.PERSON(I).ALDERSP.KT)        !                       
+   /*BØ9207-FRA -      DANNE KT=0 V/ALDERSKONV-P67 KT>0 TIL KT=0*/              
+                      (TRANS_OPPL_OMR.TRANSTYPE  = 74 &                         
+                       B01.PERSON(I).UFØRPENS.KT >  0)  !                       
+                      (TRANS_OPPL_OMR.TRANSTYPE  = 69 &                         
+                       B01.PERSON(I).ETTEPENS.KT >  0)  ;                       
+   /*BØ9207-TIL*/                                                               
+                                                                                
+                                                                                
+                /* SE KOM. OM AFP UNDER PENSJONS-SEGMENTET. 9009 BØ  */         
+             IF ENDRET &                                                        
+                ^(B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'K' &                    
+                  B02.PERSON(I).STATUS.PENSJONSTYPE2 = 'N' ) THEN               
+             DO;                                                                
+                SEGMENT_TABELL.KT = TRUE;                                       
+                IF B02.PERSON(I).ALDERSP.KT > 0 THEN                            
+                   KT.KT_KR = B02.PERSON(I).ALDERSP.KT*12;                      
+             END;                                                               
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          VT-SEGMENT   ( PT1 = A / K)                              */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).ALDERSP.VT_GP ^=                           
+                       B02.PERSON(I).ALDERSP.VT_GP) !                           
+                      (B01.PERSON(I).ALDERSP.VT_TP ^=                           
+                       B02.PERSON(I).ALDERSP.VT_TP);                            
+                                                                                
+                                                                                
+             IF ENDRET THEN                                                     
+             DO;                                                                
+                SEGMENT_TABELL.VT = TRUE;                                       
+                                                                                
+             /*------------------------------------*/                           
+             /* HER REGNES DET BARE UT VERDIER     */                           
+             /* HVIS TRANSTYPE < 50.               */                           
+             /*------------------------------------*/                           
+                                                                                
+                IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                           
+                DO;                                                             
+                                                                                
+                   VT.VT_GP_FAK =                                               
+                      B02.PERSON(I).ALDERSP.VT_GP * 12 /                        
+                                            DIV_PARAM_OMR.G;                    
+                                                                                
+                   VT.VT_TP_FAK =                                               
+                      B02.PERSON(I).ALDERSP.VT_TP * 12 /                        
+                                            DIV_PARAM_OMR.G;                    
+                END;                                                            
+             END;                                                               
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          ET-SEGMENT  ( PT1 = A / K )                              */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).ALDERSP.AP_ET_NETTO ^=  /*SEB7339*/        
+                       B02.PERSON(I).ALDERSP.AP_ET_NETTO)  ! /*SEB7339*/        
+  /*BØ9104*/          (B01.PERSON(I).FORSI.GARANTITILLEGG_EK ^=                 
+                       B02.PERSON(I).FORSI.GARANTITILLEGG_EK)   !               
+   /*BØ9207 -          DANNE ET=0 V/ALDERSKONV-P67 ET>0 TIL ET=0.*/             
+                      (TRANS_OPPL_OMR.TRANSTYPE  = 74 &                         
+                       B01.PERSON(I).UFØRPENS.ET >  0)  ;                       
+                                                                                
+                                                                                
+                /* SE KOM. OM AFP UNDER PENSJONS-SEGMENTET. 9009 BØ  */         
+             IF ENDRET &                                                        
+                ^(B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'K' &                    
+                  B02.PERSON(I).STATUS.PENSJONSTYPE2 = 'N' ) THEN               
+                DO;                                                             
+                  SEGMENT_TABELL.ET = TRUE;                                     
+                                                                                
+             /*------------------------------------*/                           
+             /* HER REGNES DET BARE UT VERDI       */                           
+             /* HVIS TRANSTYPE < 50.               */                           
+             /*------------------------------------*/                           
+                                                                                
+                  IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                         
+                    DO;                                                         
+                    /*-----------------------------------------------*/         
+                    /* "FRYS"-REGEL FOR FORS-TILL. FOM 1.5.91.       */         
+                    /* GJELDER OGSÅ UFØREPENSJON PT=U/Y.    BØ9104.  */         
+                    /*-----------------------------------------------*/         
+                      ET.ET_FAK =                                               
+                        (B02.PERSON(I).FORSI.GARANTITILLEGG_EK +                
+                         B02.PERSON(I).ALDERSP.AP_ET_NETTO)  /*SEB7339*/        
+                                          * 12 / DIV_PARAM_OMR.G;               
+                      ET.ET_GAR_FAK =                                           
+                         B02.PERSON(I).FORSI.GARANTITILLEGG_EK                  
+                                          * 12 / DIV_PARAM_OMR.G;               
+                    END;                                                        
+                END;                                                            
+                                                                                
+          END; /* OF WHEN ('A', 'K') */                                         
+                                                                                
+          WHEN ('E','J','B')                                                    
+          DO;                                                                   
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          PENSJON-SEGMENT  ( PT1 = E/J/B )                         */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).ETTEPENS.GP_NETTO ^=                       
+                       B02.PERSON(I).ETTEPENS.GP_NETTO) !                       
+                      (B01.PERSON(I).ETTEPENS.ST ^=                             
+                       B02.PERSON(I).ETTEPENS.ST) !                             
+                      (B01.PERSON(I).ETTEPENS.TP_NETTO ^=                       
+                       B02.PERSON(I).ETTEPENS.TP_NETTO) !                       
+ /*BØ9201:*/          (B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 ^=                 
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 ) ;                
+                                                                                
+ /*SOB0000 FRA */                                                               
+ /*                                                                   */        
+ /*          IF ^ENDRET THEN                                        */          
+ /*            ENDRET = (B01.PERSON(I).ETTEPENS.GP_NETTO       = 0 &*/          
+ /*                      B01.PERSON(I).ETTEPENS.ST             = 0 &*/          
+ /*                      B01.PERSON(I).ETTEPENS.TP_NETTO       = 0 &*/          
+ /*                      B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 = 0);*/          
+ /*SOB0000 TIL */                                                               
+                                                                                
+             IF ENDRET THEN                                                     
+             DO;                                                                
+                SEGMENT_TABELL.PENSJON = TRUE;                                  
+                                                                                
+             /*------------------------------------*/                           
+             /* HER REGNES DET BARE UT VERDIER     */                           
+             /* HVIS TRANSTYPE < 50.               */                           
+             /*------------------------------------*/                           
+                                                                                
+                IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                           
+                DO;                                                             
+                                                                                
+                   PENSJON.GP_FAK =                                             
+                      B02.PERSON(I).ETTEPENS.GP_NETTO * 12 /                    
+                                             DIV_PARAM_OMR.G;                   
+                                                                                
+                   PENSJON.ST_FAK =                                             
+                      B02.PERSON(I).ETTEPENS.ST * 12 /                          
+                                             DIV_PARAM_OMR.G;                   
+                                                                                
+                    /*-----------------------------------------------*/         
+                    /* TP-GARANTI 2 - JFR. KOMM. UNDER PT1=A.  BØ9201*/         
+                    /*-----------------------------------------------*/         
+                    PENSJON.TP_FAK =                                            
+                      (B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 +                  
+                       B02.PERSON(I).ETTEPENS.TP_NETTO )  * 12 /                
+                                                      DIV_PARAM_OMR.G;          
+                                                                                
+                    PENSJON.TP_GAR_FAK =                                        
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 * 12 /             
+                                                      DIV_PARAM_OMR.G;          
+                END;                                                            
+             END;                                                               
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          KT-SEGMENT  ( PT1 = E/J/B )                              */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).ETTEPENS.KT ^=                             
+                       B02.PERSON(I).ETTEPENS.KT);                              
+                                                                                
+                                                                                
+             IF ENDRET THEN                                                     
+             DO;                                                                
+                SEGMENT_TABELL.KT = TRUE;                                       
+                IF B02.PERSON(I).ETTEPENS.KT > 0 THEN                           
+                   KT.KT_KR = B02.PERSON(I).ETTEPENS.KT*12;                     
+             END;                                                               
+                                                                                
+          END; /* OF WHEN ('E','J','B') */                                      
+                                                                                
+          WHEN ('U')                                                            
+          DO;                                                                   
+                                                                                
+ /*          FORBEREDELSE TIL REGTPKT-SEGMENT                         */        
+                                                                                
+             B01_PÅ      = B01.PERSON(I).UFØRPENS.PÅ;                           
+             B02_PÅ      = B02.PERSON(I).UFØRPENS.PÅ;                           
+             B01_SPT     = B01.PERSON(I).UFØRPENS.SPT;                          
+             B02_SPT     = B02.PERSON(I).UFØRPENS.SPT;                          
+             B01_OPT     = B01.PERSON(I).UFØRPENS.OPT;                          
+             B02_OPT     = B02.PERSON(I).UFØRPENS.OPT;                          
+ /*BØ9201:*/                                                                    
+             B01_PÅ_E91  = B01.PERSON(I).UFØRPENS.PÅ_ETTER91 ;                  
+             B02_PÅ_E91  = B02.PERSON(I).UFØRPENS.PÅ_ETTER91 ;                  
+             B01_SPT_GML = B01.PERSON(I).UFØRPENS.SPT_1291 ;                    
+             B02_SPT_GML = B02.PERSON(I).UFØRPENS.SPT_1291 ;                    
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          PENSJON-SEGMENT  ( PT1 = U )                             */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).UFØRPENS.GP +                              
+                       B01.PERSON(I).ETTEPENS.GP_NETTO ^=                       
+                       B02.PERSON(I).UFØRPENS.GP +                              
+                       B02.PERSON(I).ETTEPENS.GP_NETTO) !                       
+                      (B01.PERSON(I).UFØRPENS.ST +                              
+                       B01.PERSON(I).ETTEPENS.ST ^=                             
+                       B02.PERSON(I).UFØRPENS.ST +                              
+                       B02.PERSON(I).ETTEPENS.ST) !                             
+                      (B01.PERSON(I).UFØRPENS.TP +                              
+                       B01.PERSON(I).ETTEPENS.TP_NETTO ^=                       
+                       B02.PERSON(I).UFØRPENS.TP +                              
+                       B02.PERSON(I).ETTEPENS.TP_NETTO) !                       
+ /*BØ9201:*/          (B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 ^=                 
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 ) ;                
+                                                                                
+ /*SOB0000 FRA */                                                               
+ /*          IF ^ENDRET THEN                                        */          
+ /*            ENDRET = (B01.PERSON(I).UFØRPENS.GP             = 0 &*/          
+ /*                      B01.PERSON(I).ETTEPENS.GP_NETTO       = 0 &*/          
+ /*                      B01.PERSON(I).UFØRPENS.ST             = 0 &*/          
+ /*                      B01.PERSON(I).ETTEPENS.ST             = 0 &*/          
+ /*                      B01.PERSON(I).UFØRPENS.TP             = 0 &*/          
+ /*                      B01.PERSON(I).ETTEPENS.TP_NETTO       = 0 &*/          
+ /*                      B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 = 0);*/          
+ /*SOB0000 TIL */                                                               
+                                                                                
+             IF ENDRET THEN                                                     
+              DO;                                                               
+                SEGMENT_TABELL.PENSJON = TRUE;                                  
+                                                                                
+             /*------------------------------------*/                           
+             /* HER REGNES DET BARE UT VERDIER     */                           
+             /* HVIS TRANSTYPE < 50.               */                           
+             /*------------------------------------*/                           
+                                                                                
+                IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                           
+                DO;                                                             
+                                                                                
+                   PENSJON.GP_FAK =                                             
+                      (B02.PERSON(I).UFØRPENS.GP +                              
+                       B02.PERSON(I).ETTEPENS.GP_NETTO) * 12 /                  
+                                              DIV_PARAM_OMR.G;                  
+                                                                                
+                   PENSJON.ST_FAK =                                             
+                      (B02.PERSON(I).UFØRPENS.ST +                              
+                       B02.PERSON(I).ETTEPENS.ST) * 12 /                        
+                                              DIV_PARAM_OMR.G;                  
+                                                                                
+                    /*-----------------------------------------------*/         
+                    /* TP-GARANTI 1 OG 2 JFR. KOMM. UNDER PT1=A      */         
+                    /*                            BØ9104. BØ9201.    */         
+                    /*-----------------------------------------------*/         
+ /*BØ9201:*/        W_B02_SUM =                                                 
+                       B02.PERSON(I).STATUS.GARANTI_TP       +                  
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 +                  
+                       B02.PERSON(I).UFØRPENS.TP             +                  
+                       B02.PERSON(I).ETTEPENS.TP_NETTO       ;                  
+                                                                                
+                    PENSJON.TP_FAK = W_B02_SUM * 12 / DIV_PARAM_OMR.G;          
+                                                                                
+ /*BØ9201:*/        PENSJON.TP_GAR_FAK =                                        
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 * 12 /             
+                                                      DIV_PARAM_OMR.G;          
+                END;                                                            
+             END;                                                               
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          KT-SEGMENT  ( PT1 = U )                                  */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).UFØRPENS.KT +                              
+                       B01.PERSON(I).ETTEPENS.KT ^=                             
+                       B02.PERSON(I).UFØRPENS.KT +                              
+                       B02.PERSON(I).ETTEPENS.KT);                              
+                                                                                
+                                                                                
+             IF ENDRET THEN                                                     
+             DO;                                                                
+                SEGMENT_TABELL.KT = TRUE;                                       
+                IF (B02.PERSON(I).UFØRPENS.KT > 0) !                            
+                   (B02.PERSON(I).ETTEPENS.KT > 0) THEN                         
+                   KT.KT_KR =                                                   
+                      (B02.PERSON(I).UFØRPENS.KT +                              
+                       B02.PERSON(I).ETTEPENS.KT) * 12;                         
+             END;                                                               
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          ET-SEGMENT  ( PT1 = U )                                  */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).UFØRPENS.ET ^=                             
+                       B02.PERSON(I).UFØRPENS.ET)  !                            
+                      (B01.PERSON(I).FORSI.GARANTITILLEGG_EK ^=                 
+                       B02.PERSON(I).FORSI.GARANTITILLEGG_EK) ;                 
+                                                                                
+                                                                                
+             IF ENDRET THEN                                                     
+             DO;                                                                
+                SEGMENT_TABELL.ET = TRUE;                                       
+                                                                                
+             /*------------------------------------*/                           
+             /* HER REGNES DET BARE UT VERDI       */                           
+             /* HVIS TRANSTYPE < 50.               */                           
+             /*------------------------------------*/                           
+                                                                                
+                IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                           
+                  DO;                                                           
+                    ET.ET_FAK =                                                 
+                      (B02.PERSON(I).FORSI.GARANTITILLEGG_EK +                  
+                       B02.PERSON(I).UFØRPENS.ET)                               
+                                        * 12 / DIV_PARAM_OMR.G;                 
+                    ET.ET_GAR_FAK =                                             
+                       B02.PERSON(I).FORSI.GARANTITILLEGG_EK                    
+                                        * 12 / DIV_PARAM_OMR.G;                 
+                  END;                                                          
+             END;                                                               
+                                                                                
+          END; /* OF WHEN ('U') */                                              
+                                                                                
+          WHEN ('Y')                                                            
+          DO;                                                                   
+                                                                                
+ /*          FORBEREDELSE TIL REGTPKT-SEGMENT                         */        
+                                                                                
+ /*BØ9201-START:*/                                                              
+             IF  B01.PERSON(I).UFØRPENS.PÅ > 0 THEN                             
+                 B01_PÅ  = B01.PERSON(I).UFØRPENS.PÅ;                           
+             ELSE                                                               
+                 B01_PÅ  = B01.PERSON(I).YRKEPENS.PÅ;                           
+                                                                                
+             IF  B02.PERSON(I).UFØRPENS.PÅ > 0 THEN                             
+                 B02_PÅ  = B02.PERSON(I).UFØRPENS.PÅ;                           
+             ELSE                                                               
+                 B02_PÅ  = B02.PERSON(I).YRKEPENS.PÅ;                           
+                                                                                
+             IF  B01.PERSON(I).UFØRPENS.SPT > 0 THEN                            
+                 B01_SPT = B01.PERSON(I).UFØRPENS.SPT;                          
+             ELSE                                                               
+                 B01_SPT = B01.PERSON(I).YRKEPENS.SPT;                          
+                                                                                
+             IF  B02.PERSON(I).UFØRPENS.SPT > 0 THEN                            
+                 B02_SPT = B02.PERSON(I).UFØRPENS.SPT;                          
+             ELSE                                                               
+                 B02_SPT = B02.PERSON(I).YRKEPENS.SPT;                          
+                                                                                
+             IF  B01.PERSON(I).UFØRPENS.PÅ_ETTER91 > 0 THEN                     
+                 B01_PÅ_E91  = B01.PERSON(I).UFØRPENS.PÅ_ETTER91 ;              
+             ELSE                                                               
+                 B01_PÅ_E91  = B01.PERSON(I).YRKEPENS.PÅ_ETTER91 ;              
+                                                                                
+             IF  B02.PERSON(I).UFØRPENS.PÅ_ETTER91 > 0 THEN                     
+                 B02_PÅ_E91  = B02.PERSON(I).UFØRPENS.PÅ_ETTER91 ;              
+             ELSE                                                               
+                 B02_PÅ_E91  = B02.PERSON(I).YRKEPENS.PÅ_ETTER91 ;              
+                                                                                
+             IF  B01.PERSON(I).UFØRPENS.SPT_1291 > 0 THEN                       
+                 B01_SPT_GML = B01.PERSON(I).UFØRPENS.SPT_1291 ;                
+             IF  B02.PERSON(I).UFØRPENS.SPT_1291 > 0 THEN                       
+                 B02_SPT_GML = B02.PERSON(I).UFØRPENS.SPT_1291 ;                
+ /*BØ9201-SLUTT */                                                              
+                                                                                
+             IF  B01.PERSON(I).UFØRPENS.OPT > 0 THEN                            
+                 B01_OPT = B01.PERSON(I).UFØRPENS.OPT;                          
+             IF  B02.PERSON(I).UFØRPENS.OPT > 0 THEN                            
+                 B02_OPT = B02.PERSON(I).UFØRPENS.OPT;                          
+             B01_YPT = B01.PERSON(I).YRKEPENS.YPT;                              
+             B02_YPT = B02.PERSON(I).YRKEPENS.YPT;                              
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          PENSJON-SEGMENT  ( PT1 = Y )                             */        
+ /*-------------------------------------------------------------------*/        
+             ENDRET = (B01.PERSON(I).YRKEPENS.GP +                              
+                       B01.PERSON(I).UFØRPENS.GP +                              
+                       B01.PERSON(I).ETTEPENS.GP_NETTO ^=                       
+                       B02.PERSON(I).YRKEPENS.GP +                              
+                       B02.PERSON(I).UFØRPENS.GP +                              
+                       B02.PERSON(I).ETTEPENS.GP_NETTO) !                       
+                      (B01.PERSON(I).ETTEPENS.ST +                              
+                       B01.PERSON(I).UFØRPENS.ST ^=                             
+                       B02.PERSON(I).ETTEPENS.ST +                              
+                       B02.PERSON(I).UFØRPENS.ST) !                             
+                      (B01.PERSON(I).YRKEPENS.TP +                              
+                       B01.PERSON(I).UFØRPENS.TP +                              
+                       B01.PERSON(I).ETTEPENS.TP_NETTO ^=                       
+                       B02.PERSON(I).YRKEPENS.TP +                              
+                       B02.PERSON(I).UFØRPENS.TP +                              
+                       B02.PERSON(I).ETTEPENS.TP_NETTO) !                       
+ /*BØ9201:*/          (B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 ^=                 
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 ) ;                
+                                                                                
+ /*SOB0000 FRA */                                                               
+ /*          IF ^ENDRET THEN                                          */        
+ /*            ENDRET = (B01.PERSON(I).YRKEPENS.GP             = 0 &  */        
+ /*                      B01.PERSON(I).UFØRPENS.GP             = 0 &  */        
+ /*                      B01.PERSON(I).ETTEPENS.GP_NETTO       = 0 &  */        
+ /*                      B01.PERSON(I).ETTEPENS.ST             = 0 &  */        
+ /*                      B01.PERSON(I).UFØRPENS.ST             = 0 &  */        
+ /*                      B01.PERSON(I).YRKEPENS.TP             = 0 &  */        
+ /*                      B01.PERSON(I).UFØRPENS.TP             = 0 &  */        
+ /*                      B01.PERSON(I).ETTEPENS.TP_NETTO       = 0 &  */        
+ /*                      B01.PERSON(I).STATUS.GT_TILLEGG_LOV92 = 0);  */        
+ /*SOB0000 TIL */                                                               
+                                                                                
+             IF ENDRET THEN                                                     
+              DO;                                                               
+                 SEGMENT_TABELL.PENSJON = TRUE;                                 
+                                                                                
+              /*------------------------------------*/                          
+              /* HER REGNES DET BARE UT VERDIER     */                          
+              /* HVIS TRANSTYPE < 50.               */                          
+              /*------------------------------------*/                          
+                                                                                
+                 IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                          
+                 DO;                                                            
+                    PENSJON.GP_FAK =                                            
+                      (B02.PERSON(I).YRKEPENS.GP +                              
+                       B02.PERSON(I).UFØRPENS.GP +                              
+                       B02.PERSON(I).ETTEPENS.GP_NETTO) * 12 /                  
+                                              DIV_PARAM_OMR.G;                  
+                                                                                
+                    PENSJON.ST_FAK =                                            
+                      (B02.PERSON(I).UFØRPENS.ST +                              
+                       B02.PERSON(I).ETTEPENS.ST) * 12 /                        
+                                              DIV_PARAM_OMR.G;                  
+                                                                                
+                    /*-----------------------------------------------*/         
+                    /* TP-GARANTI 1 OG 2 JFR. KOMM. UNDER PT1=A      */         
+                    /*                            BØ9104. BØ9201.    */         
+                    /*-----------------------------------------------*/         
+                                                                                
+ /*BØ9201:*/        W_B02_SUM =                                                 
+                       B02.PERSON(I).STATUS.GARANTI_TP       +                  
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 +                  
+                       B02.PERSON(I).YRKEPENS.TP             +                  
+                       B02.PERSON(I).UFØRPENS.TP             +                  
+                       B02.PERSON(I).ETTEPENS.TP_NETTO       ;                  
+                                                                                
+                    PENSJON.TP_FAK = W_B02_SUM * 12 / DIV_PARAM_OMR.G;          
+                                                                                
+ /*BØ9201:*/        PENSJON.TP_GAR_FAK =                                        
+                       B02.PERSON(I).STATUS.GT_TILLEGG_LOV92 * 12 /             
+                                                      DIV_PARAM_OMR.G;          
+                 END;                                                           
+              END;                                                              
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          KT-SEGMENT  ( PT1 = Y )                                  */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).ETTEPENS.KT +                              
+                       B01.PERSON(I).UFØRPENS.KT ^=                             
+                       B02.PERSON(I).ETTEPENS.KT +                              
+                       B02.PERSON(I).UFØRPENS.KT);                              
+                                                                                
+                                                                                
+             IF ENDRET THEN                                                     
+                DO;                                                             
+                   SEGMENT_TABELL.KT = TRUE;                                    
+                   IF (B02.PERSON(I).ETTEPENS.KT +                              
+                       B02.PERSON(I).UFØRPENS.KT) > 0 THEN                      
+                      KT.KT_KR =                                                
+                                (B02.PERSON(I).ETTEPENS.KT +                    
+                                 B02.PERSON(I).UFØRPENS.KT) * 12;               
+                END;                                                            
+                                                                                
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*          ET-SEGMENT  ( PT1 = Y )                                  */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+             ENDRET = (B01.PERSON(I).UFØRPENS.ET ^=                             
+                       B02.PERSON(I).UFØRPENS.ET)  !                            
+                      (B01.PERSON(I).FORSI.GARANTITILLEGG_EK ^=                 
+                       B02.PERSON(I).FORSI.GARANTITILLEGG_EK) ;                 
+                                                                                
+                                                                                
+             IF ENDRET THEN                                                     
+             DO;                                                                
+                SEGMENT_TABELL.ET = TRUE;                                       
+                                                                                
+             /*------------------------------------*/                           
+             /* HER REGNES DET BARE UT VERDI       */                           
+             /* HVIS TRANSTYPE < 50.               */                           
+             /*------------------------------------*/                           
+                                                                                
+                IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                           
+                  DO;                                                           
+                    ET.ET_FAK =                                                 
+                      (B02.PERSON(I).FORSI.GARANTITILLEGG_EK +                  
+                       B02.PERSON(I).UFØRPENS.ET)                               
+                                        * 12 / DIV_PARAM_OMR.G;                 
+                    ET.ET_GAR_FAK =                                             
+                       B02.PERSON(I).FORSI.GARANTITILLEGG_EK                    
+                                        * 12 / DIV_PARAM_OMR.G;                 
+                  END;                                                          
+             END;                                                               
+                                                                                
+          END; /* OF WHEN ('Y') */                                              
+                                                                                
+          OTHERWISE ;                                                           
+                                                                                
+       END; /* OF SELECT */                                                     
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*    UPPER-SEGMENT                                                  */        
+ /*    UFG = TOTAL UFØREGRAD PÅ LØPENDE PENSJON  (KAP. 8 / KAP. 11)   */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       ENDRET = (B01.PERSON(I).UFØRPENS.UFG ^=                                  
+                 B02.PERSON(I).UFØRPENS.UFG) !                                  
+                (B01.PERSON(I).UFØRPENS.VILKÅR_8_1B ^=                          
+                 B02.PERSON(I).UFØRPENS.VILKÅR_8_1B);                           
+                                                                                
+                                                                                
+       /* ------------------------------------------------------ */             
+       /* I DEN SISTE UTFYLTE UFØREHIST ER GJELDENDE UFT OG BUP  */             
+       /* ------------------------------------------------------ */             
+                                                                                
+       K = 7;                             /*SOA9707: 5->7 */                    
+       DO WHILE (B02.PERSON(I).UFØRHIST(K).UFT_ÅMD = 0) UNTIL (K = 0);          
+          K = K - 1;                                                            
+       END;                                                                     
+                                                                                
+       IF K = 0 THEN                                                            
+          DO;                                                                   
+             K = 7;                       /*SOA9707: 5->7 */                    
+             DO WHILE                                                           
+                  (X02.PERSON(I).UFØRHIST(K).UFT_ÅMD = 0) UNTIL (K = 0);        
+                K = K - 1;                                                      
+             END;                                                               
+          END;                                                                  
+       /* ------------------------------------------------------ */             
+       /* SL 10.06.96 TESTER PÅ UFT < 19920000 OG BUP > 5        */             
+       /* ------------------------------------------------------ */             
+       IF K > 0 THEN                                                            
+          ENDRET = ENDRET !                                                     
+   /*2000*/        (B02.PERSON(I).UFØRHIST(K).UFT_ÅMD < 19920000 &              
+                    B02.PERSON(I).UFØRHIST(K).BUP     > 5     ) !               
+                                                                                
+                   (B01.PERSON(I).UFØRHIST(K).UFT_ÅMD ^=                        
+                    B02.PERSON(I).UFØRHIST(K).UFT_ÅMD) !                        
+                   (B01.PERSON(I).UFØRHIST(K).BUP ^=                            
+                    B02.PERSON(I).UFØRHIST(K).BUP) !                            
+                   (B01.PERSON(I).UFØRHIST(K).OPPHØRSDATO_ÅMD ^=                
+                    B02.PERSON(I).UFØRHIST(K).OPPHØRSDATO_ÅMD);                 
+                                                                                
+                                                                                
+       /* ------------------------------------------------------ */             
+       /* UPPER SKAL IKKE DANNES VED ENGANGSUTLØSNING YSKADE     */             
+       /* ------------------------------------------------------ */             
+       IF ENDRET  &  K > 0    &                                                 
+          DIV_PARAM_OMR.ENGANGSBELØP_11_7(I)        >  0     THEN               
+         ENDRET = FALSE;                                                        
+                                                                                
+       IF ENDRET & K > 0 THEN                                                   
+          DO;                                                                   
+             SEGMENT_TABELL.UPPER = TRUE;                                       
+                                                                                
+             IF X02.PERSON(I).UFØRHIST(K).OPPHØRSDATO_ÅMD ^= 0 THEN             
+                UPPER.UFG = 0;                                                  
+             ELSE                                                               
+                DO;                                                             
+                   UPPER.UFG         = B02.PERSON(I).UFØRPENS.UFG;              
+                   UPPER.VILKÅR_8_1B =                                          
+                                 B02.PERSON(I).UFØRPENS.VILKÅR_8_1B;            
+                END;                                                            
+                                                                                
+             IF UPPER.UFG > 0 THEN                                              
+                DO;                                                             
+   /*2000*/        IF B02.PERSON(I).UFØRHIST(K).UFT_ÅMD > 19920000 THEN         
+                        UPPER.BUP  = B02.PERSON(I).UFØRHIST(K).BUP;             
+   /*2000*/        ELSE UPPER.BUP  = POREKKE.BUP_FPP (I,1992);                  
+                   UPPER.UFT       = B02.PERSON(I).UFØRHIST(K).UFT_ÅMD;         
+                   UPPER.BUPÅR_RED = B02.PERSON(I).UFØRHIST(K).                 
+                                         REDUSERT_ANT_BUP_ÅR;                   
+                END;                                                            
+             ELSE                                                               
+                DO;                                                             
+   /*2000*/        IF B02.PERSON(I).UFØRHIST(K).UFT_ÅMD > 19920000 THEN         
+                        UPPER.BUP  = X02.PERSON(I).UFØRHIST(K).BUP;             
+   /*2000*/        ELSE UPPER.BUP  = POREKKE.BUP_FPP (I,1992);                  
+                   UPPER.UFT       = X02.PERSON(I).UFØRHIST(K).UFT_ÅMD;         
+                   UPPER.BUPÅR_RED = X02.PERSON(I).UFØRHIST(K).                 
+                                         REDUSERT_ANT_BUP_ÅR;                   
+                END;                                                            
+          END;                                                                  
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*    BT-SEGMENT                                                     */        
+ /*                                                                   */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       ENDRET = (B01.PERSON(I).STATUS.ANTALL_BARN     ^=                        
+                 B02.PERSON(I).STATUS.ANTALL_BARN)      !                       
+                (B01.PERSON(I).ALDERSP.BT      +                                
+                 B01.PERSON(I).UFØRPENS.BT     +                                
+                 B01.PERSON(I).YRKEPENS.BT)           ^=                        
+                (B02.PERSON(I).ALDERSP.BT      +                                
+                 B02.PERSON(I).UFØRPENS.BT     +                                
+                 B02.PERSON(I).YRKEPENS.BT)             !                       
+                (B01.PERSON(I).FORSI.BT_SÆRBARN       ^=                        
+                 B02.PERSON(I).FORSI.BT_SÆRBARN)        !                       
+                (B01.PERSON(I).FORSI.GARANTITILLEGG_BARN    ^=                  
+                 B02.PERSON(I).FORSI.GARANTITILLEGG_BARN)     !                 
+                (B01.PERSON(I).FORSI.GARANTITILLEGG_SÆRBARN ^=                  
+                 B02.PERSON(I).FORSI.GARANTITILLEGG_SÆRBARN)  !                 
+  /*BØ9207-FRA - DANNE BT V/OMREGNING SÆRBARN  PR. 9205     */                  
+  /*             DANNE BT=0 V/ALDERSKONV-P67 BT>0 TIL BT=0. */                  
+                (TRANS_OPPL_OMR.TRANSTYPE          = 99 &                       
+                 B02.PERSON(I).STATUS.ANTALL_BARN  >  0 ) !                     
+                (TRANS_OPPL_OMR.TRANSTYPE          = 74 &                       
+                (B01.PERSON(I).UFØRPENS.BT  +                                   
+                 B01.PERSON(I).YRKEPENS.BT)        >  0 ) ;                     
+  /*BØ9207-TIL*/                                                                
+                                                                                
+                                                                                
+          /* SE KOM. OM AFP UNDER PENSJONS-SEGMENTET.  BØ9009  */               
+          /* UNØDVENDIG? AFP HAR IKKE BARNETILLEGG.    BØ9207  */               
+       IF ENDRET &                                                              
+          ^(B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'K' &                          
+            B02.PERSON(I).STATUS.PENSJONSTYPE2 = 'N' ) THEN                     
+       DO;                                                                      
+          SEGMENT_TABELL.BT    = TRUE;                                          
+          BT.BT_ANT = B02.PERSON(I).STATUS.ANTALL_BARN;                         
+          /*------------------------------------*/                              
+          /* HER REGNES DET BARE UT VERDI       */                              
+          /* HVIS TRANSTYPE < 50 ELLER 99. BØ.  */                              
+          /*------------------------------------*/                              
+                                                                                
+          IF TRANS_OPPL_OMR.TRANSTYPE < 50 !                                    
+             TRANS_OPPL_OMR.TRANSTYPE = 99 THEN     /*BØ9207-SE OVENF*/         
+            DO;                                                                 
+              /*---------------------------------------------------*/           
+              /* "FRYS"-REGEL FOR FORS-TILL. FOM 1.5.91.  GJELDER  */           
+              /* ALDERS-/UFØRE-PENSJON.                            */           
+              /* OPPDAGET HER EN BEGRENSNING I PL1:                */           
+              /* NÅR 6 FELT (DEC FIXED 5) LEGGES SAMMEN, GANGES MED*/           
+              /* 12, DELES PÅ G OG TILORDNES FELT (DEC FIXED 7,5) -*/           
+              /* KLARER IKKE ARBEIDSFELTENE MER ENN 2 DECIMALER    */           
+              /* SLIK AT INNTIL 0,01G MISTES. HVIS ISTEDET F.EKS.  */           
+              /* I TILSVARENDE REGNESTYKKE 4 FELT LEGGES SAMMEN VIL*/           
+              /* 4 DECIMALER BLI MED. Å DELE PÅ G FØRST BLIR LITT  */           
+              /* UNØYAKTIG - DERFOR EKSTRA HJELPE-FELT.  BØ9104.   */           
+              /*---------------------------------------------------*/           
+              W_B02_SUM = (B02.PERSON(I).ALDERSP.BT                +            
+                           B02.PERSON(I).UFØRPENS.BT               +            
+                           B02.PERSON(I).YRKEPENS.BT               +            
+                           B02.PERSON(I).FORSI.BT_SÆRBARN          +            
+                           B02.PERSON(I).FORSI.GARANTITILLEGG_BARN +            
+                           B02.PERSON(I).FORSI.GARANTITILLEGG_SÆRBARN);         
+                                                                                
+              BT.BT_FAK =  W_B02_SUM * 12 / DIV_PARAM_OMR.G ;                   
+                                                                                
+              BT.BT_FAK_SÆRBARN =                                               
+                          (B02.PERSON(I).FORSI.BT_SÆRBARN          +            
+                           B02.PERSON(I).FORSI.GARANTITILLEGG_SÆRBARN)          
+                                      * 12 / DIV_PARAM_OMR.G;                   
+              BT.BT_GAR_FAK_F_BARN =                                            
+                           B02.PERSON(I).FORSI.GARANTITILLEGG_BARN              
+                                      * 12 / DIV_PARAM_OMR.G;                   
+              BT.BT_GAR_FAK_SÆRBARN =                                           
+                           B02.PERSON(I).FORSI.GARANTITILLEGG_SÆRBARN           
+                                      * 12 / DIV_PARAM_OMR.G;                   
+            END;                                                                
+       END;                                                                     
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*    TILKN-SEGMENT                                                  */        
+ /*-------------------------------------------------------------------*/        
+ /* DET SKAL BARE VÆRE TILKNYTNING TIL EKTEFELLE                      */        
+ /* OBS: DØDE KAN HA TILKNYTNING TIL YNGSTE BARN                      */        
+ /*-------------------------------------------------------------------*/        
+     IF   TRANS_OPPL_OMR.TRANSKODE    ^= 'AUTO'     & /*9806 SL OMR*/           
+          W_KALL_FRA_PROGRAM_ID       ^= 'R0019H01' & /*9806 SL OMR*/           
+                                                                                
+          B02.PERSON(I).RF0PERSN.FNR   > 0 &                                    
+          B02.PERSON(3-I).RF0PERSN.FNR > 0 THEN                                 
+       DO;                                                                      
+       /*-----------------*/                                                    
+       /* HOVEDBETINGELSE */                                                    
+       /*-----------------*/                                                    
+                                                                                
+          IF ((B01.PERSON(I).RF0PERSN.FNR =                                     
+               B02.PERSON(I).RF0PERSN.FNR) &                                    
+                                                                                
+              (B01.PERSON(3-I).RF0PERSN.FNR =                                   
+               B02.PERSON(3-I).RF0PERSN.FNR) &                                  
+                                                                                
+              (B01.PERSON(I).STATUS.VIRK_DATO_ÅMD > 0 &                         
+               B01.PERSON(I).STATUS.SIVILSTAND ^= 'E' &                         
+               B01.PERSON(I).STATUS.SIVILSTAND ^= 'U' &                         
+               B01.PERSON(I).STATUS.SIVILSTAND ^= 'S') &                        
+                                                                                
+              (B01.PERSON(3-I).STATUS.VIRK_DATO_ÅMD > 0 &                       
+               B01.PERSON(3-I).STATUS.SIVILSTAND ^= 'E' &                       
+               B01.PERSON(3-I).STATUS.SIVILSTAND ^= 'U' &                       
+               B01.PERSON(3-I).STATUS.SIVILSTAND ^= 'S')) THEN                  
+                                                                                
+                  /* HVIS STATUS EKSISTERER,ER TILKN. DANNET. */                
+               ;                                                                
+          ELSE                                                                  
+             DO;                                                                
+                /* DANNE TILKN-SEGMENT FOR ETTERLATT SAMBOER - OG -  */         
+                /* FOR DEN DØDE SOM UTLØSER STØNADEN (YSKADE). BØ9012*/         
+                IF ((B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'E' !                 
+                     B02.PERSON(I).STATUS.PENSJONSTYPE2 = 'E') &                
+                     B02.PERSON(I).STATUS.SIVILSTAND    = 'U' ) !               
+                    (B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'D'  &                
+                     B02.PERSON(3-I).STATUS.SIVILSTAND  = 'U' ) THEN            
+                    CALL DANN_TILKN_F;                                          
+                ELSE                                                            
+                /* DANNE TILKN-SEGMENT FOR EKTEFELLER,DØDE OG LEVENDE*/         
+                IF (B01.PERSON(I).RF0PERSN.FNR = 0 !                            
+                    B01.PERSON(3-I).RF0PERSN.FNR = 0) THEN                      
+                    CALL DANN_TILKN_A;   /* NYTT TILFELLE */                    
+                ELSE                                                            
+                    CALL DANN_TILKN_A;   /* GJENGIFTE, NYTT EKTESKAP */         
+             END;                                                               
+                                                                                
+       /* VED SKILLSMISSE ELLER DØD BEHOLDES DEN GAMLE    */                    
+       /* TILKNYTNING TIL EVENTUELT NYTT EKTESKAP INNGÅS. */                    
+                                                                                
+       END;                                                                     
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*    ETTERL-SEGMENT                                                 */        
+ /*                                                                   */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+    /* STARTER MED Å SJEKKE OM VEDKOMMENDE ER ETTERLATT */                      
+                                                                                
+ /* ENDRING  BEGYNNER  HER     SAK:27-2001        SEB7339  23.04.2001 */        
+ /*       TT_AVD MÅ INNEHOLDE AVDØDES ANVENDT TRYGDETID               */        
+    /* IF B02.PERSON(3-I).STATUS.DØDSDATO_ÅMD  > 0 !                            
+          B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'J' !                            
+          B01.PERSON(I).STATUS.PENSJONSTYPE1 = 'J' THEN                         
+       DO;                                                                      
+    */                                                                          
+          /* REGNER UT AVDØDES TRYGDETID I ANTALL MÅNEDER  */                   
+          /* FRA 1991 TAS ET NYTT TT-FELT I BRUK.   BØ9012 */                   
+                                                                                
+    /*    IF B01.PERSON(3-I).STATUS.TT_16_66  > 0   THEN                        
+             B01_TT_AVD =                                                       
+                        B01.PERSON(3-I).STATUS.TT_16_66         +               
+                        B01.PERSON(3-I).STATUS.TT_FRAMT         +               
+                        B01.PERSON(3-I).STATUS.TT_67_TIL_70 * 12;               
+          ELSE                                                                  
+             B01_TT_AVD =                                                       
+                        B01.PERSON(3-I).STATUS.TT_ETTER_1966    +               
+                        B01.PERSON(3-I).STATUS.TT_FRAMT         +               
+                       (B01.PERSON(3-I).STATUS.TT_FØR_1967  +                   
+                        B01.PERSON(3-I).STATUS.TT_67_TIL_70) * 12;              
+                                                                                
+          IF B02.PERSON(3-I).STATUS.TT_16_66  > 0   THEN                        
+             B02_TT_AVD =                                                       
+                        B02.PERSON(3-I).STATUS.TT_16_66         +               
+                        B02.PERSON(3-I).STATUS.TT_FRAMT         +               
+                        B02.PERSON(3-I).STATUS.TT_67_TIL_70 * 12;               
+          ELSE                                                                  
+             B02_TT_AVD =                                                       
+                        B02.PERSON(3-I).STATUS.TT_ETTER_1966    +               
+                        B02.PERSON(3-I).STATUS.TT_FRAMT         +               
+                       (B02.PERSON(3-I).STATUS.TT_FØR_1967  +                   
+                        B02.PERSON(3-I).STATUS.TT_67_TIL_70) * 12;              
+    */                                                                          
+       IF B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'E' !                            
+          B02.PERSON(I).STATUS.PENSJONSTYPE2 = 'E'       THEN                   
+       DO;                                                                      
+             B01_TT_AVD  = B01.PERSON(3-I).STATUS.TT_ANV * 12;                  
+             B02_TT_AVD  = B02.PERSON(3-I).STATUS.TT_ANV * 12;                  
+ /* ENDRING  SLUTTER  HER      SAK:27-2001        SEB7339  23.04.2001 */        
+                                                                                
+       /* REGNER UT TP-VERDIER */                                               
+                                                                                
+          SELECT (B02.PERSON(I).STATUS.PENSJONSTYPE1);                          
+             WHEN ('A','K') DO;                                                 
+             /*BØ9201- FELTET HAR TIDLIGERE INNEHOLDT EGEN TP  */               
+             /*I FORHOLD TIL UFG/APD. DETTE OPPRETTHOLDES SELV */               
+             /*OM BRUTTO EGENTLIG VAR MENINGEN.                */               
+                           B01_TP = B01.PERSON(I).ALDERSP.AP_TP_NETTO ;         
+                           B02_TP = B02.PERSON(I).ALDERSP.AP_TP_NETTO ;         
+                        END;                                                    
+             WHEN ('U') DO;                                                     
+                           B01_TP = B01.PERSON(I).UFØRPENS.TP;                  
+                           B02_TP = B02.PERSON(I).UFØRPENS.TP;                  
+                        END;                                                    
+             WHEN ('Y') DO;                                                     
+                           B01_TP = B01.PERSON(I).UFØRPENS.TP +                 
+                                    B01.PERSON(I).YRKEPENS.TP;                  
+                           B02_TP = B02.PERSON(I).UFØRPENS.TP +                 
+                                    B02.PERSON(I).YRKEPENS.TP;                  
+                        END;                                                    
+             OTHERWISE  DO;                                                     
+                           B01_TP = 0;                                          
+                           B02_TP = 0;                                          
+                        END;                                                    
+          END; /* OF SELECT */                                                  
+                                                                                
+       /* EKTEFELLENS DØDSDATO KAN VÆRE ENDRET */                               
+                                                                                
+          IF B02.PERSON(3-I).RF0PERSN.FNR > 0 THEN                              
+             ENDRET = B01.PERSON(3-I).STATUS.DØDSDATO_ÅMD  ^=                   
+                      B02.PERSON(3-I).STATUS.DØDSDATO_ÅMD;                      
+          ELSE ENDRET = FALSE;                                                  
+                                                                                
+       /* ANDRE OPPLYSNINGER PÅ EKTEFELLEN KAN VÆRE ENDRET */                   
+                                                                                
+                                                                                
+          ENDRET = ENDRET !                                                     
+                   (B01_TT_AVD ^= B02_TT_AVD) !                                 
+                   (B01.PERSON(I).ETTEPENS.HJEMMEL_10_8 ^=                      
+                    B02.PERSON(I).ETTEPENS.HJEMMEL_10_8) !                      
+                   (B01.PERSON(I).ETTEPENS.PÅ_AVD ^=                            
+                    B02.PERSON(I).ETTEPENS.PÅ_AVD) !                            
+                   (B01.PERSON(I).ETTEPENS.SPT_AVD ^=                           
+                    B02.PERSON(I).ETTEPENS.SPT_AVD) !                           
+                   (B01.PERSON(I).ETTEPENS.OPT_AVD ^=                           
+                    B02.PERSON(I).ETTEPENS.OPT_AVD) !                           
+                   (B01.PERSON(I).ETTEPENS.FORVENTET      ^=                    
+                    B02.PERSON(I).ETTEPENS.FORVENTET)      !                    
+                   (B01.PERSON(I).ETTEPENS.TP_BRUTTO ^=                         
+                    B02.PERSON(I).ETTEPENS.TP_BRUTTO) !                         
+                   (B01.PERSON(I).ETTEPENS.TP_NETTO ^=                          
+                    B02.PERSON(I).ETTEPENS.TP_NETTO) !                          
+                   (B01.PERSON(I).ETTEPENS.GP_BRUTTO ^=                         
+                    B02.PERSON(I).ETTEPENS.GP_BRUTTO) !                         
+                   (B01.PERSON(I).ETTEPENS.GP_NETTO ^=                          
+                    B02.PERSON(I).ETTEPENS.GP_NETTO) !                          
+                   (B01_TP ^= B02_TP) !                                         
+ /*BØ9201:*/       (B01.PERSON(I).ETTEPENS.PÅ_ETTER91 ^=                        
+                    B02.PERSON(I).ETTEPENS.PÅ_ETTER91) !                        
+                   (B01.PERSON(I).ETTEPENS.SPT_1291 ^=                          
+                    B02.PERSON(I).ETTEPENS.SPT_1291) ;                          
+                                                                                
+                 /* FAR DØDSDATO ER UAKTUELL                */                  
+                 /* MOR      "        "                     */                  
+                                                                                
+                                                                                
+          IF ENDRET THEN                                                        
+          DO;                                                                   
+             SEGMENT_TABELL.ETTERL     = TRUE;                                  
+                                                                                
+             ETTERL.TT_AVD             = B02_TT_AVD;                            
+             ETTERL.PÅ_AVD             =                                        
+                B02.PERSON(I).ETTEPENS.PÅ_AVD;                                  
+ /*BØ9201:*/ ETTERL.PÅ_AVD_ETTER91     =                                        
+                B02.PERSON(I).ETTEPENS.PÅ_ETTER91 ;                             
+                                                                                
+             ETTERL.SPT_AVD =                                                   
+                B02.PERSON(I).ETTEPENS.SPT_AVD;                                 
+                                                                                
+             ETTERL.OPT_AVD =                                                   
+                B02.PERSON(I).ETTEPENS.OPT_AVD;                                 
+ /*BØ9201:*/ ETTERL.SPT_AVD_GML        =                                        
+                B02.PERSON(I).ETTEPENS.SPT_1291 ;                               
+                                                                                
+          /*------------------------------------*/                              
+          /* HER REGNES DET BARE UT VERDIER     */                              
+          /* HVIS TRANSTYPE < 50.               */                              
+          /*------------------------------------*/                              
+                                                                                
+             IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                              
+             DO;                                                                
+                                                                                
+                ETTERL.FORVENTET_FAK      =                                     
+                   B02.PERSON(I).ETTEPENS.FORVENTET      * 100 /                
+                                            DIV_PARAM_OMR.G;                    
+                                                                                
+                /* SE KOMM. OM HJELPEFELT ØVERST I PGM. BØ9104  */              
+                W_B02_SUM =                                                     
+                  (B02.PERSON(I).ETTEPENS.TP_BRUTTO  -                          
+                   B02.PERSON(I).ETTEPENS.TP_NETTO   +                          
+                   B02.PERSON(I).ETTEPENS.GP_BRUTTO  -                          
+                   B02.PERSON(I).ETTEPENS.GP_NETTO)  ;                          
+                                                                                
+                ETTERL.FRADRAG_F_FAK = W_B02_SUM * 12 /                         
+                                                   DIV_PARAM_OMR.G;             
+                                                                                
+                   IF ETTERL.FRADRAG_F_FAK < 0 THEN                             
+                      ETTERL.FRADRAG_F_FAK = 0;                                 
+                                                                                
+             /* ETTERL TILLEGGS-PENSJONS-OPPLYSNINGER  */                       
+                                                                                
+                ETTERL.TP_FAK =                                                 
+                   B02_TP * 12 / DIV_PARAM_OMR.G;                               
+                                                                                
+                /* SE KOMM. OM HJELPEFELT ØVERST I PGM. ENDRER  */              
+                /* DENNE FOR SIKKERHETS SKYLD.          BØ9104  */              
+                IF B02.PERSON(I).ETTEPENS.TP_PROSENT   > 0 THEN                 
+                   IF B02.PERSON(I).ETTEPENS.TP_BRUTTO > 0 THEN                 
+                      DO;                                                       
+                         W_B02_SUM =                                            
+                           (B02.PERSON(I).ETTEPENS.TP_BRUTTO * 100 /            
+                            B02.PERSON(I).ETTEPENS.TP_PROSENT) ;                
+                         ETTERL.TP_AVD_FAK = W_B02_SUM * 12 /                   
+                                                       DIV_PARAM_OMR.G;         
+                      END;                                                      
+                                                                                
+                ELSE                                                            
+                   IF B02.PERSON(I).ETTEPENS.TP_BRUTTO > 0 THEN                 
+                      ETTERL.TP_AVD_FAK =                                       
+                      (B02.PERSON(I).ETTEPENS.TP_BRUTTO * 100 / 55) *           
+                                     12 / DIV_PARAM_OMR.G;                      
+                                                                                
+                ETTERL.HJEMMEL_10_8 =                                           
+                            B02.PERSON(I).ETTEPENS.HJEMMEL_10_8;                
+                                                                                
+                /*BØ9201:*/                                                     
+                IF B02.PERSON(I).ETTEPENS.TP_NETTO       > 0 THEN               
+                   IF (B02.PERSON(I).ALDERSP.AP_TP_NETTO > 0  !                 
+                       B02.PERSON(I).YRKEPENS.TP         > 0  !                 
+                       B02.PERSON(I).UFØRPENS.TP         > 0) THEN              
+                      ETTERL.TP_ANV = '3';                                      
+                   ELSE                                                         
+                      ETTERL.TP_ANV = '2';                                      
+                ELSE                                                            
+                   IF (B02.PERSON(I).ALDERSP.AP_TP_NETTO > 0  !                 
+                       B02.PERSON(I).YRKEPENS.TP         > 0  !                 
+                       B02.PERSON(I).UFØRPENS.TP         > 0) THEN              
+                      ETTERL.TP_ANV = '1';                                      
+                   ELSE                                                         
+                      ETTERL.TP_ANV = '0';                                      
+             END;                                                               
+                                                                                
+    /*2000*/ ETTERL.EK_DØDSDATO  = B02.PERSON(3-I).DØDSDATO_ÅMD;                
+    /*2000*/ ETTERL.FAR_DØDSDATO = 0     ;                                      
+    /*2000*/ ETTERL.MOR_DØDSDATO = 0     ;                                      
+          END;                                                                  
+       END;                                                                     
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*    YSKADE-SEGMENT                                                 */        
+ /*                                                                   */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       /* OPPHØRSSEG. HITTIL IKKE DANNET F.EKS. V/OVERGANG AP, BØ 9003*/        
+                                                                                
+       ENDRET = (B01.PERSON(I).YRKEPENS.YUG             ^=                      
+                 B02.PERSON(I).YRKEPENS.YUG)                  !                 
+                (B01.PERSON(I).YRKEPENS.GP              ^=                      
+                 B02.PERSON(I).YRKEPENS.GP )                  !                 
+                (B01.PERSON(I).YRKEPENS.TP              ^=                      
+                 B02.PERSON(I).YRKEPENS.TP )                  !                 
+                (B01.PERSON(I).YRKEPENS.BT              ^=                      
+                 B02.PERSON(I).YRKEPENS.BT )                  !                 
+                (B01.PERSON(I).YRKEPENS.YPT_KODE        ^=                      
+                 B02.PERSON(I).YRKEPENS.YPT_KODE)             !                 
+                 DIV_PARAM_OMR.ENGANGSBELØP_11_7(I)     ^= 0  !                 
+                (B01.PERSON(I).STATUS.DØD_AV_YRKESSKADE ^= 'J' &                
+                 B02.PERSON(I).STATUS.DØD_AV_YRKESSKADE  = 'J' );               
+                                                                                
+                                                                                
+       /* ------------------------------------------------ */                   
+       /*  I DEN SISTE UTFYLTE YRKEHIST ER GJELDENDE YUFT. */                   
+       /* ------------------------------------------------ */                   
+       K1 = 10;                                                                 
+       DO WHILE (B02.PERSON(I).YRKEHIST(K1).YUFT_ÅMD = 0)                       
+                                                    UNTIL (K1 = 0);             
+          K1 = K1 - 1;                                                          
+       END;                                                                     
+                                                                                
+       IF K1 = 0 THEN                                                           
+          DO;                                                                   
+             K1 = 10;                                                           
+             DO WHILE                                                           
+               (X02.PERSON(I).YRKEHIST(K1).YUFT_ÅMD = 0) UNTIL (K1 = 0);        
+               K1 = K1 - 1;                                                     
+             END;                                                               
+          END;                                                                  
+                                                                                
+                                                                                
+       IF K1 > 0 THEN                                                           
+          ENDRET = ENDRET !                                                     
+                   (B01.PERSON(I).YRKEHIST(K1).YUFT_ÅMD ^=                      
+                    B02.PERSON(I).YRKEHIST(K1).YUFT_ÅMD) !                      
+                   (B01.PERSON(I).YRKEHIST(K1).AÅI ^=                           
+                    B02.PERSON(I).YRKEHIST(K1).AÅI) !                           
+                   (B01.PERSON(I).YRKEHIST(K1).YRKE11 ^=                        
+                    B02.PERSON(I).YRKEHIST(K1).YRKE11);                         
+                                                                                
+       IF ENDRET  &  K1 > 0  THEN                                               
+          SEGMENT_TABELL.YSKADE = TRUE;                                         
+                                                                                
+       IF ENDRET & K1 > 0 THEN                                                  
+          DO;                                                                   
+                                                                                
+ /*SOB9706*/ YSKADE.YSYKDOM  =  B02.PERSON(I).YRKEPENS.YSYKDOM;                 
+                                                                                
+             IF X02.PERSON(I).YRKEHIST(K1).OPPH_DATO_ÅMD ^= 0  THEN             
+                                                                                
+               IF B02.PERSON(I).STATUS.PENSJONSTYPE1    ^= 'A' &                
+                  B02.PERSON(I).STATUS.PENSJONSTYPE1    ^= 'D' THEN             
+                  YSKADE.YFG        = 0;                                        
+               ELSE                                                             
+                  YSKADE.YFG        = B02.PERSON(I).YRKEPENS.YUG;               
+                                                                                
+             ELSE                                                               
+               IF DIV_PARAM_OMR.ENGANGSBELØP_11_7(I)         >  0  &            
+                  B02.PERSON(I).YRKEHIST(K1).KAP_11_7_UTLØST = 'J' THEN         
+                  YSKADE.YFG        = B02.PERSON(I).YRKEHIST(K1).YUG;           
+                                                                                
+               ELSE                                                             
+                  YSKADE.YFG        = B02.PERSON(I).YRKEPENS.YUG;               
+                                                                                
+             IF YSKADE.YFG > 0 THEN                                             
+                DO;                                                             
+                   YSKADE.SKADETP        =                                      
+                                  B02.PERSON(I).YRKEHIST(K1).YST_ÅMD;           
+                   YSKADE.ANTATT_INNTEKT =                                      
+                                  B02.PERSON(I).YRKEHIST(K1).AÅI;               
+                   YSKADE.YFT =                                                 
+                                  B02.PERSON(I).YRKEHIST(K1).YUFT_ÅMD;          
+                   YSKADE.YRKE11 =                                              
+                                  B02.PERSON(I).YRKEHIST(K1).YRKE11;            
+                END;                                                            
+             ELSE                                                               
+                DO;                                                             
+                   YSKADE.SKADETP        =                                      
+                                  X02.PERSON(I).YRKEHIST(K1).YST_ÅMD;           
+                   YSKADE.ANTATT_INNTEKT =                                      
+                                  X02.PERSON(I).YRKEHIST(K1).AÅI;               
+                   YSKADE.YFT =                                                 
+                               X02.PERSON(I).YRKEHIST(K1).YUFT_ÅMD;             
+                   YSKADE.YRKE11 =                                              
+                               X02.PERSON(I).YRKEHIST(K1).YRKE11;               
+                                                                                
+                END;                                                            
+          END;                                                                  
+                                                                                
+       IF ENDRET  &  K1 > 0  THEN                                               
+          IF TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                                 
+                                                                                
+            DO;                                                                 
+               /*-------------------------------- */                            
+               /*  IKKE I BRUK I RF-SYSTEMET - OG */                            
+               /*  FJERNET FRA SR/TR_BASENE:      */                            
+               /* YSKADE.Y_ST_FAK =               */                            
+               /* YSKADE.Y_ET_FAK =               */                            
+               /*-------------------------------- */                            
+                                                                                
+               YSKADE.Y_GP_FAK    =  B02.PERSON(I).YRKEPENS.GP * 12 /           
+                                            DIV_PARAM_OMR.G;                    
+                                                                                
+               /*-------------------------------------------------- */          
+               /* AD. TP-GARANTI 2:(SE KOMM. TIL PENSJON M/PT1=A(Y))*/          
+               /* PGA. PROBLEMET MED OM NOE - EVT. HELE - GARANTIEN */          
+               /* SKYLDES YSKADE, BRUKES DEN IKKE HER.   BØ9201.    */          
+               /*-------------------------------------------------- */          
+               YSKADE.Y_TP_FAK    =  B02.PERSON(I).YRKEPENS.TP * 12 /           
+                                            DIV_PARAM_OMR.G;                    
+                                                                                
+               YSKADE.Y_BT_FAK    =  B02.PERSON(I).YRKEPENS.BT * 12 /           
+                                            DIV_PARAM_OMR.G;                    
+                                                                                
+               /*-------------------------------------------------- */          
+               /*  FELTET FOREKOMMER BARE V/BARNEPENSJON (R0026023):*/          
+               /* YSKADE.PLEIEBARN =                                */          
+               /*-------------------------------------------------- */          
+                                                                                
+ /* SOB9706    IF B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'Y' THEN     */          
+ /*               YSKADE.YSYKDOM  =  DIV_PARAM_OMR.YSYKDOM;         */          
+                                                                                
+               YSKADE.ENGUTB      =                                             
+                           DIV_PARAM_OMR.ENGANGSBELØP_11_7(I);                  
+                                                                                
+               YSKADE.YPTKODE     =  B02.PERSON(I).YRKEPENS.YPT_KODE;           
+            END;                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*    SPESOPPL-SEGMENT                                               */        
+ /*-------------------------------------------------------------------*/        
+          ENDRET =                                                              
+                   (B01.PERSON(I).SPESOPPL.KONVENSJON          ^=               
+                    B02.PERSON(I).SPESOPPL.KONVENSJON)            !             
+                   (B01.PERSON(I).SPESOPPL.FRAVIK_FLYKTN       ^=               
+                    B02.PERSON(I).SPESOPPL.FRAVIK_FLYKTN)         !             
+                   (B01.PERSON(I).SPESOPPL.FRAVIK_BOSATT       ^=               
+                    B02.PERSON(I).SPESOPPL.FRAVIK_BOSATT)         !             
+                   (B01.PERSON(I).SPESOPPL.FRAVIK_TRYGDET_3ÅR  ^=               
+                    B02.PERSON(I).SPESOPPL.FRAVIK_TRYGDET_3ÅR)    !             
+                   (B01.PERSON(I).SPESOPPL.FRAVIK_19_3         ^=               
+                    B02.PERSON(I).SPESOPPL.FRAVIK_19_3)           !             
+                   (B01.PERSON(I).SPESOPPL.FRAVIK_8_1          ^=               
+                    B02.PERSON(I).SPESOPPL.FRAVIK_8_1)            !             
+                   (B01.PERSON(I).SPESOPPL.FRAVIK_10_1         ^=               
+                    B02.PERSON(I).SPESOPPL.FRAVIK_10_1)           !             
+  /*BØ9012*/                                                                    
+                   (B01.PERSON(I).SPESOPPL.PENSJONSTRYGDET     ^=               
+                    B02.PERSON(I).SPESOPPL.PENSJONSTRYGDET)       !             
+                   (B01.PERSON(I).SPESOPPL.MINST_20ÅR_BOTID    ^=               
+                    B02.PERSON(I).SPESOPPL.MINST_20ÅR_BOTID)      !             
+                   (B01.PERSON(I).SPESOPPL.FRAVIK_BOSATT_KONVENSJON ^=          
+                    B02.PERSON(I).SPESOPPL.FRAVIK_BOSATT_KONVENSJON)  !         
+  /*BØ9104*/                                                                    
+                   (B01.PERSON(I).FORSI.ARBEIDSINNTEKT       ^=                 
+                    B02.PERSON(I).FORSI.ARBEIDSINNTEKT)         !               
+                   (B01.PERSON(I).FORSI.PENSJONSINNTEKT      ^=                 
+                    B02.PERSON(I).FORSI.PENSJONSINNTEKT)        !               
+                   (B01.PERSON(I).FORSI.ARBEIDSINNTEKT_EK    ^=                 
+                    B02.PERSON(I).FORSI.ARBEIDSINNTEKT_EK)      !               
+                   (B01.PERSON(I).FORSI.PENSJONSINNTEKT_EK   ^=                 
+                    B02.PERSON(I).FORSI.PENSJONSINNTEKT_EK)  ;                  
+                                                                                
+                                                                                
+          IF K1 > 0 THEN                                                        
+             ENDRET = ENDRET !                                                  
+                     (B01.PERSON(I).YRKEHIST(K1).VILKÅR_1_2_2 ^=                
+                      B02.PERSON(I).YRKEHIST(K1).VILKÅR_1_2_2);                 
+          IF ENDRET &                                                           
+             TRANS_OPPL_OMR.TRANSTYPE < 50 THEN                                 
+             DO;                                                                
+                SEGMENT_TABELL.SPESOPPL = TRUE;                                 
+                SPESOPPL.KONVENSJON          =                                  
+                    B02.PERSON(I).SPESOPPL.KONVENSJON;                          
+                SPESOPPL.FRAVIK_FLYKTN       =                                  
+                    B02.PERSON(I).SPESOPPL.FRAVIK_FLYKTN;                       
+                SPESOPPL.FRAVIK_BOSATT       =                                  
+                    B02.PERSON(I).SPESOPPL.FRAVIK_BOSATT;                       
+                SPESOPPL.FRAVIK_TRYGDET_3ÅR  =                                  
+                    B02.PERSON(I).SPESOPPL.FRAVIK_TRYGDET_3ÅR;                  
+                SPESOPPL.FRAVIK_19_3         =                                  
+                    B02.PERSON(I).SPESOPPL.FRAVIK_19_3;                         
+                SPESOPPL.FRAVIK_8_1          =                                  
+                    B02.PERSON(I).SPESOPPL.FRAVIK_8_1;                          
+                SPESOPPL.FRAVIK_10_1         =                                  
+                    B02.PERSON(I).SPESOPPL.FRAVIK_10_1;                         
+                IF K1 > 0 THEN                                                  
+                  IF INDEX                                                      
+                     (B02.PERSON(I).YRKEHIST(K1).VILKÅR_1_2_2, 'J') > 0         
+                                                                 THEN           
+                    SPESOPPL.VILKÅR_1_2_2    = 'J';                             
+                SPESOPPL.PENSJONSTRYGDET     =                                  
+                    B02.PERSON(I).SPESOPPL.PENSJONSTRYGDET;                     
+                SPESOPPL.MINST_20ÅR_BOTID    =                                  
+                    B02.PERSON(I).SPESOPPL.MINST_20ÅR_BOTID;                    
+                SPESOPPL.FRAVIK_BOSATT_KONV  =                                  
+                    B02.PERSON(I).SPESOPPL.FRAVIK_BOSATT_KONVENSJON;            
+                SPESOPPL.ARB_INNT_FAK        =                                  
+                    B02.PERSON(I).FORSI.ARBEIDSINNTEKT * 100                    
+                                           / DIV_PARAM_OMR.G ;                  
+                SPESOPPL.PENSJONS_FAK        =                                  
+                    B02.PERSON(I).FORSI.PENSJONSINNTEKT * 100                   
+                                           / DIV_PARAM_OMR.G ;                  
+                SPESOPPL.ARB_INNT_FAK_EK     =                                  
+                    B02.PERSON(I).FORSI.ARBEIDSINNTEKT_EK * 100                 
+                                           / DIV_PARAM_OMR.G ;                  
+                SPESOPPL.PENSJONS_FAK_EK     =                                  
+                    B02.PERSON(I).FORSI.PENSJONSINNTEKT_EK * 100                
+                                           / DIV_PARAM_OMR.G ;                  
+             END;                                                               
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*    EØSINFO-SEGMENT                                                */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+          W01_ULIK_INNTEKTSÅR_EØS  = FALSE;                                     
+                                                                                
+          DO IX=1967 TO 2006;                                                   
+             IF B01.PERSON(I).EØSINFO.INNTEKTSÅR_EØS(IX)      ^=                
+                B02.PERSON(I).EØSINFO.INNTEKTSÅR_EØS(IX)         THEN           
+                W01_ULIK_INNTEKTSÅR_EØS  = TRUE;                                
+          END;                                                                  
+                                                                                
+          ENDRET =                                                              
+                (B01.PERSON(I).EØSINFO.BEREGN_FOLKETRYGD       ^=               
+                 B02.PERSON(I).EØSINFO.BEREGN_FOLKETRYGD          ) !           
+                (B01.PERSON(I).EØSINFO.PRO_RATA_BEREGNING      ^=               
+                 B02.PERSON(I).EØSINFO.PRO_RATA_BEREGNING         ) !           
+                (B01.PERSON(I).EØSINFO.TT_PRO_RATA_MND         ^=               
+                 B02.PERSON(I).EØSINFO.TT_PRO_RATA_MND            ) !           
+                (B01.PERSON(I).EØSINFO.TT_TEORETISK_EØS_MND    ^=               
+                 B02.PERSON(I).EØSINFO.TT_TEORETISK_EØS_MND       ) !           
+                 W01_ULIK_INNTEKTSÅR_EØS                            !           
+                (B01.PERSON(I).EØSINFO.ALTERNATIV_GP           ^=               
+                 B02.PERSON(I).EØSINFO.ALTERNATIV_GP              ) !           
+                (B01.PERSON(I).EØSINFO.ALTERNATIV_ST           ^=               
+                 B02.PERSON(I).EØSINFO.ALTERNATIV_ST              ) !           
+                (B01.PERSON(I).EØSINFO.ALTERNATIV_TP           ^=               
+                 B02.PERSON(I).EØSINFO.ALTERNATIV_TP              ) !           
+                (B01.PERSON(I).EØSINFO.ALTERNATIV_BT           ^=               
+                 B02.PERSON(I).EØSINFO.ALTERNATIV_BT              ) !           
+                (B01.PERSON(I).EØSINFO.ALTERNATIV_ET           ^=               
+                 B02.PERSON(I).EØSINFO.ALTERNATIV_ET              ) !           
+                (B01.PERSON(I).EØSINFO.ANTALL_NORSKE_PÅ         ^=              
+                 B02.PERSON(I).EØSINFO.ANTALL_NORSKE_PÅ           ) !           
+                (B01.PERSON(I).EØSINFO.ANTALL_NORSKE_PÅ_ETTER91 ^=              
+                 B02.PERSON(I).EØSINFO.ANTALL_NORSKE_PÅ_ETTER91   ) !           
+                (B01.PERSON(I).EØSINFO.SPT_EØS                  ^=              
+                 B02.PERSON(I).EØSINFO.SPT_EØS                    ) !           
+                (B01.PERSON(I).EØSINFO.OPT_EØS                  ^=              
+                 B02.PERSON(I).EØSINFO.OPT_EØS                    ) !           
+                (B01.PERSON(I).EØSINFO.PENSJON_EØS             ^=               
+                 B02.PERSON(I).EØSINFO.PENSJON_EØS                ) !           
+                (B01.PERSON(I).EØSINFO.EØS_8_4_3A              ^=               
+                 B02.PERSON(I).EØSINFO.EØS_8_4_3A                 ) ;           
+                                                                                
+          ENDRET = ENDRET                                           !           
+                (B01.PERSON(I).EØSINFO.NORDISK_KONVENSJON      ^=               
+                 B02.PERSON(I).EØSINFO.NORDISK_KONVENSJON         ) !           
+                (B01.PERSON(I).EØSINFO.GUNSTIGSTE_ALTERNATIV   ^=               
+                 B02.PERSON(I).EØSINFO.GUNSTIGSTE_ALTERNATIV      ) !           
+                (B01.PERSON(I).EØSINFO.TT_EØS_FRAMT_MND        ^=               
+                 B02.PERSON(I).EØSINFO.TT_EØS_FRAMT_MND           ) !           
+                (B01.PERSON(I).EØSINFO.TT_EØS_ANV_ÅR           ^=               
+                 B02.PERSON(I).EØSINFO.TT_EØS_ANV_ÅR              ) !           
+                (B01.PERSON(I).EØSINFO.TT_EØS_ANV_MND          ^=               
+                 B02.PERSON(I).EØSINFO.TT_EØS_ANV_MND             ) !           
+                (B01.PERSON(I).EØSINFO.TT_NORDISK_FAKT_MND     ^=               
+                 B02.PERSON(I).EØSINFO.TT_NORDISK_FAKT_MND        ) !           
+                (B01.PERSON(I).EØSINFO.TT_NORDISK_FRAMT_BRUTTO ^=               
+                 B02.PERSON(I).EØSINFO.TT_NORDISK_FRAMT_BRUTTO    ) !           
+                (B01.PERSON(I).EØSINFO.TT_NORDISK_FRAMT_NETTO  ^=               
+                 B02.PERSON(I).EØSINFO.TT_NORDISK_FRAMT_NETTO     ) !           
+                (B01.PERSON(I).EØSINFO.PÅ_EØS                  ^=               
+                 B02.PERSON(I).EØSINFO.PÅ_EØS                     ) !           
+                (B01.PERSON(I).EØSINFO.PÅ_EØS_ETTER91          ^=               
+                 B02.PERSON(I).EØSINFO.PÅ_EØS_ETTER91             ) !           
+                (B01.PERSON(I).EØSINFO.PÅ_EØS_FRAMT            ^=               
+                 B02.PERSON(I).EØSINFO.PÅ_EØS_FRAMT               ) !           
+                (B01.PERSON(I).EØSINFO.PÅ_NORDISK_FAKT         ^=               
+                 B02.PERSON(I).EØSINFO.PÅ_NORDISK_FAKT            ) !           
+                (B01.PERSON(I).EØSINFO.PÅ_NORDISK_FRAMT_BRUTTO ^=               
+                 B02.PERSON(I).EØSINFO.PÅ_NORDISK_FRAMT_BRUTTO    ) !           
+                (B01.PERSON(I).EØSINFO.PÅ_NORDISK_FRAMT_NETTO  ^=               
+                 B02.PERSON(I).EØSINFO.PÅ_NORDISK_FRAMT_NETTO     ) !           
+                (B01.PERSON(I).EØSINFO.SPT_NORDISK_ART15       ^=               
+                 B02.PERSON(I).EØSINFO.SPT_NORDISK_ART15          ) !           
+                (B01.PERSON(I).EØSINFO.OPT_NORDISK_ART15       ^=               
+                 B02.PERSON(I).EØSINFO.OPT_NORDISK_ART15          ) !           
+                (B01.PERSON(I).EØSINFO.GP_ART13_VIRKDATO_ÅMD   ^=               
+                 B02.PERSON(I).EØSINFO.GP_ART13_VIRKDATO_ÅMD      ) !           
+                (B01.PERSON(I).EØSINFO.TP_ART15_VIRKDATO_ÅMD   ^=               
+                 B02.PERSON(I).EØSINFO.TP_ART15_VIRKDATO_ÅMD      ) !           
+                (B01.PERSON(I).EØSINFO.ALTERNATIV_GP_BRUTTO    ^=               
+                 B02.PERSON(I).EØSINFO.ALTERNATIV_GP_BRUTTO       ) !           
+                (B01.PERSON(I).EØSINFO.ALTERNATIV_TP_BRUTTO    ^=               
+                 B02.PERSON(I).EØSINFO.ALTERNATIV_TP_BRUTTO       ) ;           
+                                                                                
+                                                                                
+          IF ENDRET                                         &                   
+             B02.PERSON(I).EØSINFO.BEREGN_FOLKETRYGD ^= ' ' &                   
+             TRANS_OPPL_OMR.TRANSTYPE                 < 50  THEN                
+             DO;                                                                
+                SEGMENT_TABELL.EØSINFO = TRUE;                                  
+                                                                                
+   /*2000*/     TR.EØSINFO.BEREGN_FOLKETRYGD                   =                
+                   B02.PERSON(I).EØSINFO.BEREGN_FOLKETRYGD        ;             
+   /*2000*/     TR.EØSINFO.PRO_RATA                            =                
+                   B02.PERSON(I).EØSINFO.PRO_RATA_BEREGNING       ;             
+   /*2000*/     TR.EØSINFO.TT_PRO_RATA_MND                     =                
+                   B02.PERSON(I).EØSINFO.TT_PRO_RATA_MND          ;             
+   /*2000*/     TR.EØSINFO.TT_EØS_MND                          =                
+                   B02.PERSON(I).EØSINFO.TT_TEORETISK_EØS_MND     ;             
+                                                                                
+   /*  ENDRING  STARTER HER                 05.08.2004  SEA2970      */         
+                DO IX=1967 TO 2006;                                             
+                   TR.EØSINFO.INNTEKTSÅR_EØS (IX)              =                
+                   B02.PERSON(I).EØSINFO.INNTEKTSÅR_EØS(IX);                    
+                END;                                                            
+                                                                                
+   /*2000*/ /*  TR.EØSINFO.INNTEKTSÅR_EØS (*)                  =                
+                   B02.PERSON(I).EØSINFO.INNTEKTSÅR_EØS (*)       ;  */         
+   /*  ENDRING  SLUTTER HER                 05.08.2004  SEA2970      */         
+                                                                                
+   /*2000*/     TR.EØSINFO.GP_FAK_ALT                          =                
+                   B02.PERSON(I).EØSINFO.ALTERNATIV_GP * 12 / G   ;             
+   /*2000*/     TR.EØSINFO.ST_FAK_ALT                          =                
+                   B02.PERSON(I).EØSINFO.ALTERNATIV_ST * 12 / G   ;             
+   /*2000*/     TR.EØSINFO.TP_FAK_ALT                          =                
+                   B02.PERSON(I).EØSINFO.ALTERNATIV_TP * 12 / G   ;             
+   /*2000*/     TR.EØSINFO.BT_FAK_ALT                          =                
+                   B02.PERSON(I).EØSINFO.ALTERNATIV_BT * 12 / G   ;             
+   /*2000*/     TR.EØSINFO.ET_FAK_ALT                          =                
+                   B02.PERSON(I).EØSINFO.ALTERNATIV_ET * 12 / G   ;             
+   /*2000*/     TR.EØSINFO.PÅ_NORSKE                           =                
+                   B02.PERSON(I).EØSINFO.ANTALL_NORSKE_PÅ          ;            
+   /*2000*/     TR.EØSINFO.PÅ_ETTER91                          =                
+                   B02.PERSON(I).EØSINFO.ANTALL_NORSKE_PÅ_ETTER91 ;             
+   /*2000*/     TR.EØSINFO.SPT_EØS                             =                
+                   B02.PERSON(I).EØSINFO.SPT_EØS                  ;             
+   /*2000*/     TR.EØSINFO.OPT_EØS                             =                
+                   B02.PERSON(I).EØSINFO.OPT_EØS;                               
+   /*2000*/     TR.EØSINFO.PENSJON_EØS_FAK                     =                
+                   B02.PERSON(I).EØSINFO.PENSJON_EØS         / G  ;             
+   /*2000*/     TR.EØSINFO.EØS_8_4_3A                          =                
+                   B02.PERSON(I).EØSINFO.EØS_8_4_3A               ;             
+   /*2000*/     TR.EØSINFO.NORD_KONV                            =               
+                   B02.PERSON(I).EØSINFO.NORDISK_KONVENSJON        ;            
+   /*2000*/     TR.EØSINFO.GUNST_ALT                            =               
+                   B02.PERSON(I).EØSINFO.GUNSTIGSTE_ALTERNATIV     ;            
+   /*2000*/     TR.EØSINFO.TT_EØS.FRAMT_MND                     =               
+                   B02.PERSON(I).EØSINFO.TT_EØS_FRAMT_MND          ;            
+   /*2000*/     TR.EØSINFO.TT_EØS.ANV_ÅR                        =               
+                   B02.PERSON(I).EØSINFO.TT_EØS_ANV_ÅR             ;            
+   /*2000*/     TR.EØSINFO.TT_EØS.ANV_MND                       =               
+                   B02.PERSON(I).EØSINFO.TT_EØS_ANV_MND            ;            
+   /*2000*/     TR.EØSINFO.TT_NORD.FAKT_MND                     =               
+                   B02.PERSON(I).EØSINFO.TT_NORDISK_FAKT_MND       ;            
+   /*2000*/     TR.EØSINFO.TT_NORD.FRAMT_BTO                    =               
+                   B02.PERSON(I).EØSINFO.TT_NORDISK_FRAMT_BRUTTO   ;            
+   /*2000*/     TR.EØSINFO.TT_NORD.FRAMT_NTO                    =               
+                   B02.PERSON(I).EØSINFO.TT_NORDISK_FRAMT_NETTO    ;            
+   /*2000*/     TR.EØSINFO.PÅ_EØS                               =               
+                   B02.PERSON(I).EØSINFO.PÅ_EØS                    ;            
+   /*2000*/     TR.EØSINFO.PÅ_EØS_E91                           =               
+                   B02.PERSON(I).EØSINFO.PÅ_EØS_ETTER91            ;            
+   /*2000*/     TR.EØSINFO.PÅ_EØS_FRAMT                         =               
+                   B02.PERSON(I).EØSINFO.PÅ_EØS_FRAMT              ;            
+   /*2000*/     TR.EØSINFO.PÅ_NORD_FAKT                         =               
+                   B02.PERSON(I).EØSINFO.PÅ_NORDISK_FAKT           ;            
+   /*2000*/     TR.EØSINFO.PÅ_NORD_FRAMT_BTO                    =               
+                   B02.PERSON(I).EØSINFO.PÅ_NORDISK_FRAMT_BRUTTO   ;            
+   /*2000*/     TR.EØSINFO.PÅ_NORD_FRAMT_NTO                    =               
+                   B02.PERSON(I).EØSINFO.PÅ_NORDISK_FRAMT_NETTO    ;            
+   /*2000*/     TR.EØSINFO.SPT_NORD_ART15                       =               
+                   B02.PERSON(I).EØSINFO.SPT_NORDISK_ART15         ;            
+   /*2000*/     TR.EØSINFO.OPT_NORD_ART15                       =               
+                   B02.PERSON(I).EØSINFO.OPT_NORDISK_ART15         ;            
+   /*2000*/     TR.EØSINFO.GP_ART13_VIRKDATO                    =               
+                   B02.PERSON(I).EØSINFO.GP_ART13_VIRKDATO_ÅMD     ;            
+   /*2000*/     TR.EØSINFO.TP_ART15_VIRKDATO                    =               
+                   B02.PERSON(I).EØSINFO.TP_ART15_VIRKDATO_ÅMD     ;            
+   /*2000*/     TR.EØSINFO.GP_BTO_FAK_ALT                       =               
+                   B02.PERSON(I).EØSINFO.ALTERNATIV_GP_BRUTTO * 12/G;           
+   /*2000*/     TR.EØSINFO.TP_BTO_FAK_ALT                       =               
+                   B02.PERSON(I).EØSINFO.ALTERNATIV_TP_BRUTTO * 12/G;           
+            END;                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*    REGTPKT-SEGMENT                                                */        
+ /*-------------------------------------------------------------------*/        
+ /*    HVIS NOEN AV DE UNDERLIGGENDE SEGMENTER NÅ ER DANNET,          */        
+ /*    SKAL DET DANNES ET REGTPKT-SEGMENT, .....                      */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       ENDRET = SEGMENT_TABELL.PTYPE !                                          
+                SEGMENT_TABELL.SIVILST !                                        
+                SEGMENT_TABELL.APOPPL !                                         
+                SEGMENT_TABELL.PENSJON !                                        
+                SEGMENT_TABELL.UPPER  !                                         
+                SEGMENT_TABELL.KT !                                             
+                SEGMENT_TABELL.VT !                                             
+                SEGMENT_TABELL.ET !                                             
+                SEGMENT_TABELL.BT !                                             
+                SEGMENT_TABELL.TILKN !                                          
+                SEGMENT_TABELL.ETTERL !                                         
+                SEGMENT_TABELL.DIAGNOSE !                                       
+                SEGMENT_TABELL.YSKADE !                                         
+                SEGMENT_TABELL.EØSINFO!                                         
+                SEGMENT_TABELL.SPESOPPL;                                        
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /* ...ELLER HVIS NOEN AV FELTENE I REGTPKT-SEGMENTET ER ENDRET,      */        
+ /*    SKAL DET DANNES ET REGTPKT-SEGMENT.                            */        
+ /*-------------------------------------------------------------------*/        
+ /* REGNER UT EGEN TRYGDETID I ANTALL MÅNEDER                         */        
+ /* FRA 1991 TAS ET NYTT TT-FELT I BRUK.   BØ9012                     */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+       IF B01.PERSON(I).STATUS.TT_16_66  > 0   THEN                             
+          B01_TT_EGEN =                                                         
+                      B01.PERSON(I).STATUS.TT_16_66         +                   
+                      B01.PERSON(I).STATUS.TT_FRAMT         +                   
+                      B01.PERSON(I).STATUS.TT_67_TIL_70 * 12;                   
+       ELSE                                                                     
+          B01_TT_EGEN =                                                         
+                      B01.PERSON(I).STATUS.TT_ETTER_1966    +                   
+                      B01.PERSON(I).STATUS.TT_FRAMT         +                   
+                     (B01.PERSON(I).STATUS.TT_FØR_1967  +                       
+                      B01.PERSON(I).STATUS.TT_67_TIL_70) * 12;                  
+                                                                                
+                                                                                
+       IF B02.PERSON(I).STATUS.TT_16_66  > 0   THEN                             
+          B02_TT_EGEN =                                                         
+                      B02.PERSON(I).STATUS.TT_16_66         +                   
+                      B02.PERSON(I).STATUS.TT_FRAMT         +                   
+                      B02.PERSON(I).STATUS.TT_67_TIL_70 * 12;                   
+       ELSE                                                                     
+          B02_TT_EGEN =                                                         
+                      B02.PERSON(I).STATUS.TT_ETTER_1966    +                   
+                      B02.PERSON(I).STATUS.TT_FRAMT         +                   
+                     (B02.PERSON(I).STATUS.TT_FØR_1967  +                       
+                      B02.PERSON(I).STATUS.TT_67_TIL_70) * 12;                  
+                                                                                
+ /*BØ9201: */                                                                   
+       ENDRET = ENDRET !                                                        
+                (B01_TT_EGEN ^= B02_TT_EGEN ) !                                 
+                (B01.PERSON(I).RF0PERSN.TKNR ^=                                 
+                 B02.PERSON(I).RF0PERSN.TKNR) !                                 
+                (B01.PERSON(I).SPESOPPL.STATSBORGER ^=                          
+                 B02.PERSON(I).SPESOPPL.STATSBORGER) !                          
+                (B01.PERSON(I).SPESOPPL.BOSATT      ^=                          
+                 B02.PERSON(I).SPESOPPL.BOSATT)      !                          
+                                                                                
+              /* KOMNR OPPDATERES FRA SSB I BATCH       */                      
+                                                                                
+                (TRANS_OPPL_OMR.BLANKETTYPE = 'UP') !                           
+                (TRANS_OPPL_OMR.BLANKETTYPE = 'U2') !                           
+                (B01.PERSON(I).STATUS.TT_ANV ^=                                 
+                 B02.PERSON(I).STATUS.TT_ANV) !                                 
+                (B01_PÅ      ^= B02_PÅ)      !                                  
+                (B01_SPT     ^= B02_SPT)     !                                  
+                (B01_OPT     ^= B02_OPT)     !                                  
+                (B01_YPT     ^= B02_YPT)     !                                  
+                (B01.PERSON(I).ALDERSP.VENTEFAKTOR ^=                           
+                 B02.PERSON(I).ALDERSP.VENTEFAKTOR) !                           
+                (B01.PERSON(I).STATUS.DØDSDATO_ÅMD  ^=                          
+                 B02.PERSON(I).STATUS.DØDSDATO_ÅMD)  !                          
+                (B01.PERSON(I).STATUS.DØD_AV_YRKESSKADE ^=                      
+                 B02.PERSON(I).STATUS.DØD_AV_YRKESSKADE) !                      
+                (B01_PÅ_E91  ^= B02_PÅ_E91)  !                                  
+                (B01_SPT_GML ^= B02_SPT_GML) ;                                  
+                                                                                
+       IF ENDRET THEN                                                           
+       DO;                                                                      
+          SEGMENT_TABELL.REGTPKT = TRUE;                                        
+                                                                                
+          SELECT (TRANS_OPPL_OMR.TRANSTYPE);                                    
+             WHEN (24,25,69,33,41,26,28,42,29,58,31,27)                         
+                REGTPKT.VIRKDATO = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;            
+             OTHERWISE                                                          
+                DO;                                                             
+                   IF B02.PERSON(I).STATUS.VIRK_DATO_ÅMD > 0 THEN               
+                      HELP_DATO = B02.PERSON(I).STATUS.VIRK_DATO_ÅMD;           
+                   ELSE                                                         
+                      HELP_DATO = B01.PERSON(I).STATUS.VIRK_DATO_ÅMD;           
+                   REGTPKT.VIRKDATO = HELP_DATO;                                
+                END;                                                            
+          END; /* OF SELECT */                                                  
+          /*----------------------------------------------------------*/        
+          /*SIKRER AT DAG=00 I VIRKDATO                 SL UKE 5 2000 */        
+          /*----------------------------------------------------------*/        
+          REGTPKT.VIRKDATO = FLOOR (REGTPKT.VIRKDATO / 100) * 100;              
+                                                                                
+       /*-------------------------------------------------------------*/        
+       /* HVIS TRYGDEKONTOR-NUMMER = 0,                               */        
+       /* HENTES DETTE FRA ET AV DE ANDRE FAMILIE-MEDLEMMENE.         */        
+       /*-------------------------------------------------------------*/        
+                                                                                
+          IF B02.PERSON(I).RF0PERSN.TKNR > 0 THEN                               
+             REGTPKT.TKNR = B02.PERSON(I).RF0PERSN.TKNR;                        
+          ELSE                                                                  
+          DO;                                                                   
+             DO J=1 TO 14 UNTIL (B02.PERSON(J).RF0PERSN.TKNR > 0);              
+             END;                                                               
+             IF J <= 14 THEN                                                    
+                REGTPKT.TKNR = B02.PERSON(J).RF0PERSN.TKNR;                     
+          END;                                                                  
+                                                                                
+          REGTPKT.STATSBORGER =                                                 
+             B02.PERSON(I).SPESOPPL.STATSBORGER;                                
+                                                                                
+          IF (B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'F' !                        
+              B02.PERSON(I).STATUS.PENSJONSTYPE1 = 'G') &                       
+              B02.PERSON(I).STATUS.SIVILSTAND    = 'G'  &                       
+              B02.PERSON(3-I).SPESOPPL.BOSATT   ^=  0   THEN                    
+             REGTPKT.BOSATT_LAND = B02.PERSON(3-I).SPESOPPL.BOSATT;             
+          ELSE                                                                  
+             REGTPKT.BOSATT_LAND = B02.PERSON(I).SPESOPPL.BOSATT;               
+                                                                                
+        /* KOMNR OPPDATERES EGENTLIG FRA SSB, MEN SETTES HER LIK      */        
+        /* TKNR I TILFELLET SSB IKKE HAR NOEN VERDI PÅ KOMNR.         */        
+                                                                                
+          IF REGTPKT.BOSATT_LAND  = 0 THEN                                      
+             DO;                                                                
+ /*SL9911 */    IF (REGTPKT.TKNR  > 0300  &  REGTPKT.TKNR <  0400) THEN         
+                    REGTPKT.KOMNR = 0301;                                       
+                ELSE IF                                                         
+ /*SL9911 */       (REGTPKT.TKNR >= 1161  &  REGTPKT.TKNR <= 1165) THEN         
+                    REGTPKT.KOMNR = 1103;                                       
+                ELSE IF                                                         
+ /*SL9911 */       (REGTPKT.TKNR >= 1202  &  REGTPKT.TKNR <= 1209) THEN         
+                    REGTPKT.KOMNR = 1201;                                       
+                ELSE IF                                                         
+ /*SL9911 */       (REGTPKT.TKNR >= 1602  &  REGTPKT.TKNR <= 1607) THEN         
+                    REGTPKT.KOMNR = 1601;                                       
+                ELSE                                                            
+                    REGTPKT.KOMNR = REGTPKT.TKNR;                               
+             END;                                                               
+                                                                                
+        /* DIAG.GS OG DIAG.HSU FINNES PÅ US-TRANS        */                     
+                                                                                
+          IF TRANS_OPPL_OMR.BLANKETTYPE = 'UP' THEN                             
+             CALL UP_OPPDAT;                   /* R0016032 */                   
+                                                                                
+          IF TRANS_OPPL_OMR.BLANKETTYPE = 'U2' THEN                             
+             CALL U2_OPPDAT;                   /* R0016033 */                   
+                                                                                
+ /*SOB9704:*/                                                                   
+          IF TRANS_OPPL_OMR.BLANKETTYPE = 'U3' THEN                             
+             CALL U3_OPPDAT;                   /* R0016039 */                   
+                                                                                
+          IF B02_TT_EGEN > 480   THEN  B02_TT_EGEN = 480; /* SEA2970 */         
+          REGTPKT.TT_EGEN = B02_TT_EGEN;                                        
+                                                                                
+ /* ENDRING  BEGYNNER  HER     SAK:27-2001        SEB7339  23.04.2001 */        
+          REGTPKT.TT_ANV          = B02.PERSON(I).STATUS.TT_ANV * 12;           
+    /*    IF REGTPKT.TT_ANV       = 0               THEN      SL9901            
+             REGTPKT.TT_ANV       = ETTERL.TT_AVD;            SL9901 */         
+          IF B02_STAT_PT1         = 'E'             THEN                        
+             REGTPKT.TT_ANV       = B02.PERSON(3-I).STATUS.TT_ANV * 12;         
+ /* ENDRING  SLUTTER  HER      SAK:27-2001        SEB7339  23.04.2001 */        
+                                                                                
+          REGTPKT.POENGTILL       =                                             
+                                B02.PERSON(I).STATUS.POENGTILLEGG_KODE;         
+          REGTPKT.PÅ              = B02_PÅ;                                     
+          REGTPKT.SPT             = B02_SPT;                                    
+          REGTPKT.OPT             = B02_OPT;                                    
+          REGTPKT.YPT             = B02_YPT;                                    
+ /*BØ9201:*/                                                                    
+          REGTPKT.PÅ_ETTER91      = B02_PÅ_E91 ;                                
+          REGTPKT.SPT_GML         = B02_SPT_GML ;                               
+                                                                                
+          REGTPKT.VENTEFAKTOR =                                                 
+             B02.PERSON(I).ALDERSP.VENTEFAKTOR;                                 
+                                                                                
+          REGTPKT.DØD_AV_YRKESSKADE =                                           
+             B02.PERSON(I).STATUS.DØD_AV_YRKESSKADE;                            
+                                                                                
+          REGTPKT.UTDANNING =                                                   
+             B02.PERSON(I).UFØRPENS.UTDANNING;                                  
+                                                                                
+          REGTPKT.YRKESM_ATTF =                                                 
+             B02.PERSON(I).UFØRPENS.YRKESM_ATTF;                                
+                                                                                
+ /*BØ9012:*/                                                                    
+                                                                                
+          IF K > 0  THEN                                                        
+            IF (B02.PERSON(I).UFØRHIST(K).BUP_GARANTI >=                        
+                              B02.PERSON(I).UFØRHIST(K).BUP)  &                 
+              (B02.PERSON(I).UFØRHIST(K).BUP_GAR_KODE = 'B' !                   
+               B02.PERSON(I).UFØRHIST(K).BUP_GAR_KODE = 'D' !                   
+               B02.PERSON(I).UFØRHIST(K).BUP_GAR_KODE = 'E' ) THEN              
+              REGTPKT.BUP_GARANTI = 'J';                                        
+                                                                                
+          IF B02.PERSON(I).STATUS.DØDSDATO_ÅMD  > 0 THEN                        
+          DO;                                                                   
+    /*2000*/ REGTPKT.DØDSDATO     = B02.PERSON(I).STATUS.DØDSDATO_ÅMD;          
+    /*2000*/ REGTPKT.REGDATO_DØD  = DATO_2000;                                  
+    /*2000*/ W_VIRKD_T            = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;           
+                                                                                
+  /*BØ9011   IF W_VIRKD_T = B02.PERSON(I).STATUS.VIRK_DATO_ÅMD THEN             
+               DO;                                                              
+    BØ9011*/                                                                    
+                 W_TRANSKODE        = TRANS_OPPL_OMR.TRANSKODE;                 
+                 W_FNR              = TRANS_OPPL_OMR.FØDSNUMMER;                
+                 W_VIRKD            = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;         
+                                                                                
+                 TRANS_OPPL_OMR.TRANSKODE         = 'DØD';                      
+                 TRANS_OPPL_OMR.FØDSNUMMER        = B02.PERSON(I).FNR;          
+                 TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = W_VIRKD_T;                  
+                                                                                
+                 EXEC CICS LINK PROGRAM                                         
+                                     ('R0016601') COMMAREA(KOM_OMR);            
+                 TRANS_OPPL_OMR.FØDSNUMMER        = W_FNR;                      
+                 TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = W_VIRKD;                    
+                 TRANS_OPPL_OMR.TRANSKODE         = W_TRANSKODE;                
+  /*BØ9011     END */                                                           
+          END;                                                                  
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*       HVIS DET TIL NÅ ER DANNET ET SEGMENT PÅ DETTE FNR,          */        
+ /*       SKAL DET OGSÅ DANNES ET ROT-SEGMENT.                        */        
+ /*-------------------------------------------------------------------*/        
+ /*  ***  DANNING AV DIVERSE ENDRINGSKODER I PENSJON, ET OG BT.       */        
+ /*  ***  KODENE AVVIKLES OG FJERNES FRA BASENE FRA 1.5.91. BJØRG     */        
+ /*-------------------------------------------------------------------*/        
+ /*       SKRIV UT ALLE SEGMENTENE PÅ DETTE FNR TIL TRANS-STAT-BASEN. */        
+ /*-------------------------------------------------------------------*/        
+          TR0ROT.FNR = B02.PERSON(I).RF0PERSN.FNR;                              
+                                                                                
+          IF TR0ROT.FNR > 0 THEN CALL SKRIV_STAT_SEGM;  /* R0016024 */          
+       END;                                                                     
+                                                                                
+    /*-------------------------------------------*/                             
+    /* EVENTUELL UNSAVE AV B01/B02               */                             
+    /*-------------------------------------------*/                             
+                                                                                
+       IF SAVE_B01_B02 = 2 THEN                                                 
+       DO;                                                                      
+          B01.PERSON(I) = X01.PERSON(I);                                        
+          B02.PERSON(I) = X02.PERSON(I);                                        
+          FREE X01;                                                             
+          FREE X02;                                                             
+       END;                                                                     
+       IF SAVE_B01_B02 = 1 THEN                                                 
+       DO;                                                                      
+          B01.PERSON(I) = X01.PERSON(I);                                        
+          FREE X01;                                                             
+       END;                                                                     
+                                                                                
+    END; /* OF FNR > 0 */                                                       
+                                                                                
+ END; /* OF DO I=1,2    ( MOR OG FAR ) */                                       
+                                                                                
+ END; /* OPPDAT_MOR_FAR */                                                      

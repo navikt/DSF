@@ -1,0 +1,133 @@
+ /*   SIST ENDRET PÅ PROD   2000.01.14 12.41.54 AV   JDA7339          */        
+ /*       SIST ENDRET 22/06-98 09.44.46 AV   JDA7339                  */        
+ /*       SIST ENDRET 03/06-98 08.54.27 AV   JDA7339                  */        
+ /*********************************************************************/        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0014601 - BEREGN_ETTERLATT_FAMILIEPLEIER -HOVEDPROGRAM I PLI  */        
+ /*    PROGRAMMERER : KARIN SVENDSEN AUGUST 1982                      */        
+ /*HENSIKT:                                                           */        
+ /*    PROGRAMMET FORETAR BEREGNING FOR ETTERLATT FAMILIEPLEIER OG    */        
+ /*    INKLUDERER DE NØDVENDIGE UNDERMODULER.                         */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROGRAMMET BLIR LINKET FRA R0014001 - BEREGNING                */        
+ /*BRUK:                                                              */        
+ /*    EXEC CICS LINK PROGRAM('R0014601') COMMAREA(KOM_OMR);          */        
+ /*********************************************************************/        
+ R001460:                                                                       
+   PROC(COMMAREA_PEKER) OPTIONS (MAIN);                                         
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0019906;   /* TRANS_OPPL_OMRÅDE(BASED)   */                          
+ %PAGE;                                                                         
+ %INCLUDE P0019908;   /* KOM_OMRÅDE (BASED)         */                          
+ %PAGE;                                                                         
+ %INCLUDE P0019912;   /* DIV PARAM OMRÅDE (BASED)   */                          
+ %PAGE;                                                                         
+ DCL 1 B01 BASED(B01_PEKER),                                                    
+ %INCLUDE P0019921;   /* B01_OMRÅDE       (BASED)   */                          
+ %PAGE;                                                                         
+ DCL 1 B02 BASED(B02_PEKER),                                                    
+ %INCLUDE P0019921;   /* B02_OMRÅDE       (BASED)   */                          
+                                                                                
+ %PAGE;                                                                         
+ DCL COMMAREA_PEKER          PTR;                                               
+ DCL                                                                            
+     EKTEF_IND               FIXED BIN(15),                                     
+     I                       FIXED BIN(15),                                     
+     W_FRADRAG_F             FIXED DEC(5),                                      
+     W_ST                    FIXED DEC(7,2),                                    
+     W_KT                    FIXED DEC(5,2),                                    
+     W_FORH_INDIKATOR        CHAR(1) INIT ('N'),                                
+     W_KOMPFAKTOR            FIXED DEC(3,1),                                    
+     W_ANTALL_BARN           FIXED DEC(3) INIT (0),                             
+     FNR                     PIC'(11)9',                                        
+     ÅRHUNDRE DEF FNR POS(7) PIC '9',                                           
+     ÅR       DEF FNR POS(5) PIC '99';                                          
+                                                                                
+  DCL W_TT_KONV_ÅR  FIXED DEC (3) INIT (0);                                     
+                                                                                
+ /* **************************************************************** */         
+ /* PROGRAMMET STARTER HER                                           */         
+ /* **************************************************************** */         
+                                                                                
+ IF TRANS_OPPL_OMR.BLANKETTYPE = 'E4' THEN   /*NY0191*/                         
+    CALL HENT_FRA_E4;                                                           
+                                                                                
+ CALL BEREGN_GP_FAMILIEPLEIER;                                                  
+                                                                                
+ /* W_ST HAR TO DESIMALER OG ER IKKE FORHØYET */                                
+                                                                                
+ W_ST = F_BEREGN_SÆRTILLEGG(                                                    
+                            0,0,'J',                                            
+                            ST_PROSENT_ENSLIG,                                  
+                            100,                                                
+                            B02.TT_ANV(BER_SØ_IND));                            
+                                                                                
+ B02.ETTEPENS.ST_BRUTTO(BER_SØ_IND) = W_ST;    /* JD 1299 */                    
+ W_KOMPFAKTOR = 1;   /* FULLT KOMPTILLEGG     */                                
+                                                                                
+ /*   ENDRET  10.02.88   SATISH                              */                 
+ /*  W_KT = F_BEREGN_KOMPENSASJONSTILLEGG                    */                 
+ /*         (B02.PENSJONSTYPE2(BER_SØ_IND),                  */                 
+ /*          B02.TT_ANV(BER_SØ_IND),                         */                 
+ /*          0,W_KOMPFAKTOR,'J');                            */                 
+ /*  HIT TIL                                                 */                 
+                                                                                
+ IF G > 34100 THEN                                                              
+    W_KT = 0;                                                                   
+ ELSE                                                                           
+    W_KT = F_BEREGN_KOMPENSASJONSTILLEGG(                                       
+            B02.PENSJONSTYPE1(BER_SØ_IND),                                      
+            B02.PENSJONSTYPE2(BER_SØ_IND),                                      
+            B02.TT_ANV(BER_SØ_IND),                                             
+            0,W_KOMPFAKTOR,'J');                                                
+                                                                                
+  /* ***********************************************************  */            
+  /* DEN PÅFØLGENDE TESTEN SKAL UNNGÅ Å GI UTENLANDSBOENDE KOMP.  */            
+  /* ERIK 22.12.86.                                               */            
+  /* ***********************************************************  */            
+                                                                                
+                                                                                
+  IF B02.SPESOPPL.BOSATT(BER_SØ_IND) > 0 THEN W_KT = 0 ;                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ IF B02.FORVENTET(BER_SØ_IND) * 100 > 0.5 * G THEN                              
+    DO;                                                                         
+       /* JUSTERER ST OG KT OG BEREGNER GP_NETTO   */                           
+                                                                                
+       CALL JUSTER_MED_FORVENTET_INNTEKT(W_KT);                                 
+ /*KOMP.TILLEGGET ENDRET FRA 1.5.91 ( G > 34100 ) */                            
+                                                                                
+        IF G > 34100 THEN                                                       
+        B02.ETTEPENS.KT(BER_SØ_IND) = 0;                                        
+                                                                                
+       B02.SUM_YTELSE(BER_SØ_IND)  = B02.GP_NETTO(BER_SØ_IND)                   
+                                     + B02.ETTEPENS.KT(BER_SØ_IND)              
+                                     + B02.ETTEPENS.ST(BER_SØ_IND);             
+    END;                                                                        
+ ELSE                                                                           
+    DO;                                                                         
+       B02.GP_NETTO(BER_SØ_IND)    = B02.GP_BRUTTO(BER_SØ_IND);                 
+       B02.FORVENTET  (BER_SØ_IND) = 0;                                         
+       B02.ETTEPENS.KT(BER_SØ_IND) = W_KT;                                      
+       B02.ETTEPENS.ST(BER_SØ_IND) = W_ST;                                      
+                                                                                
+       B02.SUM_YTELSE(BER_SØ_IND)  = B02.GP_BRUTTO(BER_SØ_IND)                  
+                                     + B02.ETTEPENS.KT(BER_SØ_IND)              
+                                     + B02.ETTEPENS.ST(BER_SØ_IND);             
+    END;                                                                        
+                                                                                
+   HENT_FRA_E4: PROC;                                                           
+      %INCLUDE P001N901; /*E4-OMR*/                                             
+      W_TT_KONV_ÅR = E4SP.TT_KONVENSJON_ÅR;                                     
+   END HENT_FRA_E4;                                                             
+                                                                                
+ EXEC CICS RETURN;                                                              
+ %PAGE;                                                                         
+ %INCLUDE R0014621;   /* BEREGN_GP_FAMILIEPLEIER    */                          
+ %INCLUDE R0014133;   /* F_BEREGN_SÆRTILLEGG   */                               
+ %INCLUDE R0014134;   /* F_BEREGN_KOMPTILLEGG  */                               
+ %INCLUDE R0014324;   /* JUSTER_MED_FORVENTET_INNTEKT */                        
+ END R001460;                                                                   

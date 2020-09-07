@@ -1,0 +1,143 @@
+ /*   SIST ENDRET PÅ PROD   2007.02.15 14.35.26 AV   JDA2990          */        
+ /*   SIST ENDRET PÅ PROD   2001.03.02  8.54.48 AV   HLA7339          */        
+ /*       SIST ENDRET 22/06-98 10.22.22 AV   JDA7339                  */        
+ /*       SIST ENDRET 18/06-98 15.49.41 AV   RFA9991                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0014323 - PROSEDYRE I PLI                                     */        
+ /*    PROGRAMMERER: JAN, JUNI-82.                                    */        
+ /*HENSIKT:                                                           */        
+ /*    BEREGNE TILLEGGSPENSJON ETTERLATT                              */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    INCLUDES I R0014301                                            */        
+ /*BRUK:                                                              */        
+ /*    CALL BEREGN_TP_ETTERLATT;                                      */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*   */                                                                        
+ BEREGN_TP_ETTERLATT:                                                           
+   PROC;                                                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL UNDERPROGRAM SOM BEREGNER POENGREKKEN.                       */        
+ /* ***************************************************************** */        
+                                                                                
+    DCL W_GARANTI_TP      FIXED DEC (11,4) INIT (0);  /*TS*/                    
+    DCL W_GAR_TP        FIXED DEC (5)    INIT (0);  /*TS*/                      
+    DCL FIXED_DEC5      FIXED DEC (5)    INIT (0);  /*HL*/                      
+    DCL FRADRAG         FIXED DEC (3)    INIT (0);  /*HL*/                      
+    DCL DØDSDATO_ÅM      PIC '999999'      INIT (0);  /*HL*/                    
+    DCL ALDER_VED_DØD    PIC 'S999999'    INIT (0);  /*HL*/                     
+    DCL RETUR_POENG     FIXED DEC (3,2)  INIT (0);  /*HL*/                      
+    DCL VIRK_ÅM          PIC '999999'    INIT (0);  /*HL*/                      
+    DCL SISTE_UFØRHIST_EK   FIXED DEC (5)  INIT (0); /*TS 240498*/              
+                                                                                
+    B01_B02_IND              = 2;                                               
+    POTALL_OPPL.IND          = BER_EK_IND;                                      
+    EXEC CICS LINK PROGRAM ('R0014141') COMMAREA(KOM_OMR);                      
+    B02.TP_GAR_KODE(BER_SØ_IND)  = ' ';  /*HL 200702*/                          
+                                                                                
+    /* FINNE SISTE UFØRHIST  FOR EKTEFELLE. TRUDE  240498*/                     
+                                               /*Y2K-K*/                        
+    DO K = 7 TO 1 BY - 1 UNTIL(B02.UFØRHIST.UFT_ÅMD(BER_EK_IND,K) > 0);         
+       SISTE_UFØRHIST_EK  = K;                                                  
+    END;     /*240498*/                                                         
+                                                                                
+    IF FEIL_MELD_NR > 0  THEN                                                   
+       GO TO RETUR;                                                             
+    ELSE                                                                        
+       PROGRAM_ID = 'R0014301';                                                 
+                                                                                
+ /* 42 % TP FOR ÅR ETTER 1991 : */                                              
+                                                                                
+ /* IF ^(DØDSTP.ÅR    > 1991       &                                            
+         W_FNR_EK13_ÅR  > 1925 )     THEN            */                         
+    IF  DØDSTP.ÅR   <  1992                    THEN                             
+            POREKKE.PÅ_ETTER91(BER_EK_IND) = 0;                                 
+                                                                                
+         B02.ETTEPENS.PÅ_ETTER91(BER_SØ_IND) =                                  
+                  POREKKE.PÅ_ETTER91(BER_EK_IND);                               
+                                                                                
+    /* DETTE VAR GLEMT :  */                                                    
+                                                                                
+         IF  W_FNR_EK13_ÅR  > 1924   &                       /*Y2K-K*/          
+            ((B02.KONV_P_KODE(BER_EK_IND) = 'K' &                               
+             B02.UTTAKSDATO_ÅMD(BER_EK_IND) < 19920000)  !   /*Y2K-K*/          
+                                                                                
+             ((B02.KONV_P_KODE(BER_EK_IND) = 'U' !                              
+               B02.KONV_P_KODE(BER_EK_IND) = 'Y'  )  &                          
+               B02.UFØRHIST.UFT_ÅMD(BER_EK_IND,SISTE_UFØRHIST_EK)               
+                                               <19920000 )  ! /*Y2K-K*/         
+             ( B02.UFØRHIST.UFT_ÅMD(BER_EK_IND,SISTE_UFØRHIST_EK)               
+                                               < 19920000    & /*Y2K-K*/        
+               B02.OPPHØRSKODE(BER_EK_IND,SISTE_UFØRHIST_EK)                    
+                                               = 'A')) THEN                     
+            DO;                                                                 
+               FRADRAG = W_FNR_EK13_ÅR - 1925;                /*Y2K-K*/         
+               IF FRADRAG > POREKKE.PÅ_ETTER91(BER_EK_IND)    THEN              
+                  B02.ETTEPENS.PÅ_ETTER91(BER_SØ_IND) = 0;                      
+               ELSE                                                             
+                DO;                                                             
+                  B02.ETTEPENS.PÅ_ETTER91(BER_SØ_IND) =                         
+                  POREKKE.PÅ_ETTER91(BER_EK_IND) - FRADRAG;                     
+                  POREKKE.PÅ_ETTER91(BER_EK_IND) =                              
+                  B02.ETTEPENS.PÅ_ETTER91(BER_SØ_IND);                          
+                END;                                                            
+            END;                                                                
+                                                                                
+   /*HIT TRUDE 240498 */                                                        
+    B02.SPT_AVD  (BER_SØ_IND)     = POREKKE.SPT(BER_EK_IND);                    
+    B02.OPT_AVD  (BER_SØ_IND)     = POREKKE.OPT(BER_EK_IND);                    
+    B02.PÅ_AVD   (BER_SØ_IND)     = POREKKE.PÅ (BER_EK_IND);                    
+    IF B02.SIVILSTAND(BER_SØ_IND) = 'E'   !                                     
+       B02.SIVILSTAND(BER_SØ_IND) = 'U' THEN                                    
+       W_TP_PROSENT = 55;                                                       
+    ELSE                                                                        
+       W_TP_PROSENT = B02.TP_PROSENT(BER_SØ_IND);                               
+                                                                                
+    B02.TP_BRUTTO(BER_SØ_IND) = F_TP92(W_FNR_EK13_ÅR,G,                         
+                                               POREKKE.SPT(BER_EK_IND),         
+                                               POREKKE.OPT(BER_EK_IND),         
+                                               POREKKE.PÅ (BER_EK_IND),         
+                                       POREKKE.PÅ_ETTER91(BER_EK_IND),          
+                                               100,W_TP_PROSENT,'J');           
+                                                                                
+  ALDER_VED_DØD   = F_ALDER(W_FNR_EK,B02.DØDSDATO_ÅMD(BER_EK_IND));             
+                                                                                
+  VIRK_ÅM = B02.VIRK_DATO_ÅMD(SØKER_IND) / 100;                                 
+                                                                                
+  IF B02.BUP_GAR_KODE(BER_EK_IND,1) = 'E'        THEN                           
+     CALL SPT_GARANTI_E(W_FNR_EK13_ÅR,          /*4199*/                        
+            VIRK_ÅM,RETUR_POENG);                                               
+  ELSE                                                                          
+  IF B02.TP_GAR_KODE(BER_EK_IND)  = 'E'        THEN                             
+                                                                                
+ /*4152 HAR ALLEREDE SATT TP_GAR_KODE= E FOR PERSONER SOM DØDE*/                
+ /* I UNG ALDER (OG SOM DERMED KAN FÅ GARANTI PÅ SPT          */                
+                                                                                
+     CALL UNGE_DØDE_E(B02.VIRK_DATO_ÅMD(SØKER_IND),W_FNR_EK13_ÅR,               
+                      ALDER_VED_DØD,RETUR_POENG);      /*4327*/                 
+  IF RETUR_POENG > 0                        THEN                                
+                                                                                
+     DO;                                                                        
+ /*   W_GARANTI_TP      =  G * 0.45 * B02.BUP_GARANTI(BER_EK_IND,1);*/          
+      W_GARANTI_TP      =  G * 0.45 * RETUR_POENG;                              
+      IF FULL_TT = 'N'       THEN                                               
+         W_GARANTI_TP   =  W_GARANTI_TP * B02.TT_ANV(BER_EK_IND) / 40;          
+      W_GARANTI_TP      =  W_GARANTI_TP * W_TP_PROSENT;                         
+      W_GARANTI_TP      =  W_GARANTI_TP / 100;                                  
+      W_GARANTI_TP      =  W_GARANTI_TP / 12 ;                                  
+      W_GAR_TP          = W_GARANTI_TP + 0.5;                                   
+                                                                                
+      IF W_GAR_TP  >  B02.TP_BRUTTO(BER_SØ_IND) THEN                            
+         DO;                                                                    
+            B02.TP_BRUTTO(BER_SØ_IND)  = W_GAR_TP;                              
+            B02.TP_GAR_KODE(BER_EK_IND) = 'E';                                  
+         END;                                                                   
+      ELSE                                                                      
+           B02.TP_GAR_KODE(BER_EK_IND)  = ' ';                                  
+    END;                                                                        
+                                                                                
+    /*TIL HIT TRUDE */                                                          
+    RETUR:                                                                      
+ END BEREGN_TP_ETTERLATT;                                                       

@@ -1,0 +1,305 @@
+ /*   SIST ENDRET PÅ PROD   2006.07.18 11.35.40 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.04.24  9.41.27 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ QASS   2006.04.19 12.10.16 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.03.24  8.43.29 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.12.17 14.10.26 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 12.59.03 AV   JDA2970          */        
+ /*       SIST ENDRET 22/06-98 11.51.49 AV   JDA7339                  */        
+ /*       SIST ENDRET 04/06-98 15.15.07 AV   RFA9991                  */        
+ /* *************************************************************** */          
+ /*IDENTIFIKASJON:                                                  */          
+ /*    R001N823 - UNDERPROGRAM I PLI                                */          
+ /*    PROGRAMMERER:    HERMAN LARSSEN 0788                         */          
+ /*    TILPASSSET NY E3 BLANKETT JAN-91 TRUDE                       */          
+ /* *************************************************************** */          
+ /*HENSIKT:                                                         */          
+ /*    KONTROLL AV INFORMASJON OM AVDØDE PÅ TILLEGGSBLANKETTEN MOT  */          
+ /*    INFORMASJON I REGISTERET.                                    */          
+ /*    OPPDATERING AV YRKEHIST / YRKEGRAD                           */          
+ /*    OPPDATERING AV DØD_AV_YRKESSKADE                             */          
+ /*PROGRAMTILKNYTNING:                                              */          
+ /*    INCLUDES I R001N820 - ETTERLATTEPENSJON  - E3                */          
+ /*BRUK:                                                            */          
+ /*    CALL KONTROLL_AJOURFØR_AVDØD_YP_E3                           */          
+ /*                                                                 */          
+ /* *************************************************************** */          
+                                                                                
+ %SKIP(2);                                                                      
+ KONTROLL_AJOURFØR_AVDØD_YP_E3 :                                                
+   PROC;                                                                        
+   DCL                                                                          
+       KAP8_GRAD                          FIXED DEC (3)  INIT (0),              
+       NY_YIND                            FIXED BIN (15) INIT (0),              
+       GAMMEL_YIND                        FIXED BIN (15) INIT (0),              
+       OPPH_ÅMD                           FIXED DEC (9) INIT (0),               
+       GRAD_IND                           FIXED BIN (15) INIT (0);              
+                                                                                
+  PROGRAM_ID = 'R001N823';                                                      
+                                                                                
+           /* ********************************************* */                  
+           /* INNTIL VIDERE AVVISES TILFELLER HVOR AVDØDE   */                  
+           /* HADDE EN UP-GRAD SOM VAR HØYERE ENN EVT. YP   */                  
+           /* ********************************************* */                  
+                                                                                
+     OPPH_ÅMD       = W_DØDSTP_ÅMD / 100;                                       
+     OPPH_ÅMD       = OPPH_ÅMD     * 100;                                       
+                                                                                
+     DO I = 1 TO 7; /*5 -> 7 9803 HL */                                         
+         IF B02.UFØRHIST.UFG(AVDØD_IND,I) = 0   THEN                            
+            DO;                                                                 
+               IF I = 1                 THEN                                    
+                  KAP8_GRAD  = 0;                                               
+               ELSE                                                             
+                  DO;                                                           
+                     I = I - 1;                                                 
+                     KAP8_GRAD  = B02.UFØRHIST.UFG(AVDØD_IND,I);                
+                 /*  DO J = 1 TO 7; JFA 13.4.04 */                              
+                     DO J = 1 TO HBOUND(B02.UFØRGRAD,3);                        
+                        IF B02.UFG_ØVRIGE(AVDØD_IND,I,J) > 0 THEN               
+                           KAP8_GRAD  = B02.UFG_ØVRIGE(AVDØD_IND,I,J);          
+                        ELSE                                                    
+                           J = HBOUND(B02.UFØRGRAD,3);                          
+                     END;                                                       
+                  END;                                                          
+               I = 7;                                                           
+            END;                                                                
+     END;                                                                       
+                                                                                
+     IF B01.PENSJONSTYPE1(AVDØD_IND) = 'Y'         &                            
+       (KAP8_GRAD > B01.YRKEPENS.YUG(AVDØD_IND))   THEN                         
+                                                                                
+             DO;                                                                
+ L300:          FEIL_VED_LABEL = '300';                                         
+                FEIL_MELD_NR   = 1724 ;                                         
+                GO TO RETUR;                                                    
+             END;                                                               
+                                                                                
+     B02.STATUS.DØD_AV_YRKESSKADE(AVDØD_IND) = 'J';                             
+     B02.STATUS.DØD_AV_YRKESSKADE(SØKER_IND) = 'E';                             
+                                                                                
+        /* *************************************************** */               
+        /* FINN FØRSTE LEDIGE PLASS I YRKEHIST                 */               
+        /* *************************************************** */               
+                                                                                
+     DO I = LBOUND(B02.YRKEHIST,2) TO HBOUND(B02.YRKEHIST,2) UNTIL              
+                         (B02.YRKEHIST.YUFT_ÅMD(AVDØD_IND,I) = 0);              
+     END;                                                                       
+                                                                                
+     IF I > HBOUND(B02.YRKEHIST,2) THEN                                         
+                                                                                
+           /* ********************************************* */                  
+           /* FEIL, 5 YRKEHIST-PERIODER ER BRUKT FRA FØR.   */                  
+           /* ********************************************* */                  
+                                                                                
+        DO;                                                                     
+  L301:    FEIL_VED_LABEL = '301';                                              
+           FEIL_MELD_NR   = 1810;                                               
+           GO TO RETUR;                                                         
+        END;                                                                    
+                                                                                
+     NY_YIND = I;                                                               
+                                                                                
+     IF I > 1                THEN                                               
+                                                                                
+        DO;                                                                     
+           GAMMEL_YIND = I - 1;                                                 
+                                                                                
+        /* *************************************************** */               
+        /* FINN FØRSTE LEDIGE YRKEGRAD-SEGMENT                 */               
+        /* *************************************************** */               
+                                                                                
+           DO I = 1 TO 5 WHILE                                                  
+             (B02.YRKEGRAD.YUG_ØVRIGE(AVDØD_IND,GAMMEL_YIND,I) > 0);            
+           END;                                                                 
+                                                                                
+           IF B02.YRKEGRAD.YUG_ØVRIGE(AVDØD_IND,GAMMEL_YIND,5) > 0              
+              THEN                                                              
+           /* ********************************************* */                  
+           /* FEIL, 5 YRKEGRAD-PERIODER ER BRUKT FRA FØR.   */                  
+           /* ********************************************* */                  
+                                                                                
+              DO;                                                               
+  L302:          FEIL_VED_LABEL = '302';                                        
+                 FEIL_MELD_NR   = 1810;                                         
+                 GO TO RETUR;                                                   
+              END;                                                              
+                                                                                
+           GRAD_IND = I;                                                        
+        END;                                                                    
+                                                                                
+     ELSE;                                                                      
+                                                                                
+           /* ********************************************* */                  
+           /* NÅR DØDSFALLET IKKE SKYLDES NY YRKESSKADE,    */                  
+           /* SÅ VIL ENTEN YUG IKKE BLI ENDRET, ELLER SLIK  */                  
+           /* ENDRING VIL BLI REGISTRERT VED OPPDATERING AV */                  
+           /* YRKEGRAD-SEGMENTET OG YRKEPENS-SEGMENTET.     */                  
+           /* ********************************************* */                  
+                                                                                
+     IF E3Y.YST_ÅMD = 0   /*TILLEGGSBLANKETT IKKE UTFYLT*/ THEN                 
+                                                                                
+        DO;                                                                     
+                                                                                
+           IF B02.YRKEHIST.OPPH_KODE(AVDØD_IND,GAMMEL_YIND) ^='D' THEN          
+                                                                                
+ /*TILLEGGSBL. SKAL VÆRE UTFYLT NÅR DET IKKE ER LØPENDE YP FRA FØR*/            
+                                                                                
+              DO;                                                               
+ L305:           FEIL_VED_LABEL = '305';                                        
+                 FEIL_MELD_NR   = 1722 ;                                        
+                 GO TO RETUR;                                                   
+              END;                                                              
+                                                                                
+           ELSE                                                                 
+           IF B01.YRKEPENS.YUG(AVDØD_IND)  < 100      THEN                      
+                                                                                
+              DO;                                                               
+                 B02.YUG_ØVRIGE(AVDØD_IND,GAMMEL_YIND,GRAD_IND) = 100;          
+                 B02.YUG_DATO_ÅMD(AVDØD_IND,GAMMEL_YIND,GRAD_IND)               
+                    = OPPH_ÅMD;                                                 
+              END;                                                              
+                                                                                
+        END;      /*IF E3Y.YST_MÅ = 0 */                                        
+                                                                                
+    ELSE /*TILLEGGSBL ER UTFYLT */                                              
+                                                                                
+       IF B01.YRKEPENS.YUG(AVDØD_IND) = 0         THEN                          
+                                                                                
+           /* ********************************************* */                  
+           /* AVDØDE HAR IKKE YRKESSKADE FRA FØR            */                  
+           /* ********************************************* */                  
+                                                                                
+          DO;                                                                   
+             B02.YRKEPENS.YSYKDOM(AVDØD_IND) = E3Y.YSYKDOM;                     
+             B02.YRKEHIST.YUFT_ÅMD(AVDØD_IND,NY_YIND) =                         
+                                                   OPPH_ÅMD;                    
+             B02.YRKEHIST.YUG(AVDØD_IND,NY_YIND) = 100 /* KONS RF*/             
+                  - B02.UFØRPENS.UFG(AVDØD_IND);       /*9809*/                 
+             B02.YRKEHIST.YST_ÅMD(AVDØD_IND,NY_YIND) =                          
+                                    E3Y.YST_ÅMD;                                
+             B02.YRKEHIST.AÅI(AVDØD_IND,NY_YIND) = E3Y.AÅI;                     
+             B02.YRKEHIST.YRKE11(AVDØD_IND,NY_YIND) =                           
+                                                    E3Y.YRKE11;                 
+             B02.YRKEHIST.VILKÅR_1_2_2(AVDØD_IND,NY_YIND) =                     
+                       E3Y.VILKÅR_1_2_2A !! E3Y.VILKÅR_1_2_2B;                  
+             B02.YRKEHIST.OPPH_DATO_ÅMD(AVDØD_IND,NY_YIND) =                    
+                  F_DATO_ÅMD_PLUSS1(OPPH_ÅMD);       /*9965*/                   
+             B02.YRKEHIST.OPPH_KODE(AVDØD_IND,NY_YIND) = 'D';                   
+                                                                                
+          END;                                                                  
+                                                                                
+       ELSE                                                                     
+       IF B01.YRKEPENS.YUG(AVDØD_IND) < 100        THEN                         
+                                                                                
+          IF B02.YRKEHIST.YST_ÅMD(AVDØD_IND,GAMMEL_YIND) =                      
+                        E3Y.YST_ÅMD                    THEN                     
+                                                                                
+           /* ********************************************* */                  
+           /* DØR AV GAMMEL SKADE                           */                  
+           /* ********************************************* */                  
+                                                                                
+             DO;                                                                
+                IF B02.YRKEHIST.YRKE11(AVDØD_IND,GAMMEL_YIND) ^=                
+                   E3Y.YRKE11                     THEN                          
+                                                                                
+ /*SAMME SKADE - YRKE MÅ OGSÅ VÆRE LIKT  */                                     
+                                                                                
+                   DO;                                                          
+ L306:                FEIL_VED_LABEL = '306';                                   
+                      FEIL_MELD_NR   = 1723 ;                                   
+                      GO TO RETUR;                                              
+                   END;                                                         
+                                                                                
+                ELSE                                                            
+                IF B02.YRKEHIST.AÅI(AVDØD_IND,GAMMEL_YIND) ^=                   
+                   E3Y.AÅI                         THEN                         
+                                                                                
+ /*SAMME SKADE - AÅI MÅ OGSÅ VÆRE LIK  */                                       
+                                                                                
+                   DO;                                                          
+ L307:                FEIL_VED_LABEL = '307';                                   
+                      FEIL_MELD_NR   = 1725 ;                                   
+                      GO TO RETUR;                                              
+                   END;                                                         
+                ELSE                                                            
+                DO;                                                             
+                   B02.YUG_ØVRIGE(AVDØD_IND,GAMMEL_YIND,GRAD_IND)=100;          
+                   B02.YUG_DATO_ÅMD(AVDØD_IND,GAMMEL_YIND,GRAD_IND)             
+                      = OPPH_ÅMD;                                               
+                END;                                                            
+             END;                                                               
+          ELSE /*DET ER EN NY SKADE*/                                           
+                                                                                
+          DO;                                                                   
+                                                                                
+           /* ********************************************* */                  
+           /* SISTE YRKEHIST SKAL FÅ ENDRET OPPHØRSDATO OG  */                  
+           /* OPPHØRSKODE.                                  */                  
+           /* ********************************************* */                  
+                                                                                
+             B02.YRKEHIST.OPPH_DATO_ÅMD(AVDØD_IND,GAMMEL_YIND) =                
+                                        OPPH_ÅMD;                               
+             B02.YRKEHIST.OPPH_KODE(AVDØD_IND,GAMMEL_YIND) = 'J';               
+                                                                                
+           /* ********************************************* */                  
+           /* NY YRKEHIST SKAL DANNES                       */                  
+           /* ********************************************* */                  
+                                                                                
+             B02.YRKEHIST.YUFT_ÅMD(AVDØD_IND,NY_YIND) =                         
+                                                   OPPH_ÅMD;                    
+             B02.YRKEHIST.YUG(AVDØD_IND,NY_YIND) = 100;                         
+             B02.YRKEHIST.YST_ÅMD(AVDØD_IND,NY_YIND) =                          
+                                               E3Y.YST_ÅMD;                     
+             B02.YRKEHIST.AÅI(AVDØD_IND,NY_YIND) = E3Y.AÅI;                     
+             B02.YRKEHIST.YRKE11(AVDØD_IND,NY_YIND) =                           
+                                                    E3Y.YRKE11;                 
+             B02.YRKEHIST.VILKÅR_1_2_2(AVDØD_IND,NY_YIND) =                     
+                       E3Y.VILKÅR_1_2_2A !! E3Y.VILKÅR_1_2_2B;                  
+             B02.YRKEHIST.OPPH_DATO_ÅMD(AVDØD_IND,NY_YIND) =                    
+                       F_DATO_ÅMD_PLUSS1(OPPH_ÅMD);                             
+             B02.YRKEHIST.OPPH_KODE(AVDØD_IND,NY_YIND) = 'D';                   
+          END;                                                                  
+                                                                                
+       ELSE                                                                     
+                                                                                
+          DO;                                                                   
+                                                                                
+             IF B02.YRKEHIST.YST_ÅMD(AVDØD_IND,GAMMEL_YIND) ^=                  
+                           E3Y.YST_ÅMD                    THEN                  
+                                                                                
+ /*EN 100 PROSENT UFØR KAN IKKE FÅ NY YRKESSKADE*/                              
+                                                                                
+                DO;                                                             
+ L308:             FEIL_VED_LABEL = '308';                                      
+                   FEIL_MELD_NR   = 1731 ;                                      
+                   GO TO RETUR;                                                 
+                END;                                                            
+                                                                                
+             ELSE                                                               
+             IF B02.YRKEHIST.YRKE11(AVDØD_IND,GAMMEL_YIND) ^=                   
+                E3Y.YRKE11                     THEN                             
+                                                                                
+ /*SAMME SKADE - YRKE MÅ OGSÅ VÆRE LIKT  */                                     
+                                                                                
+                DO;                                                             
+ L309:             FEIL_VED_LABEL = '309';                                      
+                   FEIL_MELD_NR   = 1723 ;                                      
+                   GO TO RETUR;                                                 
+                END;                                                            
+                                                                                
+             ELSE                                                               
+             IF B02.YRKEHIST.AÅI(AVDØD_IND,GAMMEL_YIND) ^=                      
+                E3Y.AÅI                         THEN                            
+                                                                                
+ /*SAMME SKADE - AÅI MÅ OGSÅ VÆRE LIK  */                                       
+                                                                                
+                DO;                                                             
+ L310:             FEIL_VED_LABEL = '310';                                      
+                   FEIL_MELD_NR   = 1725 ;                                      
+                   GO TO RETUR;                                                 
+                END;                                                            
+          END;                                                                  
+                                                                                
+   RETUR:                                                                       
+                                                                                
+   END KONTROLL_AJOURFØR_AVDØD_YP_E3;                                           

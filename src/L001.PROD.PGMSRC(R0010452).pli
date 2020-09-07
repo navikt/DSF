@@ -1,0 +1,491 @@
+ /*   SIST ENDRET PÅ PROD   2006.05.10 13.04.11 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.03.24  8.04.22 AV   SPA2970          */        
+ /*       SIST ENDRET 06/05-98 10.06.50 AV   JDA7339                  */        
+ /*       SIST ENDRET 14/01-98 15.18.40 AV   SPA7339                  */        
+ /******************************************************************* */        
+ /*IDENTIFIKASJON:                                                    */        
+ /************************                                            */        
+ /*  PROGRAM-IDENT : R0010452 - FJERN ALLE TRANSER - SUB-PROGRAM      */        
+ /*  PROGRAM-SPRÅK : PLI                                              */        
+ /*  PROGRAMMERER  : JAN HARALD KRISTENSEN                            */        
+ /*  PROGRAMMET BLE LAGET  :                                          */        
+ /*  ENDRINGERSDATO :                                                 */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */        
+ /******************************************************************* */        
+ /*HENSIKT:                                                           */        
+ /************                                                        */        
+ /*  SUB-PROGRAM I DELSYSTEMET FJERNING.                              */        
+ /*    FJERNER ALLE TRANSER FRA TRANSAKSJONSHISTORIKKEN               */        
+ /*  FORBEREDE_TRANS:                                                 */        
+ /*    RUTINEN LESER FØRSTE TRANS I TRANSHISTORIKKEN                  */        
+ /*  HENT_TRANS:                                                      */        
+ /*    RUTINEN LESER ALLE TRANSER I TRANSHISTORIKKEN OG LEGGER        */        
+ /*    DEM  I EN TRANS_LISTE                                          */        
+ /*  MAPS_UT_AT:                                                      */        
+ /*    RUTINEN SKRIVER EN OG EN TRANS UT PÅ SKJERMEN                  */        
+ /*  FJERN_ALLE_TRANS:                                                */        
+ /*    RUTINEN FJERNER SISTE OG NEST-SISTE STATUS SAMT ALLE TRANSER   */        
+ /*    CALLER STATISTIKK-RUTINEN OG SKRIVER UT TRANSENE               */        
+ /*  BEHANDLE_FNR:                                                    */        
+ /*    RUTINEN SETTER INN FØDSELSNUMMER I FNR_ARRAY SOM IKKE FINNES   */        
+ /*    FRA FØR                                                        */        
+ /*                                                                   */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /**********************                                              */        
+ /*  PROGRAMMET BLIR CALLET OPP AV R0010450.                          */        
+ /*  ***************************************                          */        
+ /*  PROCEDUREN FORBEREDE_TRANS:                                      */        
+ /*    R0015201 LINKES FOR Å LESE TRANSEN                             */        
+ /*  PROCEDUREN HENT_TRANS:                                           */        
+ /*    R0010411 LINKES FOR Å BYGGE OPP TRANS_LISTE OG FNR_ARRAY       */        
+ /*    R0015201 LINKES FOR Å LESE EN TRANS                            */        
+ /*  PROCEDUREN FJERN_ALLE_TRANS:                                     */        
+ /*    R0015401 LINKES FOR Å FJERNE SISTE OG NEST SISTE STATUS        */        
+ /*    R0015501 LINKES FOR Å FJERNE ALLE TRANSER                      */        
+ /*    CALLER BEHANDLE_FNR (SUB-PROGRAM)                              */        
+ /*    R0016201 LINKES FOR Å GENERERE STATISTIKK                      */        
+ /*    R0016401 LINKES FOR Å GENERERE STATISTIKK                      */        
+ /*    R0010412 LINKES FOR Å LISTE UT FJERNEDE TRANSER                */        
+ /******************************************************************* */        
+ /*                                                                   */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /*************************                                           */        
+ /*  PO/PE-BASEN:                                                     */        
+ /*               EN OG EN TRANS LESES (R0015201)                     */        
+ /*               FJERNE SISTE OG NEST-SISTE STATUS (R0015401)        */        
+ /*               FJERNE ALLE TRANSER               (R0015501)        */        
+ /*  STATISTIKK_BASEN:                                                */        
+ /*               BRUKES I R0016201                                   */        
+ /*    ER DETTE NØDVENDIG????                                         */        
+ /*  **DDNAVN,TYPE I/O DATASETTOPPLYSNINGER,PSB-NAVN **               */        
+ /*                                                                   */        
+ /*FEILMELDINGER:                                                     */        
+ /*********************                                               */        
+ /*  'PERSONEN MED FØDSELSNUMMER NNNNNNNNNNN ER IKKE I DATABASEN'     */        
+ /*  'DET FINNES INGEN TRANSAKSJONER TIL PERSONEN MED FNR:NNNNNNNNN'  */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ FORBEREDE_TRANS:                                                               
+   PROC;                                                                        
+                                                                                
+     DIV_PARAM_OMR.POS_I_B01    = 1;     /* BARE INITIERT FOR 5201 */           
+     DIV_PARAM_OMR.SØKER_IND    = 1;     /* BARE INITIERT FOR 5201 */           
+     DIV_PARAM_OMR.FEIL_MELD_NR = 0;                                            
+     DIV_PARAM_OMR.TRANS_VIRKDATO_ÅMD    = 0;                                   
+     DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS = '1'B;                                
+                                                                                
+     PIC_11 = DIV_PARAM_OMR.SEARCH_FNR;                                         
+                                                                                
+     TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 0;                                      
+     TRANS_OPPL_OMR.FØDSNUMMER     = 0;                                         
+                                                                                
+     /*******    LES TRANS        *********/                                    
+     EXEC CICS LINK PROGRAM ('R0015201') COMMAREA(KOM_OMR);                     
+                                                                                
+     IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                     
+        FATAL_FEIL = '1'B;                                                      
+                                                                                
+     ELSE IF TRANS_OPPL_OMR.FØDSNUMMER = 0 THEN                                 
+        MAP_MELDING = 'PERSONEN MED FØDSELSNUMMER: ' !! PIC_11 !!               
+                      ' ER IKKE I DATABASEN';                                   
+                                                                                
+      ELSE IF TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 0 THEN                         
+         MAP_MELDING = 'DET FINNES INGEN TRANSAKSJONER TIL ' !!                 
+                       'PERSONEN MED FNR: ' !! PIC_11;                          
+                                                                                
+     IF DIV_PARAM_OMR.FEIL_MELD_NR   > 0 !                                      
+        TRANS_OPPL_OMR.FØDSNUMMER    = 0 !                                      
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 0 THEN                               
+                                                                                
+           FEIL = '1'B;                                                         
+                                                                                
+                                                                                
+ END FORBEREDE_TRANS;                                                           
+                                                                                
+                                                                                
+ HENT_TRANS:                                                                    
+   PROC;                                                                        
+                                                                                
+    DCL                                                                         
+        STOPP                    BIT(1) INIT('0'B);                             
+                                                                                
+                                                                                
+    DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS = '0'B;                                 
+                                                                                
+    DO WHILE (^STOPP);                                                          
+                                                                                
+       /*----------------------------------------------------------*/           
+       /*   BYGGE OPP TRANS_LISTE OG FNR_ARRAY                     */           
+       /*----------------------------------------------------------*/           
+                                                                                
+       IF ^DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS  THEN                            
+          EXEC CICS LINK PROGRAM('R0010411') COMMAREA (LOKAL_KOM_OMR);          
+                                                                                
+       IF FNR_ARRAY_ANT > 14 THEN /* SATISH 17.03.2006 */                       
+          DO;                                                                   
+             DIV_PARAM_OMR.FEIL_MELD_NR = 214;                                  
+             DIV_PARAM_OMR.PROGRAM_ID   = 'R0010452';                           
+             FATAL_FEIL = '1'B;                                                 
+             GOTO SLUTT;                                                        
+          END;                                                                  
+                                                                                
+       KOM_OMR.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);                 
+                                                                                
+       /*----------------------------------------------------------*/           
+       /* LES TRANS                                                */           
+       /*----------------------------------------------------------*/           
+                                                                                
+       EXEC CICS LINK PROGRAM ('R0015201') COMMAREA(KOM_OMR);                   
+                                                                                
+       IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                   
+          DO;                                                                   
+             FATAL_FEIL = '1'B;                                                 
+             GOTO SLUTT;                                                        
+          END;                                                                  
+                                                                                
+       IF TRANS_ANT = 40 THEN                     /* BEGRENSNING I    */        
+          TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 0;   /* TRANS - ANTALLET */        
+                                                                                
+       IF TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD > 0 THEN                             
+          DO;                                                                   
+             TRANS_ANT = TRANS_ANT + 1;                                         
+             DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS = '0'B;                        
+          END;                                                                  
+       ELSE IF FNR_ARRAY(FNR_ARRAY_IND + 1) > 0 THEN                            
+          DO;                                                                   
+             FNR_ARRAY_IND = FNR_ARRAY_IND + 1;                                 
+             SEARCH_FNR    = FNR_ARRAY(FNR_ARRAY_IND);                          
+             DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS = '1'B;                        
+          END;                                                                  
+       ELSE IF TRANS_OPPL_OMR.BLANKETTYPE   = 'O1'    &                         
+               TRANS_ANT                    =   1       THEN                    
+          DO;                                                                   
+             /*-------------------------------------------------------*/        
+             /* HVIS INNLEST TRANS ER EN DØDSTRANS OG BARE 1 TRANS ER */        
+             /* FINNES, SJEKKES TILKN FOR Å FINNE ETTERLATTE-TRANSEN. */        
+             /*-------------------------------------------------------*/        
+                                                                                
+                                                                                
+             SEARCH_FNR                  =  0                        ;          
+             DIV_PARAM_OMR.ØNSKET_STATUS = 'S'                       ;          
+             DIV_PARAM_OMR.POS_I_B01     =  1                        ;          
+             DIV_PARAM_OMR.SEARCH_FNR    =  TRANS_OPPL_OMR.FØDSNUMMER;          
+                                                                                
+             EXEC CICS LINK PROGRAM    ('R0013110') COMMAREA(KOM_OMR);          
+                                                                                
+             IF DIV_PARAM_OMR.FEIL_MELD_NR  >  0              THEN              
+                DO;                                                             
+                   FATAL_FEIL               = '1'B;                             
+                   GOTO SLUTT;                                                  
+                END;                                                            
+                                                                                
+                                                                                
+             DO I = 1 TO 13 WHILE (B01.PERSON(1).FNR_TILKN (I) > 0 );           
+                                                                                
+                IF B01.PERSON(1).TILKNYTNINGSKODE(I)  = 'E' !                   
+                   B01.PERSON(1).TILKNYTNINGSKODE(I)  = 'N' !                   
+                   B01.PERSON(1).TILKNYTNINGSKODE(I)  = 'B' THEN                
+                   DO;                                                          
+                      SEARCH_FNR    =  B01.PERSON(1).TILKN.FNR_TILKN(I);        
+                      I             =  13;                                      
+                   END;                                                         
+             END;                                                               
+                                                                                
+             IF SEARCH_FNR          >  0                      THEN              
+                DO;                                                             
+                   FNR_ARRAY_IND    =  FNR_ARRAY_IND     +   1  ;               
+                   DIV_PARAM_OMR.FØRSTE_CALL_LES_TRANS   =  '1'B;               
+                END;                                                            
+             ELSE                                                               
+                DO;                                                             
+                  ANTALL_TRANS_I_TRANS_LISTE  =  TRANS_ANT;                     
+                  STOPP                       =  '1'B;                          
+                END;                                                            
+                                                                                
+             B01.PERSON(1)                    =  '';                            
+                                                                                
+          END;                                                                  
+       ELSE                                                                     
+          DO;                                                                   
+             ANTALL_TRANS_I_TRANS_LISTE       =  TRANS_ANT;                     
+             STOPP                            =  '1'B;                          
+          END;                                                                  
+                                                                                
+    END;                                                                        
+                                                                                
+                                                                                
+ SLUTT:                                                                         
+                                                                                
+ END HENT_TRANS;                                                                
+                                                                                
+                                                                                
+  /* **************************************************************** */        
+  /*  PROCEDURE FOR Å SKRIVE TRANSER TIL SKJERMEN                     */        
+  /* **************************************************************** */        
+                                                                                
+  MAPS_UT_AT:                                                                   
+     PROC;                                                                      
+                                                                                
+     DCL  I               FIXED BIN(15);                                        
+                                                                                
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     /**** HER SKAL TRANSENE UT    *****/                                       
+                                                                                
+     EXEC CICS SEND MAP('S0010E3') MAPSET('S0010E3') ACCUM PAGING ERASE;        
+                                                                                
+     MAX_ANTALL_TRANS = 1;                                                      
+     DO I = ANTALL_TRANS_I_TRANS_LISTE TO 1 BY -1;                              
+        MAX_ANTALL_TRANS  = MAX_ANTALL_TRANS+ 1;                                
+        IF MAX_ANTALL_TRANS > 27  THEN LEAVE;                                   
+                                                                                
+        CALL LOW_VALUES_TIL_MAP;                                                
+        KOM_OMR.TRANS_OPPL_PEKER = TRANS_LISTE.TRANS_OPPL_PTR(I);               
+        S0010E4O.VIRK_DATO_MÅO   =                                              
+                      KONV_HÅMD_MÅ(TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD);           
+        S0010E4O.BL_TYPEO        = TRANS_OPPL_OMR.BLANKETTYPE;                  
+                                                                                
+        /* PLUKKER UT DEN DØDE    */                                            
+                                                                                
+        IF TRANS_OPPL_OMR.BLANKETTYPE = 'O1' THEN                               
+           FNR_DØD               = TRANS_OPPL_OMR.FØDSNUMMER;                   
+                                                                                
+        IF VERIFY('0123456789',TRANS_LISTE.FNR_EK(I)) = 0 THEN                  
+           IF TRANS_LISTE.FNR_EK(I) > 0 THEN                                    
+              S0010E4O.FNR_EKTEFO   = TRANS_LISTE.FNR_EK(I);                    
+        S0010E4O.ANT_BARNO       = TRANS_LISTE.ANT_BARN(I);                     
+        EXEC CICS SEND MAP('S0010E4') MAPSET('S0010E3') ACCUM PAGING;           
+                                                                                
+     END;                                                                       
+                                                                                
+     CALL LOW_VALUES_TIL_MAP;                                                   
+                                                                                
+     /*****      TRAILER       *****/                                           
+                                                                                
+     S0010E6O.MELDINGO = 'VENNLIGST IKKE LA DETTE BILDET STÅ LENGE DA'!!        
+                         ' DET OPPTAR STORE MASKIN-RESSURSER.';                 
+     EXEC CICS SEND MAP('S0010E6') MAPSET('S0010E3') ACCUM PAGING;              
+     EXEC CICS SEND PAGE RETAIN NOAUTOPAGE;                                     
+                                                                                
+  END MAPS_UT_AT;                                                               
+                                                                                
+                                                                                
+                                                                                
+  /* **************************************************************** */        
+  /*  PROCEDURE FOR Å FJERNE ALLE STATUS OG TRANSER.                  */        
+  /* **************************************************************** */        
+                                                                                
+  FJERN_ALLE_TRANS:                                                             
+     PROC;                                                                      
+                                                                                
+     /*-------------------------------------------------------------*/          
+     /* MÅ FINNE ALLE TILKNYTTNINGER TIL FORSØRGEDE PERSONER        */          
+     /*-------------------------------------------------------------*/          
+                                                                                
+     DCL 01 W01_FNR_ARRAY(13),                                                  
+            05 W01_FNR_TILKN    DEC FIXED(11);                                  
+                                                                                
+     DIV_PARAM_OMR.ØNSKET_STATUS =  'S'                           ;             
+     DIV_PARAM_OMR.POS_I_B01     =  1                             ;             
+     DIV_PARAM_OMR.SEARCH_FNR    =  TRANS_OPPL_OMR.FØDSNUMMER     ;             
+                                                                                
+     EXEC CICS LINK PROGRAM    ('R0013110') COMMAREA(KOM_OMR)     ;             
+                                                                                
+     IF DIV_PARAM_OMR.FEIL_MELD_NR  >  0              THEN                      
+        DO;                                                                     
+           FATAL_FEIL               = '1'B;                                     
+           GOTO SLUTT;                                                          
+        END;                                                                    
+                                                                                
+     W01_FNR_ARRAY = '';                                                        
+                                                                                
+                                                                                
+     DO I = 1 TO 13;                                                            
+        IF  B01.PERSON(1).TILKNYTNINGSKODE(I) = 'F' !                           
+            B01.PERSON(1).TILKNYTNINGSKODE(I) = 'L' !                           
+            B01.PERSON(1).TILKNYTNINGSKODE(I) = 'V' !    /*HL*/                 
+            B01.PERSON(1).TILKNYTNINGSKODE(I) = 'W' THEN                        
+                                                                                
+            W01_FNR_TILKN(I) = B01.PERSON(1).TILKN.FNR_TILKN(I);                
+     END;                                                                       
+                                                                                
+     /*-------------------------------------------------------------*/          
+     /* LESER INN ALLE PERSONER MED 3110 P.GR.A TKNR TIL NORTRYGD   */          
+     /*-------------------------------------------------------------*/          
+                                                                                
+     DO I = 1 TO 14  WHILE (FNR_ARRAY (I) > 0)                       ;          
+                                                                                
+        DIV_PARAM_OMR.POS_I_B01  =  I                                ;          
+        DIV_PARAM_OMR.SEARCH_FNR =  FNR_ARRAY (I)                    ;          
+        EXEC CICS LINK PROGRAM    ('R0013110') COMMAREA(KOM_OMR)     ;          
+                                                                                
+        /*----------------------------------------------------------*/          
+        /* VED GJENNTAGENDE FORSØK PÅ FJERNING KAN EN PERSON MISTE  */          
+        /* SISTE STATUS . IGNORERER FEILMELDINGEN SOM VARSLER DET . */          
+        /*----------------------------------------------------------*/          
+                                                                                
+        IF DIV_PARAM_OMR.FEIL_MELD_NR     =  495            THEN                
+           DIV_PARAM_OMR.FEIL_MELD_NR     =  0;                                 
+        ELSE                                                                    
+           IF DIV_PARAM_OMR.FEIL_MELD_NR  >  0              THEN                
+              DO;                                                               
+                FATAL_FEIL                = '1'B;                               
+                GOTO SLUTT;                                                     
+              END;                                                              
+                                                                                
+     END;                                                                       
+                                                                                
+     /*-------------------------------------------------------------*/          
+     /* FJERNING AV SISTE OG NEST SISTE STATUS.                     */          
+     /*-------------------------------------------------------------*/          
+                                                                                
+     B00                    = ''  ;                                             
+     B01                    = B00 ;                                             
+     B02                    = B00 ;                                             
+                                                                                
+     DO I = 1 TO 14;                                                            
+        B00.RF0PERSN.FNR(I) = FNR_ARRAY(I);                                     
+        B02.RF0PERSN.FNR(I) = FNR_ARRAY(I);                                     
+     END;                                                                       
+                                                                                
+     EXEC CICS LINK PROGRAM ('R0015401') COMMAREA(KOM_OMR);                     
+                                                                                
+     IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                     
+        DO;                                                                     
+           FATAL_FEIL = '1'B;                                                   
+           GOTO SLUTT;                                                          
+        END;                                                                    
+                                                                                
+                                                                                
+     /*-------------------------------------------------------------*/          
+     /* FJERNING AV TRANSER                                         */          
+     /*-------------------------------------------------------------*/          
+                                                                                
+     FJERN_ALLE = '1'B;         /* INDIKERER FJERNING AV ALLE       */          
+                                                                                
+     DO I = 1 TO FNR_ARRAY_ANT;                                                 
+                                                                                
+        SEARCH_FNR = FNR_ARRAY(I);                                              
+                                                                                
+        IF ^ (FNR_DØD = FNR_ARRAY(I) & I > 1) THEN                              
+           DO;                                                                  
+                                                                                
+           IF SUBSTR(DIV_PARAM_OMR.CICS_NAVN,1,4) = 'HELP'  THEN                
+                   EXEC CICS LINK PROGRAM ('R0015502')                          
+                                  COMMAREA(LOKAL_KOM_OMR);                      
+                                                                                
+           ELSE                                                                 
+                                                                                
+                   EXEC CICS LINK PROGRAM ('R0015501')                          
+                                  COMMAREA(LOKAL_KOM_OMR);                      
+                                                                                
+           END;                                                                 
+                                                                                
+        IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                  
+           DO;                                                                  
+              FATAL_FEIL = '1'B;                                                
+              GOTO SLUTT;                                                       
+           END;                                                                 
+     END;                                                                       
+                                                                                
+                                                                                
+     /*---------------------------------------------------------------*/        
+     /* SETTER NÅ INN I FNR_ARRAY FØDSELSNUMMER TIL DE SOM HAR TRANSER*/        
+     /*---------------------------------------------------------------*/        
+                                                                                
+     FNR_ARRAY     = 0;                                                         
+     FNR_ARRAY_ANT = 0;                                                         
+                                                                                
+     DO I = 1 TO ANTALL_TRANS_I_TRANS_LISTE;                                    
+        KOM_OMR.TRANS_OPPL_PEKER = TRANS_LISTE.TRANS_OPPL_PTR (I)     ;         
+        CALL BEHANDLE_FNR;                                                      
+     END;                                                                       
+                                                                                
+     KOM_OMR.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR)          ;         
+                                                                                
+     DO I = 1 TO FNR_ARRAY_ANT;                                                 
+                                                                                
+        /*----------------------------------------------------------*/          
+        /* KALLER OPP STATISTIKK VED FJERNING AV ALLE               */          
+        /*----------------------------------------------------------*/          
+                                                                                
+        TRANS_OPPL_OMR.FØDSNUMMER = FNR_ARRAY(I);                               
+                                                                                
+        EXEC CICS LINK PROGRAM ('R0016401') COMMAREA(KOM_OMR);                  
+                                                                                
+        IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                  
+           DO;                                                                  
+              FATAL_FEIL = '1'B;                                                
+              GOTO SLUTT;                                                       
+           END;                                                                 
+                                                                                
+        EXEC CICS LINK PROGRAM ('R0016201') COMMAREA(KOM_OMR);                  
+                                                                                
+        IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                                  
+           DO;                                                                  
+              FATAL_FEIL = '1'B;                                                
+              GOTO SLUTT;                                                       
+           END;                                                                 
+                                                                                
+     END;                                                                       
+                                                                                
+     DO I = 1  TO 13;                                                           
+        IF W01_FNR_TILKN(I) > 0 THEN                                            
+           DO;                                                                  
+              TRANS_OPPL_OMR.FØDSNUMMER = W01_FNR_TILKN(I);                     
+                                                                                
+              EXEC CICS LINK PROGRAM ('R0016401') COMMAREA(KOM_OMR);            
+                                                                                
+              IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                            
+                 DO;                                                            
+                    FATAL_FEIL = '1'B;                                          
+                    GOTO SLUTT;                                                 
+                 END;                                                           
+                                                                                
+              EXEC CICS LINK PROGRAM ('R0016201') COMMAREA(KOM_OMR);            
+                                                                                
+              IF DIV_PARAM_OMR.FEIL_MELD_NR > 0 THEN                            
+                 DO;                                                            
+                    FATAL_FEIL = '1'B;                                          
+                    GOTO SLUTT;                                                 
+                 END;                                                           
+           END;                                                                 
+     END;                                                                       
+                                                                                
+     /*-------------------------------------------------------------*/          
+     /* UTLISTING AV FJERNEDE TRANSER                               */          
+     /*-------------------------------------------------------------*/          
+                                                                                
+     EXEC CICS LINK PROGRAM ('R0010412') COMMAREA(LOKAL_KOM_OMR);               
+                                                                                
+  SLUTT:                                                                        
+                                                                                
+      IF DIV_PARAM_OMR.FEIL_MELD_NR = 0 &                                       
+         FATAL_FEIL = '0'B         THEN                                         
+            CALL SKRIV_BRUKER_ID;                                               
+                                                                                
+  END FJERN_ALLE_TRANS;                                                         
+                                                                                
+                                                                                
+                                                                                
+ /* **************************************************************** */         
+ /*    SETTER INN FØDSELSNUMMER I FNR_ARRAY SOM IKKE FINNES FRA FØR  */         
+ /* **************************************************************** */         
+                                                                                
+ BEHANDLE_FNR:                                                                  
+    PROC;                                                                       
+                                                                                
+    DO K = 1 TO 14;                                                             
+       IF TRANS_OPPL_OMR.FØDSNUMMER = FNR_ARRAY(K) THEN                         
+          K = 14;                                                               
+       ELSE IF FNR_ARRAY(K) = 0 THEN                                            
+          DO;                                                                   
+             FNR_ARRAY(K)  = TRANS_OPPL_OMR.FØDSNUMMER;                         
+             FNR_ARRAY_ANT = FNR_ARRAY_ANT + 1;                                 
+             K = 14;                                                            
+          END;                                                                  
+    END;                                                                        
+                                                                                
+ END BEHANDLE_FNR;                                                              

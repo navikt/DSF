@@ -1,0 +1,243 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.27.44 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.15.22 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 12.35.23 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 14.34.56 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   1999.12.09  8.44.05 AV   JDA7339          */        
+ /*       SIST ENDRET 19/08-98 09.29.20 AV   TSB7339                  */        
+ /*       SIST ENDRET 20/07-98 13.06.17 AV   JDA7339                  */        
+ /*       SIST ENDRET 22/06-98 13.21.26 AV   JDA7339                  */        
+ /*       SIST ENDRET 11/06-98 08.47.12 AV   RFA9991                  */        
+  /* **************************************************************** */        
+  /*IDENTIFIKASJON:                                                   */        
+  /*    R0011603 - PROSEDYRE I PLI                                    */        
+  /*    PROGRAMMERER: GEIR, SEPTEMBER 1981                            */        
+  /*HENSIKT:                                                          */        
+  /*    PROSEDYREN FORETAR KONTROLL AV DATA VEDRØRENDE                */        
+  /*    OPPHØRSBLANKETT 1.                                            */        
+  /*PROGRAMTILKNYTNING:                                               */        
+  /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLINGA AV                */        
+  /*    OPPHØRSBLANKETT 1, INCLUDES I R0011601.                       */        
+  /*BRUK:                                                             */        
+  /*    CALL KONTROLL_O1                                              */        
+  /*                                                                  */        
+ /*ENDRET: 14.04.88 AV SVERRE LUNDEBY, DATA-UTVIKLING A/S             */        
+ /* ******                                                            */        
+ /*    INITIERER BRUKERID I FNR_REG MED CICS_IND FØR KONTROLL PÅ      */        
+ /*    OM FNR ER ENDRET (R0019906).                                   */        
+  /* **************************************************************** */        
+  /*                                                                  */        
+  /*    MODULEN KONTROLLERER OPPHØRSBLANKETT NR 1 OG RETURNERER       */        
+  /*    MED FEIL_FUNNET = '1'B HVIS FEIL, '0'B HVIS RIKTIG.           */        
+  /*                                                                  */        
+  /* **************************************************************** */        
+ %SKIP(2);                                                                      
+  KONTROLL_O1:                                                                  
+    PROC (FEIL_FUNNET);                                                         
+    DCL                                                                         
+       FEIL_FUNNET     BIT (1),                                                 
+       HJ_DØDSDATO_ÅMD PIC '99999999',                                          
+       DØDSDATO_Å      DEF HJ_DØDSDATO_ÅMD POS(1) PIC '9999',                   
+       DØDSDATO_M      DEF HJ_DØDSDATO_ÅMD POS(5) PIC '99',                     
+       DØDSDATO_D      DEF HJ_DØDSDATO_ÅMD POS(7) PIC '99',                     
+       DØDSDATO_ÅM     DEF HJ_DØDSDATO_ÅMD PIC '999999';                        
+   DCL  X_DATO   PIC '999999999';                                               
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+    DCL                                                                         
+       DAGENS_DATO_ÅMD PIC '99999999',                                          
+       HJ_DATO_ÅM      PIC '999999',                                            
+       HJ_DATO_M       DEF HJ_DATO_ÅM POS(5) PIC '99',                          
+       HJ_DATO_Å2      DEF HJ_DATO_ÅM POS(3) PIC '99',                          
+       HJ_DATO_Å4      DEF HJ_DATO_ÅM POS(1) PIC '9999';                        
+    DCL                                                                         
+       1 FNR_REG,                                                               
+         2 FNR1         FIXED DEC(11),                                          
+         2 FNR2         FIXED DEC(11),                                          
+         2 BRUKERID     CHAR     ( 4);                                          
+                                                                                
+   DCL                                                                          
+      W_FNR                                     PIC'(11)9';                     
+   DCL                                                                          
+      1 FNR DEF W_FNR,                                                          
+        2 DAG                                   PIC'(2)9',                      
+        2 MND                                   PIC'(2)9',                      
+        2 AAR                                   PIC'(2)9',                      
+        2 ÅRHUNDRE                              PIC'9',                         
+        2 REST                                  PIC'(4)9';                      
+   DCL                                                                          
+      W_FNR13                                   PIC'(13)9';                     
+   DCL                                                                          
+      1 FNR13 DEF W_FNR13,                                                      
+        2 DAG13                                 PIC'(2)9',                      
+        2 MND13                                 PIC'(2)9',                      
+        2 AAR13                                 PIC'(4)9',                      
+        2 ÅRHUNDRE13                            PIC'9',                         
+        2 REST13                                PIC'(4)9';                      
+                                                                                
+   DCL  W_FNR_ÅMD                               PIC'(8)9';                      
+   DCL 1 W_FNRÅMD DEF W_FNR_ÅMD,                                                
+        2 AAR                                   PIC'(4)9',                      
+        2 MND                                   PIC'(2)9',                      
+        2 DAG                                   PIC'(2)9';                      
+                                                                                
+                                                                                
+       FNR_REG.BRUKERID =  DIV_PARAM_OMR.CICS_IND;                              
+       ANT_FEIL_SKREVET =  0;                                                   
+       KEY_PEKER        =  ADDR(O1.TKNR_DØD);                                   
+       FEIL_FUNNET      = '0'B;                                                 
+       DAGENS_DATO_ÅMD  =  DATO_2000;                                           
+                                                                                
+       IF ^F_NUMERISK(F_FELT_PIC_CHAR11(O1.FNR_DØD)) THEN                       
+          DO;                                                                   
+             FEIL_FUNNET  = '1'B;                                               
+             O1.FNR_DØDNR = 200;                                                
+          END;                                                                  
+       ELSE                                                                     
+          IF ^ F_GYLDIG_FNR(O1.FNR_DØD) THEN                                    
+             DO;                                                                
+                FEIL_FUNNET  = '1'B;                                            
+                O1.FNR_DØDNR = 1;                                               
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+                FNR_REG.FNR1 = O1.FNR_DØD;                                      
+                EXEC CICS LINK PROGRAM ('R0019906') COMMAREA (FNR_REG);         
+                IF FNR_REG.FNR2 > 0 THEN                                        
+                   DO;                                                          
+                      O1.FNR_DØDNR   = 203;                                     
+                      O1.FNR_GML_DØD = O1.FNR_DØD;                              
+                      O1.FNR_DØD     = FNR_REG.FNR2;                            
+                   END;                                                         
+             END;                                                               
+                                                                                
+       IF ^ F_NUMERISK(F_FELT_PIC_CHAR4(O1.TKNR_DØD)) THEN                      
+          DO;                                                                   
+             FEIL_FUNNET   = '1'B;                                              
+             O1.TKNR_DØDNR = 200;                                               
+          END;                                                                  
+       ELSE                                                                     
+          DO;                                                                   
+                  EXEC CICS HANDLE CONDITION NOTFND(NOTFND);                    
+                  EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)            
+                                               INTO(TK_RECL);                   
+                  LEAVE;                                                        
+              NOTFND:                                                           
+                  FEIL_FUNNET   = '1'B;                                         
+                  O1.TKNR_DØDNR = 3;                                            
+          END;                                                                  
+                                                                                
+    /* ************************************************** */                    
+    /* KONTROLL AV ACF2 FOR TILLGANGE TIL TKNR            */                    
+    /*                                                    */                    
+          /* ************************************************** */              
+    BO_TKNR  = TKNR_DØD;                                                        
+    /* NY PROC 18.11.02 SATISH */                                               
+    IF ^FEIL_FUNNET   THEN                                                      
+     DO;                                                                        
+         CALL  KONTROLL_ACF2;                                                   
+         IF FEIL_MELD_NR    >  0  THEN                                          
+            DO;                                                                 
+               FEIL_FUNNET = '1'B;                                              
+               IF FEIL_MELD_NR    =  0654  THEN                                 
+                  FNR_DØDNR = FEIL_MELD_NR;                                     
+               ELSE                                                             
+                  TKNR_DØDNR  = FEIL_MELD_NR;                                   
+            END;                                                                
+     END;                                                                       
+                                                                                
+                                                                                
+       IF ^ F_NUMERISK(F_FELT_PIC_CHAR8(O1.DØDSDATO_ÅMD)) THEN                  
+          DO;                                                                   
+             FEIL_FUNNET       = '1'B;                                          
+             O1.DØDSDATO_ÅMDNR = 200;                                           
+          END;                                                                  
+       ELSE                                                                     
+          IF ^ F_GYLDIG_DATO(O1.DØDSDATO_ÅMD) THEN                              
+             DO;                                                                
+                FEIL_FUNNET       = '1'B;                                       
+                O1.DØDSDATO_ÅMDNR = 75;                                         
+             END;                                                               
+                                                                                
+       IF ^ F_NUMERISK(F_FELT_PIC_CHAR11(O1.FNR_EK)) THEN                       
+          DO;                                                                   
+             FEIL_FUNNET = '1'B;                                                
+             O1.FNR_EKNR = 200;                                                 
+          END;                                                                  
+       ELSE                                                                     
+          IF O1.FNR_EK > 0 THEN                                                 
+             DO;                                                                
+                IF ^ F_GYLDIG_FNR(O1.FNR_EK) THEN                               
+                   DO;                                                          
+                      FEIL_FUNNET = '1'B;                                       
+                      O1.FNR_EKNR = 15;                                         
+                   END;                                                         
+                ELSE                                                            
+                   DO;                                                          
+                      FNR_REG.FNR1 = O1.FNR_EK;                                 
+                      EXEC CICS LINK PROGRAM ('R0019906')                       
+                                                     COMMAREA (FNR_REG);        
+                      IF FNR_REG.FNR2 > 0 THEN                                  
+                         DO;                                                    
+                            O1.FNR_EKNR = 203;                                  
+                            O1.FNR_GML_EK = O1.FNR_EK;                          
+                            O1.FNR_EK = FNR_REG.FNR2;                           
+                         END;                                                   
+                   END;                                                         
+                IF ^ F_NUMERISK(F_FELT_PIC_CHAR7(O1.PI_DØD)) THEN               
+                   DO;                                                          
+                      FEIL_FUNNET = '1'B;                                       
+                      O1.PI_DØDNR = 200;                                        
+                   END;                                                         
+             END;                                                               
+                                                                                
+ /*  HER SETTES VERDIER INN I TRANS.OPPL.OMR                         */         
+                                                                                
+     FØDSNUMMER      = O1.FNR_DØD;                                              
+     HJ_DØDSDATO_ÅMD = O1.DØDSDATO_ÅMD;                                         
+     HJ_DATO_ÅM      = O1.DØDSDATO_ÅMD / 100;                                   
+                                                                                
+ /*LOVENDRING 1.1.91 - HL : */                                                  
+                                                                                
+     IF HJ_DATO_Å4  > 1990 THEN                                                 
+        IF HJ_DATO_M = 12     THEN                                              
+           DO;                                                                  
+              HJ_DATO_Å4 = HJ_DATO_Å4 + 1;                                      
+              HJ_DATO_M  = 1;                                                   
+           END;                                                                 
+        ELSE                                                                    
+           HJ_DATO_M  = HJ_DATO_M  + 1;                                         
+                                                                                
+     VIRKNINGSDATO_ÅMD   = HJ_DATO_ÅM * 100;                                    
+ /*      KRYSSKONTROLLER                                             */         
+                                                                                
+     EXEC CICS ENTER TRACEID(03) FROM (VIRKNINGSDATO_ÅMD);                      
+     IF ^FEIL_FUNNET THEN                                                       
+        DO;                                                                     
+           HJ_DØDSDATO_ÅMD     = O1.DØDSDATO_ÅMD;                               
+           W_FNR     = O1.FNR_DØD;                       /*NY93*/               
+           W_FNR13   = KONV_FNR11_FNR13(W_FNR);                                 
+           IF HJ_DØDSDATO_ÅMD >= DAGENS_DATO_ÅMD THEN                           
+              DO;                                                               
+                 FEIL_FUNNET       = '1'B;                                      
+                 O1.DØDSDATO_ÅMDNR = 76;                                        
+              END;                                                              
+           /* DØDSDATO IKKE MINDRE ENN FØDSELSDATO JD 8.2.93*/                  
+           W_FNRÅMD.AAR = AAR13;                                                
+           W_FNRÅMD.MND = MND13;                                                
+           W_FNRÅMD.DAG = DAG13;                                                
+                                                                                
+           IF HJ_DØDSDATO_ÅMD <  W_FNR_ÅMD THEN                                 
+              DO;                                                               
+                 FEIL_FUNNET       = '1'B;                                      
+                 O1.DØDSDATO_ÅMDNR = 75;                                        
+              END;                                                              
+           /* DØDSDATO DAG MÅ FYLLES UT JD 12.99*/                              
+           IF DØDSDATO_D = 00 !DØDSDATO_D = 99 THEN                             
+              DO;                                                               
+                 FEIL_FUNNET       = '1'B;                                      
+                 O1.DØDSDATO_ÅMDNR = 75;                                        
+              END;                                                              
+        END;                                                                    
+  END KONTROLL_O1;                                                              

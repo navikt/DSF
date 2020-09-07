@@ -1,0 +1,674 @@
+ /*   SIST ENDRET PÅ PROD   2006.07.18 12.00.40 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.04.24  9.45.26 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ QASS   2006.04.19 12.11.31 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.04.19 11.46.41 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2005.06.24 12.52.11 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.04.26 13.01.47 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.19 12.44.48 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.09.13 11.56.33 AV   HLA2970          */        
+ /*       SIST ENDRET 07/05-98 14.13.39 AV   JDA7339                  */        
+ /*       SIST ENDRET 05/05-98 11.49.39 AV   JDA7339                  */        
+ /*       SIST ENDRET 16/03-98 15.33.41 AV   RFA9991                  */        
+ /* **************************************************************** */         
+ /*IDENTIFIKASJON:                                                   */         
+ /*    R0011920 - HOVEDPROGRAM I PL/1 - CICS                         */         
+ /*    PROGRAMMERER:   HERMAN LARSSEN  - OKTOBER 1988                */         
+ /* **************************************************************** */         
+ /*HENSIKT:                                                          */         
+ /*    KONTROLLERE AFPTRANS MOT STATUS FAMILIEFORHOLD.               */         
+ /*    RUTINEN KONTROLLERER ALLE PERSONER I TRANSAKSJONEN MOT        */         
+ /*    INFORMASJON I REGISTERET. FOR HVER FAMILIEPERSON SOM GÅR      */         
+ /*    FEILFRI GJENNOM KONTROLLENE BLIR DET OPPRETTET NY STATUS      */         
+ /*    FOR PERSONEN, OG SØKERENS STATUS OPPDATERES.                  */         
+ /*PROGRAMTILKNYTNING:                                               */         
+ /*    KALLES OPP AV PROGRAM R0013520                                */         
+ /*BRUK:                                                             */         
+ /*    EXEC CICS XCTL PROGRAM ('R0011920') COMMAREA (KOM_OMR)        */         
+ /*                                                                  */         
+ /* **************************************************************** */         
+ %PAGE;                                                                         
+  KON_AFP:                                                                      
+   PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                        
+ %SKIP;                                                                         
+      %INCLUDE P0019908; /*KOM_OMR BASED PÅ COMMAREA_PEKER*/                    
+      %INCLUDE P0019906; /*TRANS_OPPL_OMR*/                                     
+      %INCLUDE P0011901; /*TRANSOMRÅDE FOR AFP OG AFPSP*/                       
+      %INCLUDE P0019910; /*STYRINGS_OMR BASED PÅ STYRINGS_PEKER*/               
+      %INCLUDE P0019912; /*DIV_PARAM_OMR BASED PÅ DIV_PARAM_PEKER*/             
+      %INCLUDE P0019924; /*GRUNNBELØP-VEIET GJENNOMSNITT*/                      
+      DCL 1 B01 BASED(B01_PEKER), %INCLUDE P0019921;                            
+      DCL  COMMAREA_PEKER PTR;                                                  
+ %PAGE;                                                                         
+      DCL 1 B02 BASED(B02_PEKER), %INCLUDE P0019921;                            
+ %PAGE;                                                                         
+   DCL                                                                          
+      ÅR_FØR_UTTAK        FIXED BIN          (15),                              
+      IND                 FIXED BIN          (15),                              
+      I                   FIXED BIN          (15),                              
+      J                   FIXED BIN          (15),                              
+      ( ADDR , CSTG  )    BUILTIN,                                              
+      DATO_ÅMD            PIC                 '(8)9',                           
+      DAGENS_DATO_ÅM DEF DATO_ÅMD POS(1) PIC '999999',                          
+      DAGENS_DATO_DAG DEF DATO_ÅMD POS(7) PIC '99',                             
+      DAGENS_DATO_1MND DEF DATO_ÅMD POS(5) PIC'99',                             
+      DAGENS_DATO_1ÅR  DEF DATO_ÅMD POS(1) PIC'9999',                           
+      TILLEGG             PIC                  '9',                             
+      SISTE_UTTAKSDATO_ÅMD DEC FIXED            (8),                            
+      HJ_VIRK_DATO_ÅMD     PIC               '(8)9',                            
+      VIRK_ÅR DEF  HJ_VIRK_DATO_ÅMD POS(3) PIC '99',     /**/                   
+      ALDER_Å_MND          DEC FIXED(5),                                        
+      ALDER_ÅM            PIC               '(5)9',                             
+      ALDER_Å DEF ALDER_ÅM    POS (1) PIC '999',                                
+      ALDER_M DEF ALDER_ÅM    POS (4) PIC '99',                                 
+      MAX BUILTIN;                                                              
+   DCL                                                                          
+      T_FNR               PIC              '(11)9';                             
+   DCL                                                                          
+      1 NR DEF T_FNR,                                                           
+         2 DG             PIC                 '99',                             
+         2 MN             PIC                 '99',                             
+         2 ÅR             PIC                 '99',                             
+         2 PERSNR,                                                              
+            3 ÅRHUNDRE    PIC                '999',                             
+            3 REST        PIC                 '99';                             
+   DCL                                                                          
+      STATUS_TYPE_SØKER   CHAR(1);                                              
+                                                                                
+   DCL ALDER_ÅM_STAT      PIC               '(5)9';                             
+   DCL ALDER_ÅM_STAT_EK   PIC               '(5)9';                             
+   DCL OPPH_ÅM            PIC               '(6)9';                             
+   DCL OPPH_ÅR DEF OPPH_ÅM POS (1)    PIC   '(4)9';                             
+   DCL OPPH_MN DEF OPPH_ÅM POS (5)    PIC   '(2)9';                             
+                                                                                
+ %PAGE;                                /*    */                                 
+                                                                                
+ /* **************************************************************** */         
+ /* PROGRAMMET STARTER HER.                                          */         
+ /* **************************************************************** */         
+      IF FEIL_MELD_NR = 0 THEN   /*AB 09.08.2001*/                              
+         PROGRAM_ID = 'R0011920';                                               
+      IND        = 0;                                                           
+      T_FNR           = AFP.FNR;                                                
+      HJ_VIRK_DATO_ÅMD  = TRANS_OMR.VIRK_DATO_ÅMD;                              
+      OPPH_ÅM         = HJ_VIRK_DATO_ÅMD / 100;                                 
+ /*FRA 9812 SKAL OPPHØR UP IKKE MER KUNNE VÆRE I JANUAR*/                       
+      IF OPPH_ÅR > 1998 &                                                       
+         OPPH_MN = 1        THEN                                                
+         DO;                                                                    
+            OPPH_ÅR = OPPH_ÅR - 1;                                              
+            OPPH_MN = 12;                                                       
+         END;                                                                   
+      SISTE_UTTAKSDATO_ÅMD =                                                    
+      MAX(B01.ALDERSP.UTTAKSDATO_ÅMD(SØKER_IND),                                
+                       B01.VENTØVR.UTTAKSDATO_ÅMD_ØVRIGE(SØKER_IND,1),          
+                       B01.VENTØVR.UTTAKSDATO_ÅMD_ØVRIGE(SØKER_IND,2),          
+                       B01.VENTØVR.UTTAKSDATO_ÅMD_ØVRIGE(SØKER_IND,3),          
+                       B01.VENTØVR.UTTAKSDATO_ÅMD_ØVRIGE(SØKER_IND,4),          
+                       B01.VENTØVR.UTTAKSDATO_ÅMD_ØVRIGE(SØKER_IND,5));         
+ %PAGE;                                /*     */                                
+      TRANSTYPE = 40;                                                           
+      DATO_ÅMD  = DATO_2000;                                                    
+                                                                                
+      ALDER_ÅM_STAT = F_ALDER(AFP.FNR,AFP.VIRK_DATO_ÅMD);                       
+                                                                                
+      IF (AFP.AFP_ORDNING         = 'J' !                                       
+          AFP.AFP_ORDNING         = 'K' ) !                                     
+         (AFP.AFP_ORDNING         = 'S' &                                       
+          ALDER_ÅM_STAT           > 6500) THEN                                  
+          IF (B01.STATUS_KODE_HIST(SØKER_IND)=' ' )  &   /* ????*/              
+            ((B01.UFØRHIST.UFG(SØKER_IND,1) > 0 )  !                            
+             (B01.PENSJONSTYPE1(SØKER_IND)  = 'E') !                            
+             (B01.PENSJONSTYPE2(SØKER_IND)  = 'E'))   THEN                      
+                                                                                
+             DIV_PERIODE.AFP_SERVICE = 'J';                                     
+                                                                                
+ /* **************************************************************** */         
+ /* DERSOM SØKER HAR PENSJONSSTATUS.                                 */         
+ /* **************************************************************** */         
+                                                                                
+                                                                                
+ /* 9/1-85      KARIN     */                                                    
+                                                                                
+      STATUS_TYPE_SØKER = STATUS_TYPE;                                          
+                                                                                
+ /* 9/1-85      KARIN     */                                                    
+      IF STATUS_TYPE_SØKER  = 'B' !                                             
+         STATUS_TYPE_SØKER  = 'D' !                                             
+         STATUS_TYPE_SØKER  = 'G' THEN                                          
+         DO;                                                                    
+            /* *********************************************** */               
+            /* ETTERFØLGENDE TESTER GJELDER DISSE STATUS-TYPER */               
+            /* - B - BYGGER PÅ SISTE STATUS                    */               
+            /* - D - BYGGER PÅ NEST SISTE STATUS               */               
+            /* - G - BYGGER PÅ NEST SISTE STATUS, ER OPPHØRT   */               
+            /*       I SISTE STATUS MED X (IKKE DØD)           */               
+            /* *********************************************** */               
+            IF B01.TKNR(SØKER_IND) > 0 THEN                                     
+               IF B01.TKNR(SØKER_IND) ^= AFP.TKNR &                             
+                  B01.SIVILSTAND(SØKER_IND) ^= 'A' THEN                         
+                  B02.TKNR(SØKER_IND) = AFP.TKNR;                               
+  /*              DO                                                            
+  L110: FJERNET 180701 MARTIN                                                   
+                     FEIL_VED_LABEL = '110'                                     
+                     FEIL_MELD_NR   = 1702                                      
+                     GO TO L999                                                 
+                  END  */                                                       
+            IF B01.PENSJONSTYPE1(SØKER_IND) = 'U'      !                        
+               B01.PENSJONSTYPE1(SØKER_IND) = 'Y'      !                        
+               B01.PENSJONSTYPE1(SØKER_IND) = 'J'      !                        
+               B01.PENSJONSTYPE1(SØKER_IND) = 'E'     THEN                      
+                                                                                
+  /*TILLEGGSTEST 0894 HL : */                                                   
+                                                                                
+               IF DIV_PERIODE.AFP_SERVICE ^= 'J'     THEN                       
+                  DO;                                                           
+  L115:                                                                         
+                     FEIL_VED_LABEL = '115';                                    
+                     FEIL_MELD_NR   = 1104;                                     
+                     GO TO L999;                                                
+                  END;                                                          
+            IF SISTE_UTTAKSDATO_ÅMD > HJ_VIRK_DATO_ÅMD THEN                     
+               DO;                                                              
+  L120:                                                                         
+                  FEIL_VED_LABEL = '120';                                       
+                  FEIL_MELD_NR   = 1703;                                        
+                  GO TO L999;                                                   
+               END;                                                             
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM DET ER EN EKTEFELLE I TRANSEN.                           */          
+ /* *************************************************************** */          
+                                                                                
+            IF AFP.FNR_EK > 0 THEN                                              
+               DO;                                                              
+                  SELECT ( B01.SIVILSTAND(SØKER_IND));                          
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM SØKERS SIVILSTAND ER UGIFT.                              */          
+ /* *************************************************************** */          
+                                                                                
+                     WHEN ('U')                                                 
+                        DO;                                                     
+  L140:                                                                         
+                           FEIL_VED_LABEL = '140';                              
+                           FEIL_MELD_NR   = 1001;                               
+                           GO TO L999;                                          
+                        END;                                                    
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM SØKER ER SKILT.                                          */          
+ /* *************************************************************** */          
+                                                                                
+                     WHEN ('S')                                                 
+                        DO;                                                     
+  L150:                                                                         
+                           FEIL_VED_LABEL = '150';                              
+                           FEIL_MELD_NR   = 1002;                               
+                           GO TO L999;                                          
+                        END;                                                    
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM SØKER ER ETTERLATT.                                      */          
+ /* *************************************************************** */          
+                                                                                
+                     WHEN ('E')                                                 
+                        DO;                                                     
+  L160:                                                                         
+                           FEIL_VED_LABEL = '160';                              
+                           FEIL_MELD_NR   = 1003;                               
+                           GO TO L999;                                          
+                        END;                                                    
+                                                                                
+ /* *************************************************************** */          
+ /* ELLERS ER SØKEREN GIFT.                                         */          
+ /* *************************************************************** */          
+                                                                                
+                     OTHERWISE                                                  
+                        DO;                                                     
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM DET ER EN ANNEN EKTEFELLE I SØKERENS PESTATUS.           */          
+ /* *************************************************************** */          
+                                                                                
+                           IF B01.FNR(EKTEF_IND) ^= AFP.FNR_EK                  
+                           THEN                                                 
+                              DO;                                               
+  L170:                                                                         
+                                 FEIL_VED_LABEL = '170';                        
+                                 FEIL_MELD_NR   = 1004;                         
+                                 GO TO L999;                                    
+                              END;                                              
+                           ELSE                                                 
+                                                                                
+ /* *************************************************************** */          
+ /* NÅ FORUTSETTES DET AT EKTEFELLEN ER I SØKERS PESTATUS.          */          
+ /* *************************************************************** */          
+                                                                                
+                              DO;                                               
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM DET SØKES OM EKTEFELLETILLEGG.                           */          
+ /* *************************************************************** */          
+                                                                                
+                                 IF AFP.TILL_EK = 'J' THEN                      
+                                    DO;                                         
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM EKTEFELLEN HAR PENSJON.                                  */          
+ /* *************************************************************** */          
+                                                                                
+                                       IF (                                     
+                                        B01.PENSJONSTYPE1 (                     
+                                        EKTEF_IND) = 'A' ! B01.                 
+                                        PENSJONSTYPE1 (                         
+                                        EKTEF_IND) = 'K' ! B01.                 
+                                       PENSJONSTYPE1 ( EKTEF_IND) = 'U'         
+                                                         ! B01.                 
+                                       PENSJONSTYPE1 ( EKTEF_IND) = 'Y')        
+                                                                                
+                                       THEN                                     
+                                       DO;                                      
+  L180:                                                                         
+                                          FEIL_VED_LABEL = '180';               
+                                          FEIL_MELD_NR   = 1011;                
+                                          GO TO L999;                           
+                                       END;                                     
+                                                                                
+ /* **************************************************************** */         
+ /* EKTEFELLEN HAR IKKE PENSJON.                                     */         
+ /* **************************************************************** */         
+                                                                                
+                                       ELSE                                     
+                                       DO;                                      
+                                       CALL                                     
+                                       FLYTT_B01_TIL_B02( SØKER_IND);           
+                                                                                
+          IF DIV_PERIODE.AFP_SERVICE = 'J'   THEN                               
+             DO;                                                                
+  /* FJERNET 22.4.96 HL : *************************                             
+                B02.UFØRHIST(SØKER_IND,1) = '';                                 
+                B02.UFØRHIST(SØKER_IND,2) = '';                                 
+                B02.UFØRHIST(SØKER_IND,3) = '';                                 
+                B02.UFØRHIST(SØKER_IND,4) = '';                                 
+                B02.UFØRHIST(SØKER_IND,5) = '';                                 
+  ***** HIT */                                                                  
+                B02.ETTEPENS(SØKER_IND)   = '';                                 
+             END;                                                               
+                                       IF FEIL_MELD_NR > 0 THEN                 
+                                          GO TO L999;                           
+                                       ELSE                                     
+                                          PROGRAM_ID='R0011920';                
+                                       CALL                                     
+                                       FLYTT_B01_TIL_B02( EKTEF_IND);           
+                                       IF FEIL_MELD_NR > 0 THEN                 
+                                          GO TO L999;                           
+                                       ELSE                                     
+                                          PROGRAM_ID='R0011920';                
+                                       CALL                                     
+                                           AJOURFØR_B02_MED_AFPTRANS;           
+                                       END;                                     
+                                    END;                                        
+                                                                                
+ /* *************************************************************** */          
+ /* DET SØKES IKKE OM EKTEFELLETILLEGG.                             */          
+ /* *************************************************************** */          
+                                                                                
+                                 ELSE                                           
+                                    DO;                                         
+                                       CALL                                     
+                                       FLYTT_B01_TIL_B02( SØKER_IND);           
+                                       IF FEIL_MELD_NR > 0 THEN                 
+                                          GO TO L999;                           
+                                       ELSE                                     
+                                          PROGRAM_ID='R0011920';                
+          IF DIV_PERIODE.AFP_SERVICE = 'J'   THEN                               
+             DO;                                                                
+  /* FJERNET  2.5.96 HL : *************************                             
+                B02.UFØRHIST(SØKER_IND,1) = '';                                 
+                B02.UFØRHIST(SØKER_IND,2) = '';                                 
+                B02.UFØRHIST(SØKER_IND,3) = '';                                 
+                B02.UFØRHIST(SØKER_IND,4) = '';                                 
+                B02.UFØRHIST(SØKER_IND,5) = '';                                 
+  ******* HIT */                                                                
+                B02.ETTEPENS(SØKER_IND)   = '';                                 
+             END;                                                               
+                                       CALL                                     
+                                       FLYTT_B01_TIL_B02( EKTEF_IND);           
+                                       IF FEIL_MELD_NR > 0 THEN                 
+                                          GO TO L999;                           
+                                       ELSE                                     
+                                          PROGRAM_ID='R0011920';                
+                                       CALL                                     
+                                       AJOURFØR_B02_MED_AFPTRANS;               
+                                    END;   /*TILL_EK = N */                     
+                              END; /* EKTEFELLE OK */                           
+                        END;   /* SIVILSTAND  = A/G */                          
+                  END;   /*SELECT SIVILSTAND */                                 
+               END; /* FNR_EK > 0 */                                            
+            ELSE                                                                
+                                                                                
+ /* ************************************************************ */             
+ /* INGEN EKTEFELLE I TRANSEN.                                   */             
+ /* ************************************************************ */             
+                                                                                
+               DO;                                                              
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM SØKERS SIVILSTAND ER G ELLER A ELLER P ELLER W           */          
+ /* *************************************************************** */          
+                                                                                
+                 IF  B01.SIVILSTAND(SØKER_IND) = 'P' THEN                       
+                     DO;                                                        
+  L185:                                                                         
+                        FEIL_VED_LABEL = '185';                                 
+                        FEIL_MELD_NR   = 1105;                                  
+                        GO TO L999;                                             
+                     END;                                                       
+                                                                                
+                 IF  B01.SIVILSTAND(SØKER_IND) = 'W' !                          
+                     B01.SIVILSTAND(SØKER_IND) = 'V' THEN                       
+                     DO;                                                        
+  L187:                                                                         
+                        FEIL_VED_LABEL = '187';                                 
+                        FEIL_MELD_NR   = 1106;                                  
+                        GO TO L999;                                             
+                     END;                                                       
+                                                                                
+                                                                                
+                  IF (                                                          
+                   B01.SIVILSTAND(SØKER_IND) = 'G' ! B01.                       
+                   SIVILSTAND(SØKER_IND) = 'A') THEN                            
+                     DO;                                                        
+  L190:                                                                         
+                        FEIL_VED_LABEL = '190';                                 
+                        FEIL_MELD_NR   = 1102;                                  
+                        GO TO L999;                                             
+                     END;                                                       
+                  ELSE                                                          
+                     DO;                                                        
+                        CALL FLYTT_B01_TIL_B02(SØKER_IND);                      
+          IF DIV_PERIODE.AFP_SERVICE = 'J'   THEN                               
+             DO;                                                                
+   /*           B02.UFØRHIST(SØKER_IND,1) = '';                                 
+                B02.UFØRHIST(SØKER_IND,2) = '';                                 
+                B02.UFØRHIST(SØKER_IND,3) = '';                                 
+                B02.UFØRHIST(SØKER_IND,4) = '';                                 
+                B02.UFØRHIST(SØKER_IND,5) = '';                                 
+                B02.UFØRHIST(SØKER_IND,6) = '';                                 
+                B02.UFØRHIST(SØKER_IND,7) = '';                                 
+   ********************* 9804 ********************** */                         
+                B02.ETTEPENS(SØKER_IND)   = '';                                 
+             END;                                                               
+          ELSE                                                                  
+                        IF B01.PENSJONSTYPE2(SØKER_IND) = 'E' THEN              
+                           DO;                                                  
+  L191:                                                                         
+                              FEIL_VED_LABEL = '191';                           
+                              FEIL_MELD_NR   = 1104;                            
+                              GO TO L999;                                       
+                           END;                                                 
+                        IF FEIL_MELD_NR > 0 THEN                                
+                           GO TO L999;                                          
+                        ELSE                                                    
+                           PROGRAM_ID='R0011920';                               
+                        CALL AJOURFØR_B02_MED_AFPTRANS;                         
+                     END;                                                       
+               END;                                                             
+         END;   /* STATUS_TYPE = B/D/G */                                       
+      ELSE                                                                      
+                                                                                
+ /* 9/1-85 KARIN */                                                             
+ /* *************************************************************** */          
+ /* SØKEREN ER IKKE I PENSJONSDELEN ELLER                           */          
+ /* HAR EN OPPHØRT PENSJONSSTATUS (STATUS-KODE-HIST = O / X)        */          
+ /* *************************************************************** */          
+                                                                                
+         DO;                                                                    
+            /* 9/1-85 KARIN */                                                  
+            /* ************************************************/                
+            /* DET ETTERFØLGENDE GJELDER DISSE STATUS-TYPER:   */               
+            /* - A - IKKE STATUS-SEGMENT ELLER STATUS-SEGMENT  */               
+            /*       SOM ER OPPHØRT, STATUS_KODE-HIST = 'O',   */               
+            /*       INGEN OPPLYSNINGER FRA STATUS SKAL MED I  */               
+            /*       B02.                                      */               
+            /* - C - IKKE STATUS-SEGMENT                       */               
+            /* - I - HAR STATUS-SEGMENT (SS) SOM ER HISTORISK, */               
+            /*       STATUS-KODE-HIST = 'X', UFØREHISTORIKKEN  */               
+            /*       SKAL VÆRE MED OVER TIL B02.               */               
+            /* - K - HAR STATUS-SEGMENT (NS) SOM ER HISTORISK, */               
+            /*       STATUS-KODE-HIST = 'X', UFØREHISTORIKKEN  */               
+            /*       SKAL VÆRE MED OVER TIL B02.               */               
+            /* *********************************************** */               
+                                                                                
+ /* *************************************************************** */          
+ /* BARE NÅR DET LIGGER NOE I B01.                                  */          
+ /* *************************************************************** */          
+                                                                                
+            IF B01.FNR(SØKER_IND) > 0 THEN                                      
+               DO;                                                              
+                  CALL FLYTT_B01_TIL_B02(SØKER_IND);                            
+                  IF FEIL_MELD_NR > 0 THEN                                      
+                     GO TO L999;                                                
+                  ELSE                                                          
+                     PROGRAM_ID='R0011920';                                     
+          IF DIV_PERIODE.AFP_SERVICE = 'J'   THEN                               
+             DO;                                                                
+     /*         B02.UFØRHIST(SØKER_IND,1) = '';                                 
+                B02.UFØRHIST(SØKER_IND,2) = '';                                 
+                B02.UFØRHIST(SØKER_IND,3) = '';                                 
+                B02.UFØRHIST(SØKER_IND,4) = '';                                 
+                B02.UFØRHIST(SØKER_IND,5) = '';                                 
+                B02.UFØRHIST(SØKER_IND,6) = '';                                 
+                B02.UFØRHIST(SØKER_IND,7) = '';                                 
+  ****************** 9804 ************************** */                         
+                B02.ETTEPENS(SØKER_IND)   = '';                                 
+             END;                                                               
+                  B02.NAVN(SØKER_IND)  = AFP.NAVN;                              
+               END;                                                             
+            ELSE                                                                
+                                                                                
+ /* *************************************************************** */          
+ /* OPPLYSNINGER FOR OPPRETTELSE AV ROTSEGMENT.                     */          
+ /* *************************************************************** */          
+                                                                                
+               DO;                                                              
+                  B02.FNR(SØKER_IND)   = AFP.FNR;                               
+                  B02.NAVN(SØKER_IND)  = AFP.NAVN;                              
+                  B02.TKNR(SØKER_IND)  = AFP.TKNR;                              
+                  B02.SPRÅK(SØKER_IND) = AFP.SPRÅK;                             
+               END;                                                             
+                                                                                
+ /* *************************************************************** */          
+ /* DERSOM DET ER EKTEFELLE I TRANSEN.                              */          
+ /* *************************************************************** */          
+                                                                                
+            IF AFP.FNR_EK > 0 THEN                                              
+               DO;                                                              
+                  SEARCH_FNR = AFP.FNR_EK;                                      
+                  POS_I_B01  = EKTEF_IND;                                       
+                  EXEC CICS LINK PROGRAM ('R0019928') COMMAREA                  
+                                                        (KOM_OMR);              
+                  IF FEIL_MELD_NR > 0 THEN                                      
+                     GO TO L999;                                                
+                  ELSE                                                          
+                     PROGRAM_ID='R0011920';                                     
+                                                                                
+ /* ************************************************************** */           
+ /* DERSOM EKTEFELLEN IKKE HAR PESTATUS.                           */           
+ /* ************************************************************** */           
+                                                                                
+                  IF STATUS_TYPE  = 'A' !                                       
+                     STATUS_TYPE  = 'I' !                                       
+                     STATUS_TYPE  = 'K' !   /* 9/1-85 */                        
+                     STATUS_TYPE  = 'C' THEN                                    
+                     DO;                                                        
+                                                                                
+ /* ************************************************************** */           
+ /* DERSOM EKTEFELLEN ER I BASEN (MEN IKKE HAR PENSJONSSTATUS).    */           
+ /* ************************************************************** */           
+                                                                                
+                        IF B01.FNR(EKTEF_IND) > 0 THEN                          
+                           DO;                                                  
+                              CALL FLYTT_B01_TIL_B02(EKTEF_IND);                
+                              IF FEIL_MELD_NR > 0 THEN                          
+                                 GO TO L999;                                    
+                              ELSE                                              
+                                 PROGRAM_ID='R0011920';                         
+                              B02.NAVN(EKTEF_IND)  = AFP.NAVN_EK;               
+                              B02.TKNR(EKTEF_IND)  = AFP.TKNR;                  
+                           END;                                                 
+                        ELSE                                                    
+                                                                                
+ /* *************************************************************** */          
+ /* OPPLYSNINGER FOR OPPRETTELSE AV ROTSEGMENT.                     */          
+ /* *************************************************************** */          
+                                                                                
+                           DO;                                                  
+                              B02.FNR(EKTEF_IND)   = AFP.FNR_EK;                
+                              B02.NAVN(EKTEF_IND)  = AFP.NAVN_EK;               
+                              B02.TKNR(EKTEF_IND)  = AFP.TKNR;                  
+                              B02.SPRÅK(EKTEF_IND) = AFP.SPRÅK;                 
+                           END;                                                 
+                           CALL                                                 
+                              OPPRETT_STATUS_AFP_SØKER; /*R0011921*/            
+                           CALL KOBLE_TO_PERSONER (                             
+                                                 SØKER_IND,EKTEF_IND);          
+                     END;                                                       
+                  ELSE                                                          
+                     DO;                                                        
+                                                                                
+ /* *************************************************************** */          
+ /* EKTEFELLEN HAR PENSJONSSTATUS.                                  */          
+ /* *************************************************************** */          
+                                                                                
+ /* ENDRET AV KARIN 9/1-85 */                                                   
+                        IF STATUS_TYPE = 'F' !                                  
+                           STATUS_TYPE = 'H'  THEN                              
+                           DO;                                                  
+  L195:                                                                         
+                              FEIL_VED_LABEL = '195';                           
+                              FEIL_MELD_NR   = 1716;                            
+                              GO TO L999;                                       
+                           END;                                                 
+                        ELSE                                                    
+                           DO;                                                  
+  L200:                                                                         
+                              FEIL_VED_LABEL = '200';                           
+                              FEIL_MELD_NR   = 1008;                            
+                              GO TO L999;                                       
+                           END;                                                 
+                     END;                                                       
+               END;                                                             
+            ELSE                                                                
+                                                                                
+ /* ************************************************************** */           
+ /* DET ER IKKE EKTEFELLE I TRANSEN.                               */           
+ /* *************************************************************  */           
+                                                                                
+                  CALL OPPRETT_STATUS_AFP_SØKER;                                
+         END; /* INGEN STATUS FRA FØR */                                        
+                                                                                
+ /* **************************************************************** */         
+   /* FORELØPIG INNTEKT FOR ÅRET FØR UTTAK AV AFP : */                          
+ /* **************************************************************** */         
+                                                                                
+      ÅR_FØR_UTTAK = HJ_VIRK_DATO_ÅMD / 10000 - 1;                              
+  /* FORBEDRET TESTEN 200103  HL : */                                           
+  IF AFP.PI > 0           THEN                                                  
+    DO;                                                                         
+      IF (B01.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = ' ' !                           
+          B01.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'F' )    THEN                   
+        DO;                                                                     
+           B02.PINNTEKT.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'F';                  
+           B02.PINNTEKT.PI(SØKER_IND,ÅR_FØR_UTTAK) = AFP.PI;                    
+        END;                         /* FJERNET /100 OVER JFA */                
+      ELSE  /*KODE M BETYR OMSORG + FORELØPIG*/                                 
+      IF B01.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'M'      THEN                    
+        DO;                                                                     
+           B02.PINNTEKT.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'M';                  
+           B02.PINNTEKT.PI(SØKER_IND,ÅR_FØR_UTTAK) = AFP.PI;                    
+        END;                     /* FJERNET /100 OVER JFA */                    
+      ELSE                                                                      
+      IF (B01.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'J'   !                         
+          B01.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'K'   !                         
+          B01.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'L'    ) &                      
+           B02.PI(SØKER_IND,ÅR_FØR_UTTAK) = 0           THEN                    
+        DO;                                                                     
+           B02.PINNTEKT.PI_KODE(SØKER_IND,ÅR_FØR_UTTAK) = 'M';                  
+           B02.PINNTEKT.PI(SØKER_IND,ÅR_FØR_UTTAK) = AFP.PI;                    
+        END;                     /* FJERNET /100 OVER JFA */                    
+    END;                                                                        
+                                                                                
+ /* **************************************************************** */         
+   /* INNTEKT ÅRET FØR MÅ VÆRE HØYERE ENN GRUNNBELØPET :             */         
+ /* **************************************************************** */         
+                                                                                
+      IF B02.PINNTEKT.PI(SØKER_IND,ÅR_FØR_UTTAK) ^> /* * 100 JFA */             
+                          GV_TAB_ARRAY.G_V(ÅR_FØR_UTTAK)   THEN                 
+         DO;                                                                    
+  L201:                                                                         
+            FEIL_VED_LABEL = '201';                                             
+            FEIL_MELD_NR   = 406;                                               
+            GO TO L999;                                                         
+         END;                                                                   
+                                                                                
+ /* **************************************************************** */         
+                                                                                
+      ALDER_Å_MND = F_ALDER(AFP.FNR,AFP.VIRK_DATO_ÅMD);                         
+                                                                                
+                                                                                
+                                                                                
+ /* **************************************************************** */         
+ /*  REGNER UT FRAMTIDIG TRYGDETID - FRA VIRKDATO TIL 67 ÅRSDATO     */         
+ /* **************************************************************** */         
+                                                                                
+      ALDER_ÅM = ALDER_Å_MND;                                                   
+      B02.TT_FRAMT (SØKER_IND) = 67 * 12 - (ALDER_Å * 12 + ALDER_M);            
+                                                                                
+  B02.ANTALL_BARN(SØKER_IND) = 0;                                               
+                                                                                
+ /* AVSLUTTE UFØREPERIODE V/ENGANGSUTLØSNING - HL 0593 */                       
+                                                                                
+  IF B02.UFØRHIST.UFT_ÅMD(SØKER_IND,1) > 0     THEN                             
+  DO;                                                                           
+     DCL SISTE  FIXED BIN(15);                                                  
+                                                                                
+     DO J = 7 TO 1 BY -1 UNTIL(B02.UFØRHIST.UFT_ÅMD(SØKER_IND,J) > 0);          
+        SISTE = J;   /*2000-2*/                                                 
+     END;                                                                       
+                                                                                
+     IF B02.UFØRHIST.OPPHØRSDATO_ÅMD(SØKER_IND,SISTE) = 0  THEN                 
+     DO;                                                                        
+        B02.UFØRHIST.OPPHØRSDATO_ÅMD(SØKER_IND,SISTE)                           
+             = OPPH_ÅM * 100;                                                   
+        B02.UFØRHIST.OPPHØRSKODE(SØKER_IND,SISTE) = 'J';                        
+        DO J = 10 TO 1 BY -1 UNTIL                                              
+                    (B02.YRKEHIST.YUFT_ÅMD(SØKER_IND,J) > 0);                   
+           SISTE = J;                                                           
+        END;                                                                    
+                                                                                
+        IF B02.YRKEHIST.OPPH_DATO_ÅMD(SØKER_IND,SISTE) = 0    THEN              
+        DO;                                                                     
+           B02.YRKEHIST.OPPH_DATO_ÅMD(SØKER_IND,SISTE) =                        
+                                     OPPH_ÅM * 100;                             
+           B02.YRKEHIST.OPPH_KODE(SØKER_IND,SISTE) = 'J';                       
+        END;                                                                    
+     END;                                                                       
+  END;                                                                          
+  L999:                                                                         
+                                                                                
+  EXEC CICS RETURN;                                                             
+                                                                                
+  %PAGE;                                                                        
+      %INCLUDE R0011921; /*OPPRETT_STATUS_AFP_SØKER  */                         
+      %INCLUDE R0011922; /*AJOURFØR_B02_MED_AFPTRANS */                         
+      %INCLUDE R0019905;                                                        
+      %INCLUDE R0019923;                                                        
+      %INCLUDE R0019924;                                                        
+      %INCLUDE R0019926;                                                        
+      %INCLUDE R0019929;                                                        
+      %INCLUDE R0019954;   /*RULL_FORVENTET*/      /*2000-2*/                   
+      %INCLUDE R0019967;   /*RULL_FAI*/            /*2000-2*/                   
+      %INCLUDE R0019968;   /*F_RULL_FORSI*/      /*2000-2*/                     
+      %INCLUDE R0019995;   /*KONV-FNR11-FNR13 */ /*2000-2*/                     
+   END KON_AFP;                                                                 

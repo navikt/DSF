@@ -1,0 +1,925 @@
+ /*   SIST ENDRET PÅ PROD   2005.01.13  8.41.46 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.01.11  8.43.55 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.12.17 14.33.34 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.09.13  9.26.21 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2004.08.06 12.54.07 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 12.47.55 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.03.02 11.37.51 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.02.11 11.25.25 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.10.30  8.55.56 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.19 12.15.19 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.01.14 12.35.08 AV   JDA7339          */        
+ /*       SIST ENDRET 19/10-99 14.55.48 AV   JDA7339                  */        
+ /*       SIST ENDRET 07/07-99 12.29.32 AV   JDA7339                  */        
+ /*       SIST ENDRET 19/02-99 12.31.09 AV   JDA7339                  */        
+ /*       SIST ENDRET 08/01-99 14.25.38 AV   JDA7339                  */        
+ /*       SIST ENDRET 08/09-98 13.05.38 AV   JDA7339                  */        
+ /*       SIST ENDRET 12/10-95 14.01.26 AV   JDA0310                  */        
+ /* ***************************************************************** */        
+ /*               R 0 0 1 U 8 0 5                                     */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R001U805   KONTROLL_EE_SPES   SUBPROGRAM         */        
+ /*  PROGRAM-SPRÅK : PLI                                              */        
+ /*  PROGRAMMERER  : HERMAN                                           */        
+ /*  PROGRAMMET BLE LAGET :       1294                                */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  KONTROLLERER GRUNNBLANKETT EE - DEN SPESIELLE DEL.               */        
+ /*  RETURNERER FEIL_FUNNET = '1'B VED FEIL, ELLERS '0'B.             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMET INCLUDES AV R001U801 - KONTROLL_GRUNNBLANKETT_EE      */        
+ /*  ARBEIDSOMRÅDET P001U801 ER INCLUDET I HOVEDPROG.                 */        
+ /*  BRUK :                                                           */        
+ /*      CALL KONTROLL_EE_SPES(FEIL_FUNNET);                          */        
+ /*                                                                   */        
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN INCLUDES I HOVEDPROG :       */        
+ /*      R0019910 - F_NUMERISK                                        */        
+ /*      R0019912 - F_FELT_PIC_CHARNN                                 */        
+ /*      VERIFY   - BUILTIN-FUNCTION                                  */        
+ /*                                                                   */        
+ /*  EKSTERN PROSEDYRE SOM CALLES :                                   */        
+ /*                                                                   */        
+ /*  INTERNE PROSEDYRER :                                             */        
+ /*      KONTROLL_EE_SPES(FEIL_FUNNET)                                */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*   STATTAB - STATSBORGERSKAPSTABELL - EXEC CICS READ DATASET       */        
+ /*                                      ('STATTAB')........          */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */        
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */        
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDINGER PÅ SKJERMBILDET.   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ KONTROLL_EE_SP_SØKER: PROC(FEIL_FUNNET);                                       
+    DCL                                                                         
+       FEIL_FUNNET         BIT(1);                                              
+    DCL                                                                         
+       KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),                   
+       KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),                   
+       KEY_PEKER1                 POINTER,                                      
+       KEY_PEKER2                 POINTER,                                      
+       ST_RECL                    CHAR (35);                                    
+    DCL                                                                         
+       FYLT_SEKSTISJU      PIC'(4)9',                                           
+       FYLT_SYTTI          PIC'(4)9';                                           
+    DCL                                                                         
+       FEIL                BIT(1);                                              
+    DCL                                                                         
+       TT_MAKS_TIL_DATO    PIC'(4)9',                                           
+       TIL_DATO_ÅM         PIC'(4)9',                                           
+       W_TT_MND            PIC'99';                                             
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* TESTER OM FORUTSETNINGENE FOR Å KONTROLLERE FELTENE I SPES.INFO   */        
+ /* DELEN ER TILSTEDE. DVS.:                                          */        
+ /* - ET ELLER FLERE FELT MÅ VÆRE UTFYLT                              */        
+ /* - NUMERISKE FELT KAN BARE INNEHOLDE NUMERISKE VERDIER             */        
+ /* ***************************************************************** */        
+    /* ============================================================== */        
+    FEIL_FUNNET = '0'B;                                                         
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* FØRST KONTROLLERER VI AT INGEN NUMMERISKE FELT ER GALE         */        
+    /* -------------------------------------------------------------- */        
+                                                                                
+    /* 3.1 STATSBORGERSKAP GJENLEVENDE                                */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR3(EESP.STATSBORGER)) THEN                     
+       DO;                                                                      
+          FEIL_FUNNET                   = '1'B;                                 
+          EESP.STATSBORGERNR            = 200;                                  
+       END;                                                                     
+                                                                                
+    /* 3.2 BOSETTNINGSLAND GJENLEVENDE                                */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR3(EESP.BOSATT)) THEN                          
+       DO;                                                                      
+          FEIL_FUNNET                   = '1'B;                                 
+          EESP.BOSATTNR                 = 200;                                  
+       END;                                                                     
+                                                                                
+    /* 3.3.4 KONVENSJONSLAND                                          */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR3(EESP.KONVENSJON_LAND)) THEN                 
+       DO;                                                                      
+          FEIL_FUNNET                   = '1'B;                                 
+          EESP.KONVENSJON_LANDNR        = 200;                                  
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* DERETTER KONTROLLERES HVERT ENKELT FELT                        */        
+    /* -------------------------------------------------------------- */        
+                                                                                
+    KEY_PEKER1  = ADDR(EESP.STATSBORGER);               /*3.1*/                 
+    KEY_PEKER2  = ADDR(EESP.BOSATT);                    /*3.2*/                 
+                                                                                
+    EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);                                 
+    EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)                         
+                                       INTO(ST_RECL);                           
+    GOTO STAT_UT;                                                               
+          NOTFND1:                                                              
+              FEIL_FUNNET        = '1'B;                                        
+              EESP.STATSBORGERNR = 24;                                          
+              GOTO STAT_UT;                                                     
+          STAT_UT:                                                              
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT2)               
+                                               INTO(ST_RECL);                   
+              GOTO BO_UT;                                                       
+          NOTFND2:                                                              
+              FEIL_FUNNET   = '1'B;                                             
+              EESP.BOSATTNR = 25;                                               
+              GOTO BO_UT;                                                       
+          BO_UT:                                                                
+                                                                                
+    /* OPPDRAG 04074 EØS-UTVIDELSE FRA 1.5.2004 JFA */                          
+               /* HER KOMMER EØS OMRÅDET PR. 1.1.1994 */                        
+       /*   EØS_LANDKODE = '0'B; TATT UT FOR TEST 0804 JD */                    
+            IF BOSATT = ' ' THEN                                                
+               BOSATT = 000;                                                    
+            IF (BOSATT < 107 !        /*NORDEN          */                      
+                BOSATT = 112 !        /*BELGIA          */                      
+                BOSATT = 117 !        /*FRANKRIKE       */                      
+                BOSATT = 118 !        /*GIBRALTAR       */                      
+                BOSATT = 119 !        /*HELLAS          */                      
+                BOSATT = 121 !        /*IRLAND          */                      
+                BOSATT = 123 !        /*ITALIA          */                      
+                BOSATT = 129 !        /*LUXEMBURG       */                      
+                BOSATT = 127 !        /*NEDERLAND       */                      
+                BOSATT = 132 !        /*PORTUGAL        */                      
+                BOSATT = 137 !        /*SPANIA          */                      
+                BOSATT = 139 !        /*STORBRITANNIA   */                      
+                BOSATT = 144 !        /*VEST-TYSKLAND   */                      
+                BOSATT = 151 !        /*ØST-TYSKLAND    */                      
+                BOSATT = 153 ) !      /*ØSTERRIKE       */                      
+               /* HER KOMMER UTVIDELSEN PR. 1.5.2004 */                         
+               (BOSATT = 115 !        /*ESTLAND        */                       
+                BOSATT = 128 !        /*LICHTENSTEIN   */                       
+                BOSATT = 136 !        /*LITAUEN        */                       
+                BOSATT = 124 !        /*LATVIA         */                       
+                BOSATT = 131 !        /*POLEN          */                       
+                BOSATT = 152 !        /*UNGARN         */                       
+                BOSATT = 158 !        /*TJEKKISKE REP. */                       
+                BOSATT = 157 !        /*SLOVAKIA       */                       
+                BOSATT = 126 !        /*MALTA          */                       
+                BOSATT = 500 !        /*KYPROS         */                       
+                BOSATT = 146 !        /*SLOVENIA       */                       
+                BOSATT = 141 ) THEN   /*SVEITS         */                       
+                  EØS_LANDKODE = '1'B;                                          
+                                                                                
+    /* 3.3.1          */                                                        
+    IF (EESP.MEDLEM = 'X') THEN                                                 
+       EESP.MEDLEM = 'J';                                                       
+    ELSE                                                                        
+       IF ^(EESP.MEDLEM = ' ' ! EESP.MEDLEM = 'J') THEN                         
+          DO;                                                                   
+             FEIL_FUNNET            = '1'B;                                     
+             EESP.MEDLEMNR = 354;                                               
+          END;                                                                  
+                                                                                
+    /* 3.3.2          */                                                        
+    IF (EESP.TT_LIK_PÅ = 'X') THEN                                              
+       EESP.TT_LIK_PÅ = 'J';                                                    
+    ELSE                                                                        
+       IF ^(EESP.TT_LIK_PÅ  = ' ' ! EESP.TT_LIK_PÅ = 'J') THEN                  
+          DO;                                                                   
+             FEIL_FUNNET         = '1'B;                                        
+             EESP.TT_LIK_PÅNR    = 478;                                         
+          END;                                                                  
+                                                                                
+    /* 3.3.3          */                                                        
+    IF (EESP.MINST_20ÅR = 'X') THEN                                             
+       EESP.MINST_20ÅR = 'J';                                                   
+    ELSE                                                                        
+       IF ^(EESP.MINST_20ÅR = ' ' ! EESP.MINST_20ÅR = 'J') THEN                 
+          DO;                                                                   
+             FEIL_FUNNET            = '1'B;                                     
+             EESP.MINST_20ÅRNR     = 1806;                                      
+          END;                                                                  
+                                                                                
+    /* 3.3.4          */                                                        
+    KEY_PEKER1  = ADDR(EESP.KONVENSJON_LAND);                                   
+    EXEC CICS HANDLE CONDITION NOTFND(NOTFND5);                                 
+    EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)                         
+                                       INTO(ST_RECL);                           
+    GOTO UT2;                                                                   
+          NOTFND5:                                                              
+              FEIL_FUNNET        = '1'B;                                        
+              EESP.KONVENSJON_LANDNR = 24;                                      
+              GOTO UT2;                                                         
+          UT2:                                                                  
+                                                                                
+    /* 3.3.5          */                                                        
+    IF (EESP.FRAVIK_BOSATT_EØS = 'N') THEN                                      
+       EESP.FRAVIK_BOSATT_EØS = ' ';                                            
+    ELSE                                                                        
+    IF (EESP.FRAVIK_BOSATT_EØS = 'X') THEN                                      
+       EESP.FRAVIK_BOSATT_EØS = 'J';                                            
+    ELSE                                                                        
+    IF ^(EESP.FRAVIK_BOSATT_EØS = ' ' !                                         
+         EESP.FRAVIK_BOSATT_EØS = 'J') THEN                                     
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EESP.FRAVIK_BOSATT_EØSNR = 1807;                                      
+       END;                                                                     
+                                                                                
+    /* 3.3.6          */                                                        
+    IF (EESP.UNG_UFØR = 'N') THEN                                               
+       EESP.UNG_UFØR = ' ';                                                     
+    ELSE                                                                        
+    IF ^(EESP.UNG_UFØR = ' ' ! EESP.UNG_UFØR = 'J') THEN                        
+       DO;                                                                      
+          FEIL_FUNNET         = '1'B;                                           
+          EESP.UNG_UFØRNR     = 272;                                            
+       END;                                                                     
+                                                                                
+    /* 3.4          */                                                          
+    IF (EESP.FRAVIK_FLYKT = 'N') THEN                                           
+       EESP.FRAVIK_FLYKT = ' ';                                                 
+    ELSE                                                                        
+       IF ^(EESP.FRAVIK_FLYKT = ' ' ! EESP.FRAVIK_FLYKT = 'J') THEN             
+          DO;                                                                   
+             FEIL_FUNNET         = '1'B;                                        
+             EESP.FRAVIK_FLYKTNR = 272;                                         
+          END;                                                                  
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /*           DIV. KRYSSKONTROLLER - ETTERLATTE                    */        
+    /* -------------------------------------------------------------- */        
+                                                                                
+    IF FEIL_FUNNET THEN                                                         
+       GO TO L999_FEIL;                                                         
+                                                                                
+    IF BOSATT ^= 0 THEN    /*3.2*/                                              
+      IF FRAVIK_BOSATT_EØS ^= 'J' THEN                                          
+         IF ^(MEDLEM           = 'J' !                /*3.3.1*/                 
+            TT_LIK_PÅ          = 'J' !                /*3.3.2*/                 
+            MINST_20ÅR         = 'J' !                /*3.3.3*/                 
+            KONVENSJON_LAND    > 0   !                /*3.3.4*/                 
+        /*  FRAVIK_BOSATT_EØS  = 'J' ! JFA 10.9.04 */ /*3.3.5*/                 
+            UNG_UFØR           = 'J' ) THEN           /*3.3.6*/                 
+            DO;                                                                 
+               FEIL_FUNNET         = '1'B;                                      
+               EESP.MEDLEMNR = 1817;                                            
+            END;                                                                
+         ELSE;                                                                  
+       ELSE;                                                                    
+    ELSE                                                                        
+       IF (MEDLEM             = 'J'  !           /*3.3.1*/                      
+           TT_LIK_PÅ          = 'J'  !           /*3.3.2*/                      
+           MINST_20ÅR         = 'J'  !           /*3.3.3*/                      
+           KONVENSJON_LAND    > 0    !           /*3.3.4*/                      
+           FRAVIK_BOSATT_EØS  = 'J'  !           /*3.3.5*/                      
+           UNG_UFØR           = 'J'  )  THEN     /*3.3.6*/                      
+          DO;                                                                   
+             FEIL_FUNNET         = '1'B;                                        
+             EESP.BOSATTNR       = 1809;                                        
+          END;                                                                  
+                                                                                
+    IF (KONVENSJON_LAND > 0     &                                               
+        FRAVIK_BOSATT_EØS = 'J' ) THEN                                          
+       DO;                                                                      
+          FEIL_FUNNET         = '1'B;                                           
+          EESP.KONVENSJON_LANDNR   = 1808;                                      
+       END;                                                                     
+                                                                                
+ /* IF (FRAVIK_BOSATT_EØS = 'J' &             /*3.3.5*/                         
+ /*     FRAVIK_FLYKT  ^= 'J'    ) THEN      /*3.4*/                             
+ /*    IF ^(BOSATT < 107)            & */     /*NORDEN          */              
+ /*       ^(BOSATT = 112)            & */ /*BELGIA          */                  
+ /*       ^(BOSATT = 117)            &    /*FRANKRIKE       */                  
+ /*       ^(BOSATT = 118)            &    /*GIBRALTAR       */                  
+ /*       ^(BOSATT = 119)            &    /*HELLAS          */                  
+ /*       ^(BOSATT = 121)            &    /*IRLAND          */                  
+ /*       ^(BOSATT = 123)            &    /*ITALIA          */                  
+ /*       ^(BOSATT = 129)            &    /*LUXEMBURG       */                  
+ /*       ^(BOSATT = 127)            &    /*NEDERLAND       */                  
+ /*       ^(BOSATT = 132)            &    /*PORTUGAL        */                  
+ /*       ^(BOSATT = 137)            &    /*SPANIA          */                  
+ /*       ^(BOSATT = 139)            &    /*STORBRITANNIA   */                  
+ /*       ^(BOSATT = 144)            &    /*VEST-TYSKLAND   */                  
+ /*       ^(BOSATT = 151)            &    /*ØST-TYSKLAND    */                  
+ /*       ^(BOSATT = 153) THEN            /*ØSTERRIKE       */                  
+ /*       DO;                                                                   
+             FEIL_FUNNET         = '1'B;                                        
+             FRAVIK_BOSATT_EØSNR = 1812;                                        
+          END;  JFA 10.9.2004 OPPDRAG 04074 NYE LANDKODER EØS */                
+                                                                                
+    IF FRAVIK_FLYKT = 'J' THEN     /*3.4*/                                      
+       IF BOSATT > 0    &  /*IKKE I NORGE*/                                     
+          MEDLEM ^= 'J' THEN                                                    
+          DO;                                                                   
+             FEIL_FUNNET         = '1'B;                                        
+             FRAVIK_FLYKTNR      = 469;                                         
+          END;                                                                  
+                                                                                
+                                                                                
+    L999_FEIL:                                                                  
+  END KONTROLL_EE_SP_SØKER;                                                     
+ /* ================================================================= */        
+ KONTROLL_EE_SP_AVDØD: PROC(FEIL_FUNNET);                                       
+                                                                                
+    DCL                                                                         
+       FEIL_FUNNET         BIT(1);                                              
+                                                                                
+    DCL OPPTJENINGSPERIODEN                 FIXED DEC (5) INIT (0),             
+        DØDSDATO_ÅM                         PIC '(6)9',                         
+        DØDSÅR             DEF DØDSDATO_ÅM  POS(1) PIC '(4)9',                  
+        DØDSMND            DEF DØDSDATO_ÅM  POS(5) PIC '(2)9',                  
+        W_FNR_EK                            PIC '(13)9',                        
+        FØDT_MND           DEF W_FNR_EK     POS(3) PIC '(2)9';                  
+    DCL  F_AAR             DEF W_FNR_EK     POS(5) PIC '(4)9';                  
+                                                                                
+    DCL  TT_FRA_1937_AVD                    FIXED DEC (5) INIT (0);             
+    DCL                                                                         
+      KEY_BIT3                   BIT(32) BASED (KEY_PEKER3),                    
+      KEY_BIT4                   BIT(32) BASED (KEY_PEKER4),                    
+      ST_RECL                    CHAR (35),                                     
+      KEY_PEKER3                 POINTER,                                       
+      KEY_PEKER4                 POINTER;                                       
+                                                                                
+    /* TEST NY INTERN PROC FOR MINDRE KODING */                                 
+    FEIL_KODE : PROC (KODE) RETURNS (FIXED DEC(5));                             
+       DCL KODE FIXED DEC (5);                                                  
+       FEIL_FUNNET = '1'B;                                                      
+       RETURN(KODE);                                                            
+    END FEIL_KODE;                                                              
+    /* SLUTT NY INTERN PROC FOR MINDRE KODING */                                
+    IF EES.FNR_EK = 11111111111   THEN                                          
+       DO;                                                                      
+          IF EESP.TT_FRA_1937_ÅR_EK =  0 &                                      
+             EESP.TT_FRA_1937_MND_EK =  0  THEN                                 
+                                                                                
+             DO;                                                                
+                FEIL_FUNNET = '1'B;                                             
+                EESP.TT_FRA_1937_ÅR_EKNR = 195;                                 
+                EESP.TT_FRA_1937_MND_EKNR = 999;                                
+             END;                                                               
+          GOTO SLUTT_AVD;                                                       
+       END;                                                                     
+                                                                                
+    DØDSDATO_ÅM = EES.DØDSDATO_ÅMD_EK/100;                                      
+    W_FNR_EK    = KONV_FNR11_FNR13((EES.FNR_EK));                               
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* FØRST KONTROLLERER VI AT INGEN NUMMERISKE FELT ER GALE         */        
+    /* -------------------------------------------------------------- */        
+                                                                                
+    /* 4.1 STATSBORGERSKAP AVDØDE                                     */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR3(EESP.STATSBORGER_EK)) THEN                  
+       EESP.STATSBORGER_EKNR = FEIL_KODE(200);                                  
+                                                                                
+    /* 4.2 BOSETTNINGSLAND TIL AVDØDE PÅ DØDSTIDSPUNKTET              */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR3(EESP.BOSATT_EK)) THEN                       
+       EESP.BOSATT_EKNR = FEIL_KODE(200);                                       
+                                                                                
+    /* 4.7 TRYGDETID AVDØDE                                           */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_FRA_1937_ÅR_EK)) THEN               
+       EESP.TT_FRA_1937_ÅR_EKNR = FEIL_KODE(200);                               
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_FRA_1937_MND_EK)) THEN              
+       EESP.TT_FRA_1937_MND_EKNR = FEIL_KODE(200);                              
+                                                                                
+    /* 4.8 TRYGDETID ETTER KONVENSJON AVDØDE                          */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_KONVENSJON_ÅR_EK)) THEN             
+       EESP.TT_KONVENSJON_ÅR_EKNR = FEIL_KODE(200);                             
+                                                                                
+                                                                                
+      KEY_PEKER3      = ADDR(EESP.STATSBORGER_EK);           /*4.1*/            
+      KEY_PEKER4      = ADDR(EESP.BOSATT_EK);                /*4.2*/            
+                                                                                
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND3);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT3)               
+                                               INTO(ST_RECL);                   
+              GOTO STAT_UT2;                                                    
+          NOTFND3:                                                              
+              FEIL_FUNNET           = '1'B;                                     
+              EESP.STATSBORGER_EKNR = 24;                                       
+              GOTO STAT_UT2;                                                    
+          STAT_UT2:                                                             
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND4);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT4)               
+                                               INTO(ST_RECL);                   
+              GOTO BO_UT2;                                                      
+          NOTFND4:                                                              
+              FEIL_FUNNET      = '1'B;                                          
+              EESP.BOSATT_EKNR = 25;                                            
+              GOTO BO_UT2;                                                      
+          BO_UT2:                                                               
+                                                                                
+    /* 4.3 KONTROLL */                                                          
+    IF (EESP.FRAVIK_FLYKT_EK = 'N') THEN                                        
+       EESP.FRAVIK_FLYKT_EK = ' ';                                              
+    ELSE                                                                        
+    IF ^(EESP.FRAVIK_FLYKT_EK = ' ' ! EESP.FRAVIK_FLYKT_EK= 'J') THEN           
+       DO;                                                                      
+          FEIL_FUNNET         = '1'B;                                           
+          EESP.FRAVIK_FLYKT_EKNR = 26;                                          
+       END;                                                                     
+                                                                                
+    /* 4.4 KONTROLL */                                                          
+    IF (EESP.FRAVIK_17_3_4A = 'X') THEN                                         
+       EESP.FRAVIK_17_3_4A  = 'J';                                              
+    ELSE                                                                        
+       IF (EESP.FRAVIK_17_3_4A = 'N') THEN                                      
+          EESP.FRAVIK_17_3_4A = ' ';                                            
+       ELSE                                                                     
+          IF ^(EESP.FRAVIK_17_3_4A = ' ' !                                      
+               EESP.FRAVIK_17_3_4A = 'J' ) THEN                                 
+             DO;                                                                
+                FEIL_FUNNET           = '1'B;                                   
+                EESP.FRAVIK_17_3_4ANR = 26;                                     
+             END;                                                               
+    IF (EESP.FRAVIK_17_3_4B = 'X') THEN                                         
+       EESP.FRAVIK_17_3_4B  = 'J';                                              
+    ELSE                                                                        
+       IF (EESP.FRAVIK_17_3_4B = 'N') THEN                                      
+          EESP.FRAVIK_17_3_4B = ' ';                                            
+       ELSE                                                                     
+          IF ^(EESP.FRAVIK_17_3_4B = ' ' !                                      
+               EESP.FRAVIK_17_3_4B = 'J' ) THEN                                 
+             DO;                                                                
+                FEIL_FUNNET           = '1'B;                                   
+                EESP.FRAVIK_17_3_4BNR = 26;                                     
+             END;                                                               
+                                                                                
+    /* 4.5 KONTROLL */                                                          
+    IF ^(EESP.OVERKOMP_UTL_EK = 'J' ! EESP.OVERKOMP_UTL_EK = 'N' ) &            
+        F_AAR < 1937 THEN                                                       
+       DO;                                                                      
+          FEIL_FUNNET            = '1'B;                                        
+          EESP.OVERKOMP_UTL_EKNR = 35;                                          
+       END;                                                                     
+                                                                                
+    /* 4.6 KONTROLL */                                                          
+    /* OVERKOMP SKAL VÆRE BLAKNK NÅR AVDØDE ER FØDT ETTER 1936  */              
+    IF ^(EESP.OVERKOMP_UTL_EK = ' ' ) &                                         
+        F_AAR > 1936 THEN                                                       
+       DO;                                                                      
+          FEIL_FUNNET            = '1'B;                                        
+          EESP.OVERKOMP_UTL_EKNR = 623;                                         
+       END;                                                                     
+    /* 4.7 KONTROLL */ /*200401 HL */                                           
+    OPPTJENINGSPERIODEN =                                                       
+        (DØDSÅR - F_AAR - 16) * 12 + DØDSMND - FØDT_MND + 1 ;                   
+    TT_FRA_1937_AVD = EESP.TT_FRA_1937_ÅR_EK * 12  +                            
+                      EESP.TT_FRA_1937_MND_EK;                                  
+    IF TT_FRA_1937_AVD > OPPTJENINGSPERIODEN             THEN                   
+       DO;                                                                      
+          FEIL_FUNNET           = '1'B;                                         
+          EESP.TT_FRA_1937_ÅR_EKNR = 1831;                                      
+       END;                                                                     
+                                                                                
+    IF (VERIFY(EESP.EØS_OPPLYSN,'J ') ^= 0) THEN                                
+       DO;  /* REMEDY 729 - KONTROLL MANGLET */                                 
+          FEIL_FUNNET        = '1'B;                                            
+          EESP.EØS_OPPLYSNNR = 668;                                             
+       END; /* REMEDY 729 - KONTROLL MANGLET */                                 
+                                                                                
+    IF (EESP.EØS_OPPLYSN  = 'J'     &                                           
+        EES.VIRK_DATO_ÅMD < 19940000) THEN                                      
+       DO;                                                                      
+          FEIL_FUNNET        = '1'B;                                            
+          EESP.EØS_OPPLYSNNR = 1554;                                            
+       END;                                                                     
+  /* OPPDRAG 04074 EØS-UTVIDELSE FRA 1.5.2004 JFA */                            
+             /* HER KOMMER EØS OMRÅDET PR. 1.1.1994 */                          
+          IF (BOSATT < 107 !        /*NORDEN          */                        
+              BOSATT = 112 !        /*BELGIA          */                        
+              BOSATT = 117 !        /*FRANKRIKE       */                        
+              BOSATT = 118 !        /*GIBRALTAR       */                        
+              BOSATT = 119 !        /*HELLAS          */                        
+              BOSATT = 121 !        /*IRLAND          */                        
+              BOSATT = 123 !        /*ITALIA          */                        
+              BOSATT = 129 !        /*LUXEMBURG       */                        
+              BOSATT = 127 !        /*NEDERLAND       */                        
+              BOSATT = 132 !        /*PORTUGAL        */                        
+              BOSATT = 137 !        /*SPANIA          */                        
+              BOSATT = 139 !        /*STORBRITANNIA   */                        
+              BOSATT = 144 !        /*VEST-TYSKLAND   */                        
+              BOSATT = 151 !        /*ØST-TYSKLAND    */                        
+              BOSATT = 153 ) !      /*ØSTERRIKE       */                        
+             /* HER KOMMER UTVIDELSEN PR. 1.5.2004 */                           
+             (BOSATT = 115 !        /*ESTLAND        */                         
+              BOSATT = 128 !        /*LICHTENSTEIN   */                         
+              BOSATT = 136 !        /*LITAUEN        */                         
+              BOSATT = 124 !        /*LATVIA         */                         
+              BOSATT = 131 !        /*POLEN          */                         
+              BOSATT = 152 !        /*UNGARN         */                         
+              BOSATT = 158 !        /*TJEKKISKE REP. */                         
+              BOSATT = 157 !        /*SLOVAKIA       */                         
+              BOSATT = 126 !        /*MALTA          */                         
+              BOSATT = 500 !        /*KYPROS         */                         
+              BOSATT = 146 !        /*SLOVENIA       */                         
+              BOSATT = 141 ) THEN   /*SVEITS         */                         
+                EØS_LANDKODE = '1'B;                                            
+                                                                                
+   IF (EESP.EØS_OPPLYSN = 'J' &                                                 
+       ^EØS_LANDKODE)         THEN                                              
+      DO;                                                                       
+         FEIL_FUNNET   = '1'B;                                                  
+         EESP.EØS_OPPLYSNNR = 640;                                              
+      END;                                                                      
+                                                                                
+ SLUTT_AVD:                                                                     
+ END KONTROLL_EE_SP_AVDØD;                                                      
+ /* ----------------------------------------------------------------- */        
+ KONTROLL_EE_EØS: PROC(FEIL_FUNNET);                                            
+    DCL                                                                         
+       FEIL_FUNNET         BIT(1);                                              
+    DCL                                                                         
+        FYLLER_17                                  PIC  '(4)9',                 
+        FYLLER_69                                  PIC  '(4)9',                 
+        DØDSDATO_ÅM                                PIC  '(6)9',                 
+        DØDSÅR             DEF DØDSDATO_ÅM  POS(1) PIC  '(4)9',                 
+        DØDSMND            DEF DØDSDATO_ÅM  POS(5) PIC  '(2)9',                 
+        W_FNR_EK                                   PIC '(13)9',                 
+        F_AAR              DEF W_FNR_EK     POS(5) PIC  '(4)9';                 
+    /* -------------------------------------------------------------- */        
+    /* BRUKES FOR KONTROLL LENGER NEDE I PROC'EN                      */        
+    /* -------------------------------------------------------------- */        
+    DØDSDATO_ÅM = EES.DØDSDATO_ÅMD_EK/100;                                      
+    W_FNR_EK    = KONV_FNR11_FNR13((EES.FNR_EK));                               
+    FYLLER_17   = F_AAR + 17;                                                   
+    FYLLER_69   = F_AAR + 69;                                                   
+    /* -------------------------------------------------------------- */        
+    /* FØRST KONTROLLERER VI BARE AT NUMMERISKE FELT HAR TALL         */        
+    /* -------------------------------------------------------------- */        
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.3 ÅR EØS PRO RATA 1                                          */        
+    /* -------------------------------------------------------------- */        
+    DO I = 1 TO HBOUND(EEEØS.TAB_EØS);                                          
+       IF ^F_NUMERISK(F_FELT_PIC_CHAR4(EEEØS.EØS_ÅR(I))) THEN                   
+          DO;                                                                   
+             FEIL_FUNNET       = '1'B;                                          
+             EEEØS.EØS_ÅRNR(I) = 200;                                           
+          END;                                                                  
+    END;                                                                        
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.4 ÅR EØS IKKE PRO RATA                                       */        
+    /* -------------------------------------------------------------- */        
+    DO I = 1 TO HBOUND(EEEØS.IKKE_PRO_TAB);                                     
+       IF ^F_NUMERISK(F_FELT_PIC_CHAR4                                          
+                         (EEEØS.EØS_ÅR_IKKE_PRO_RATA(I))) THEN                  
+          DO;                                                                   
+             FEIL_FUNNET       = '1'B;                                          
+             EEEØS.EØS_ÅR_IKKE_PRO_RATANR(I) = 200;                             
+          END;                                                                  
+    END;                                                                        
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.5 TEORETISK TRYGDETID EØS                                    */        
+    /* -------------------------------------------------------------- */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_TEORETISK_ÅR)) THEN                
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_TEORETISK_ÅRNR  = 200;                                       
+       END;                                                                     
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_TEORETISK_MND)) THEN               
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_TEORETISK_MNDNR = 200;                                       
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.6 PRORATA TRYGDETID EØS                                      */        
+    /* -------------------------------------------------------------- */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_PRORATA_ÅR)) THEN                  
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_PRORATA_ÅRNR = 200;                                          
+       END;                                                                     
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_PRORATA_MND)) THEN                 
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_PRORATA_MNDNR = 200;                                         
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.7 PENSJON UTBETALT FRA ANDRE EØS LAND                        */        
+    /* -------------------------------------------------------------- */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR5(EEEØS.PENSJON_EØS)) THEN                    
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.PENSJON_EØSNR = 200;                                            
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.8 PRO RATA 2 -                                              */         
+    /* -------------------------------------------------------------- */        
+    DO I = 1 TO HBOUND(EEEØS.PRO_TAB);                                          
+       IF ^F_NUMERISK(F_FELT_PIC_CHAR4(EEEØS.EØS_ÅR_PRO_RATA2(I))) THEN         
+          DO;                                                                   
+             FEIL_FUNNET       = '1'B;                                          
+             EEEØS.EØS_ÅR_PRO_RATA2NR(I) = 200;                                 
+          END;                                                                  
+    END;                                                                        
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.9 SAMLET TRYGDETID I ANDRE EØS-LAND FOR PRO RATA 2 */                  
+    /* -------------------------------------------------------------- */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_PRORATA2_ÅR)) THEN                 
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_PRORATA2_ÅRNR = 200;                                         
+       END;                                                                     
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_PRORATA2_MND)) THEN                
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_PRORATA2_MNDNR = 200;                                        
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.10 TRYGDETID NORDEN                                         */         
+    /* -------------------------------------------------------------- */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_FAKTISK_NORDISK_ÅR)) THEN          
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_FAKTISK_NORDISK_ÅRNR = 200;                                  
+       END;                                                                     
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.TT_FAKTISK_NORDISK_MND)) THEN         
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.TT_FAKTISK_NORDISK_MNDNR = 200;                                 
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* 6.10 POENGÅR NORDEN                                           */         
+    /* -------------------------------------------------------------- */        
+    IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EEEØS.PÅ_FAKTISK_NORDISK)) THEN             
+       DO;                                                                      
+          FEIL_FUNNET       = '1'B;                                             
+          EEEØS.PÅ_FAKTISK_NORDISKNR = 200;                                     
+       END;                                                                     
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* KONTROLL AV PUNKT 6 PÅ GRUNNBLANKETTEN                         */        
+    /* -------------------------------------------------------------- */        
+    IF EEEØS.BEREGN_FOLKETRYGD ^= ' ' THEN                                      
+       DO;  /* KONTROLL EØS DELEN */                                            
+          /* 6.1 */                                                             
+          IF ^(EEEØS.BEREGN_FOLKETRYGD = 'J' !                                  
+               EEEØS.BEREGN_FOLKETRYGD = 'N' )  THEN                            
+             DO;                                                                
+                FEIL_FUNNET       = '1'B;                                       
+                EEEØS.BEREGN_FOLKETRYGDNR = 453;                                
+             END;                                                               
+          ELSE                                                                  
+             IF (EEEØS.BEREGN_FOLKETRYGD = 'N'      &                           
+                 (EEEØS.TT_FAKTISK_NORDISK_ÅR +                                 
+                  EEEØS.TT_FAKTISK_NORDISK_MND +                                
+                  EEEØS.PÅ_FAKTISK_NORDISK    ) > 0 ) THEN                      
+                /* NORDISK KONVENSJON KUN NÅR BEREGN FOLKETRYGD */              
+                DO;                                                             
+                   FEIL_FUNNET       = '1'B;                                    
+                   EEEØS.BEREGN_FOLKETRYGDNR = 1;                               
+                END;                                                            
+                                                                                
+          /* 6.2 */                                                             
+          IF ^(EEEØS.EØS_3_17A = 'N' !                                          
+               EEEØS.EØS_3_17A = 'J' !                                          
+               EEEØS.EØS_3_17A = ' ' ) THEN                                     
+             /* SKAL VÆRE BLANK ELLER JA NEI */                                 
+             DO;                                                                
+                FEIL_FUNNET       = '1'B;                                       
+                EEEØS.EØS_3_17ANR = 450;                                        
+             END;                                                               
+          ELSE                                                                  
+             IF (EES.VILKÅR_3_17A_EK = 'J') THEN                                
+                IF EEEØS.EØS_3_17A = 'N' THEN                                   
+                   /* IKKJE SAMSVAR */                                          
+                   DO;                                                          
+                      FEIL_FUNNET       = '1'B;                                 
+                      EEEØS.EØS_3_17ANR = 454;                                  
+                   END;                                                         
+                                                                                
+          /* KRAV DERSOM EØS OPPLYSNINGER ... */                                
+          IF (SUM(EEEØS.EØS_ÅR)              > 0 !                              
+              SUM(EEEØS.EØS_ÅR_IKKE_PRO_RATA) > 0 !                             
+              EEEØS.TT_TEORETISK_ÅR          > 0 !                              
+              EEEØS.TT_TEORETISK_MND         > 0 !                              
+              EEEØS.TT_PRORATA_ÅR            > 0 !                              
+              EEEØS.TT_PRORATA_MND           > 0 !                              
+              EEEØS.PENSJON_EØS              > 0 !                              
+              SUM(EEEØS.EØS_ÅR_PRO_RATA2)    > 0 !                              
+              EEEØS.TT_PRORATA2_ÅR           > 0 !                              
+              EEEØS.TT_PRORATA2_MND          > 0 !                              
+              EEEØS.INNT_PRØVET_EØS_PENS    = ' ' ) THEN                        
+             IF EEEØS.EØS_3_17A = ' ' THEN                                      
+                DO; /* KRAV DERSOM ANDRE ER UTFYLT */                           
+                   FEIL_FUNNET       = '1'B;                                    
+                   EEEØS.EØS_3_17ANR = 1551;                                    
+                END;                                                            
+                                                                                
+                                                                                
+          /* 6.3 */                                                             
+          DO J=1 TO HBOUND(EEEØS.TAB_EØS);                                      
+             IF (EØS_ÅR(J) > 0) THEN                                            
+                DO;  /* ÅR ER FYLT UT */                                        
+                   IF (EØS_ÅR(J) > FYLLER_69) THEN                              
+                      DO;                                                       
+                         FEIL_FUNNET       = '1'B;                              
+                         EØS_ÅRNR(J) = 631;                                     
+                      END;                                                      
+                   ELSE                                                         
+                   IF (EØS_ÅR(J) > DØDSÅR) THEN                                 
+                      DO;                                                       
+                         FEIL_FUNNET       = '1'B;                              
+                         EØS_ÅRNR(J) = 1825;                                    
+                      END;                                                      
+                   ELSE                                                         
+                   IF (J>1) THEN                                                
+                      DO;  /* KONTROLL FOR ÅR 2 +  */                           
+                         IF (EØS_ÅR(J - 1) >= EØS_ÅR (J)) THEN                  
+                            /* MÅ FYLLES UT STIGENDE */                         
+                            DO;                                                 
+                               FEIL_FUNNET       = '1'B;                        
+                               EØS_ÅRNR(J) = 461;                               
+                            END;                                                
+                      END; /* KONTROLL FOR ÅR 2 +  */                           
+                   ELSE                                                         
+                      DO;  /* KONTROLL FOR FØRSTE ÅR REG */                     
+                         IF (EØS_ÅR(J) < 1967) THEN                             
+                            /* IKKE FØR 1967 */                                 
+                            DO;                                                 
+                               FEIL_FUNNET       = '1'B;                        
+                               EØS_ÅRNR(J) = 457;                               
+                            END;                                                
+                         ELSE                                                   
+                         IF (EØS_ÅR(J) < FYLLER_17) THEN                        
+                            /* IKKE FØR FYLTE 17 ÅR */                          
+                            DO;                                                 
+                               FEIL_FUNNET       = '1'B;                        
+                               EØS_ÅRNR(J) = 630;                               
+                            END;                                                
+                      END; /* KONTROLL FOR FØRSTE ÅR REG */                     
+                END; /* ÅR ER FYLT UT */                                        
+          END; /* LES HELE TABELLEN - TAB_EØS */                                
+                                                                                
+          /* -------------------------------------------------------- */        
+          /* 6.4 ÅR EØS IKKE PRO RATA                                 */        
+          /* -------------------------------------------------------- */        
+          DO J = 1 TO HBOUND(EEEØS.IKKE_PRO_TAB);                               
+             IF (EØS_ÅR_IKKE_PRO_RATA(J) > 0) THEN                              
+                DO;  /* ÅR ER FYLT UT */                                        
+                   IF (EØS_ÅR_IKKE_PRO_RATA(J) > FYLLER_69) THEN                
+                      DO;                                                       
+                         FEIL_FUNNET       = '1'B;                              
+                         EØS_ÅR_IKKE_PRO_RATANR(J) = 631;                       
+                      END;                                                      
+                   ELSE                                                         
+                   IF (EØS_ÅR_IKKE_PRO_RATA(J) > DØDSÅR) THEN                   
+                      DO;                                                       
+                         FEIL_FUNNET       = '1'B;                              
+                         EØS_ÅR_IKKE_PRO_RATANR(J) = 1825;                      
+                      END;                                                      
+                   ELSE                                                         
+                   IF (J>1) THEN                                                
+                      DO;  /* KONTROLL FOR ÅR 2 +  */                           
+                         IF (EØS_ÅR_IKKE_PRO_RATA(J - 1) >=                     
+                             EØS_ÅR_IKKE_PRO_RATA(J)      ) THEN                
+                            /* MÅ FYLLES UT STIGENDE */                         
+                            DO;                                                 
+                               FEIL_FUNNET       = '1'B;                        
+                               EØS_ÅR_IKKE_PRO_RATANR(J) = 461;                 
+                            END;                                                
+                      END; /* KONTROLL FOR ÅR 2 +  */                           
+                   ELSE                                                         
+                      DO;  /* KONTROLL FOR FØRSTE ÅR REG */                     
+                         IF (EØS_ÅR_IKKE_PRO_RATA(J) < 1967) THEN               
+                            /* IKKE FØR 1967 */                                 
+                            DO;                                                 
+                               FEIL_FUNNET       = '1'B;                        
+                               EØS_ÅR_IKKE_PRO_RATANR(J) = 457;                 
+                            END;                                                
+                         ELSE                                                   
+                         IF (EØS_ÅR_IKKE_PRO_RATA(J) < FYLLER_17) THEN          
+                            /* IKKE FØR FYLTE 17 ÅR */                          
+                            DO;                                                 
+                               FEIL_FUNNET       = '1'B;                        
+                               EØS_ÅR_IKKE_PRO_RATANR(J) = 630;                 
+                            END;                                                
+                      END; /* KONTROLL FOR FØRSTE ÅR REG */                     
+                END; /* ÅR ER FYLT UT */                                        
+          END; /* LES HELE TABELLEN - IKKE_PRO_TAB */                           
+                                                                                
+          /* 6.5 */                                                             
+          IF (EEEØS.TT_TEORETISK_MND > 11) THEN                                 
+             DO;                                                                
+                FEIL_FUNNET             = '1'B;                                 
+                EEEØS.TT_TEORETISK_MNDNR = 455;                                 
+             END;                                                               
+                                                                                
+          /* 6.6 */                                                             
+          IF (EEEØS.TT_PRORATA_MND > 11) THEN                                   
+             DO;                                                                
+                FEIL_FUNNET             = '1'B;                                 
+                EEEØS.TT_PRORATA_MNDNR = 456;                                   
+             END;                                                               
+                                                                                
+          /* -------------------------------------------------------- */        
+          /* 6.8 PRO RATA 2 -                                         */        
+          /* -------------------------------------------------------- */        
+          DO J = 1 TO HBOUND(EEEØS.PRO_TAB);                                    
+             IF (EØS_ÅR_PRO_RATA2(J) > 0) THEN                                  
+                DO;  /* ÅR ER FYLT UT */                                        
+                   IF (EØS_ÅR_PRO_RATA2(J) > FYLLER_69) THEN                    
+                      DO;                                                       
+                         FEIL_FUNNET             = '1'B;                        
+                         EØS_ÅR_PRO_RATA2NR(J) = 631;                           
+                      END;                                                      
+                   ELSE                                                         
+                   IF (EØS_ÅR_PRO_RATA2(J) > DØDSÅR) THEN                       
+                      DO;                                                       
+                         FEIL_FUNNET             = '1'B;                        
+                         EØS_ÅR_PRO_RATA2NR(J) = 1825;                          
+                      END;                                                      
+                   ELSE                                                         
+                   IF (J>1) THEN                                                
+                      DO;  /* KONTROLL FOR ÅR 2 +  */                           
+                         IF (EØS_ÅR_PRO_RATA2(J - 1) >=                         
+                             EØS_ÅR_PRO_RATA2 (J)     ) THEN                    
+                            /* MÅ FYLLES UT STIGENDE */                         
+                            DO;                                                 
+                               FEIL_FUNNET             = '1'B;                  
+                               EØS_ÅR_PRO_RATA2NR(J) = 461;                     
+                            END;                                                
+                      END; /* KONTROLL FOR ÅR 2 +  */                           
+                   ELSE                                                         
+                      DO;  /* KONTROLL FOR FØRSTE ÅR REG */                     
+                         IF (EØS_ÅR_PRO_RATA2(J) < 1967) THEN                   
+                            /* IKKE FØR 1967 */                                 
+                            DO;                                                 
+                               FEIL_FUNNET             = '1'B;                  
+                               EØS_ÅR_PRO_RATA2NR(J) = 457;                     
+                            END;                                                
+                         ELSE                                                   
+                         IF (EØS_ÅR_PRO_RATA2(J) < FYLLER_17) THEN              
+                            /* IKKE FØR FYLTE 17 ÅR */                          
+                            DO;                                                 
+                               FEIL_FUNNET             = '1'B;                  
+                               EØS_ÅR_PRO_RATA2NR(J) = 630;                     
+                            END;                                                
+                      END; /* KONTROLL FOR FØRSTE ÅR REG */                     
+                END; /* ÅR ER FYLT UT */                                        
+          END; /* LES HELE TABELLEN - PRO_TAB */                                
+                                                                                
+          /* -------------------------------------------------------- */        
+          /* 6.9 PRO RATA 2 - KONTROLL AV TRYGDETID                   */        
+          /* -------------------------------------------------------- */        
+          IF (EEEØS.TT_PRORATA2_MND > 11) THEN                                  
+             DO;                                                                
+                FEIL_FUNNET             = '1'B;                                 
+                EEEØS.TT_PRORATA2_MNDNR = 456;                                  
+             END;                                                               
+                                                                                
+          /* -------------------------------------------------------- */        
+          /* 6.10 NORDISK TRYGDETID                                   */        
+          /* -------------------------------------------------------- */        
+          IF (EEEØS.TT_FAKTISK_NORDISK_MND > 11) THEN                           
+             DO;                                                                
+                FEIL_FUNNET                    = '1'B;                          
+                EEEØS.TT_FAKTISK_NORDISK_MNDNR = 418;                           
+             END;                                                               
+          IF EEEØS.TT_FAKTISK_NORDISK_ÅR >                                      
+             EEEØS.TT_TEORETISK_ÅR THEN                                         
+             DO;                                                                
+                FEIL_FUNNET        = '1'B;                                      
+                EEEØS.TT_FAKTISK_NORDISK_ÅRNR = 419;                            
+             END;                                                               
+          ELSE                                                                  
+          IF (EEEØS.TT_FAKTISK_NORDISK_ÅR =                                     
+              EEEØS.TT_TEORETISK_ÅR ) &                                         
+             (EEEØS.TT_FAKTISK_NORDISK_MND>                                     
+              EEEØS.TT_TEORETISK_MND ) THEN                                     
+             DO;                                                                
+                FEIL_FUNNET        = '1'B;                                      
+                EEEØS.TT_FAKTISK_NORDISK_ÅRNR = 419;                            
+             END;                                                               
+      END; /* KONTROLL EØS */                                                   
+   ELSE                                                                         
+      IF ^(EEEØS.EØS_3_17A          = ' '     &                                 
+           EEEØS.TT_TEORETISK_ÅR    = 0       &                                 
+           EEEØS.TT_TEORETISK_MND   = 0       &                                 
+           EEEØS.TT_PRORATA_ÅR      = 0       &                                 
+           EEEØS.TT_PRORATA_MND     = 0       &                                 
+           EEEØS.PENSJON_EØS        = 0       &                                 
+           EEEØS.EØS_ÅR(1)          = 0   )    THEN                             
+         DO;                                                                    
+            FEIL_FUNNET             = '1'B;                                     
+            EEEØS.BEREGN_FOLKETRYGDNR = 1818;                                   
+         END;                                                                   
+                                                                                
+                                                                                
+ END KONTROLL_EE_EØS;                                                           

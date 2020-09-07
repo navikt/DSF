@@ -1,0 +1,762 @@
+ /*   SIST ENDRET PÅ PROD   2003.09.19 12.57.42 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.08.29 11.19.13 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.04.02 10.01.14 AV   JDA2970          */        
+ /*       SIST ENDRET 06/08-99 12.06.01 AV   JDA7339                  */        
+ /*       SIST ENDRET 06/08-99 12.05.00 AV   JDA7339                  */        
+ /*       SIST ENDRET 30/07-98 11.26.29 AV   JDA7339                  */        
+                                                                                
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON                                                    */        
+ /*     R0011520 - OPPDATER_TKNR_OG_TILLEGGSBLANKETT -                */        
+ /*                PROSEDYRE I PLI.                                   */        
+ /*     PROGRAMMERER: TOM JØRGENSEN, OKTOBER 1982.                    */        
+ /* HENSIKT                                                           */        
+ /*     OPPDATERER TKNR OG TILLEGGSBLANKETT.                          */        
+ /* PROGAMTILKNYTNING                                                 */        
+ /*    EKSTERN PROSEDYRE :                                            */        
+ /*     CALL R0019957 OVERFØRE DATA TIL NORDATA                       */        
+ /*                                                                   */        
+ /*    INTERNE PROSEDYRER:                                            */        
+ /*                                                                   */        
+ /*     CALL          OPPDATER_TKNR;                                  */        
+ /*     CALL          OPPDATER_TILLEGGSBLANKETT;                      */        
+ /*     CALL          OPPDATER_AI67;                                  */        
+ /* ***************************************************************** */        
+ /* ENDRET 18.01.85  AV   S. LUNDEBY  FRA  DATA-UTVIKLING A/S         */        
+ /*                                                                   */        
+ /* DET ER LAGT INN CALL MOT P900_NOR_DATA (FNR,TKNR) FOR Å GI        */        
+ /* BESKJED TIL NORTRYGD-KONTORENE HVIS DET ER EN AKT. PERSON         */        
+ /*                                                                   */        
+ /* ENDRET 25.9.87 - HERMAN : VED TKNR-ENDRING SKAL TKNR ENDRES       */        
+ /*                           I TRANHIST FOR ALLE TRANSAKSJONER       */        
+ /*                           - SE FEILRAPP 532                       */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ R001152: PROC  (COMMAREA_PEKER)  OPTIONS (MAIN);                               
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0019906;    /* TRANS_OPPL_OMR BASED(TRANS_OPPL_PEKER) */             
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0019908;    /* KOM_OMR  BASED(COMMAREA_PEKER)         */             
+ %PAGE;                                                                         
+ %INCLUDE P0019910;    /* STYRING OMR                            */             
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE P0019912;    /* DIV_PARAM_OMR  BASED(DIV_PARAM_PEKER)  */             
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE DLIUIB;                                                               
+                                                                                
+ %PAGE;                                                                         
+    DCL UIB_RC_OK BIT(8) INIT (0);                                              
+                                                                                
+ %INCLUDE P0012002;                                                             
+                                                                                
+ %PAGE;                                                                         
+    DCL PLITDLI ENTRY;                                                          
+    DCL CSTG BUILTIN;                                                           
+                                                                                
+    DCL 1 RF0PERSN UNALIGNED,                                                   
+       %INCLUDE P0019927;                                                       
+                                                                                
+    DCL 1 TILBERPO       UNALIGNED,                                             
+       %INCLUDE P0019929;                                                       
+                                                                                
+    DCL 1 TRANHIST       UNALIGNED,                                             
+       %INCLUDE P0019940;                                                       
+                                                                                
+    DCL 1 BARN           UNALIGNED,                                             
+       %INCLUDE P0019952;                                                       
+                                                                                
+    DCL COMMAREA_PEKER POINTER;                                                 
+                                                                                
+    DCL 1 RF1 BASED (RF1_PCB_PEKER),                                            
+       %INCLUDE P0012003;                                                       
+                                                                                
+    DCL TRE  FIXED BIN (31) INIT (3);                                           
+    DCL FIRE FIXED BIN (31) INIT (4);                                           
+    DCL FEM  FIXED BIN (31) INIT (5);                                           
+    DCL  SAVE_FUNKSJONSKODE    CHAR (1)  INIT (' ');                            
+                                                                                
+    DCL 1 SSA_ROTS,                                                             
+           2 SSA_ROT_NAVN      CHAR(18) INIT ('RF0PERSN (FNR     '),            
+           2 RELOOP1           CHAR(2) INIT (' ='),                             
+           2 FKEY1             FIXED DEC (11) INIT (0),                         
+           2 HP                CHAR(1) INIT (')');                              
+                                                                                
+    DCL 1 SSA_RF0PERSN,                                                         
+           2 SSA_ROT_NAVN      CHAR(17) INIT ('RF0PERSN(FNR     '),             
+           2 RELOOP1           CHAR(2) INIT (' ='),                             
+           2 FKEY2             FIXED DEC (11) INIT (0),                         
+           2 HP                CHAR(1) INIT (')');                              
+    DCL 1 SSA_TRANHIST_Q,                                                       
+           2 SSA_ROT_NAVN      CHAR(17) INIT ('TRANHIST(GRBLKODE'),             
+           2 RELOOP1           CHAR(2) INIT (' ='),                             
+           2 KODE              CHAR(2) INIT (' '),                              
+           2 HP                CHAR(1) INIT (')');                              
+                                                                                
+    DCL 1 SSA_UQUALIC,                                                          
+           2 NAVN              CHAR(9) INIT ('TILBERPO ');                      
+                                                                                
+    DCL 1 SSA_TRANHIST,                                                         
+           2 NAVN              CHAR(9) INIT ('TRANHIST ');                      
+    DCL 1 SSA_BARN,                                                             
+           2 NAVN              CHAR(9) INIT ('BARN     ');                      
+ %PAGE;                                                                         
+    DCL W_FNR(2)           FIXED DEC (11);                                      
+    DCL W_NAVN(2)          CHAR(25);                                            
+    DCL W_TKNR             FIXED DEC (5);                                       
+    DCL W_AI67             FIXED DEC (5);    /* TILLEGG 25.3.85 HL */           
+    DCL W_AI63(2)          FIXED DEC (5);                                       
+    DCL W_AI64(2)          FIXED DEC (5);                                       
+    DCL W_AI65(2)          FIXED DEC (5);                                       
+    DCL W_AI66(2)          FIXED DEC (5);                                       
+    DCL W_PI66(2)          FIXED DEC (5);                                       
+ %PAGE;                                                                         
+    DCL ROTSWITCH BIT(1) INIT ('1'B);                                           
+    DCL MER_TRANHIST BIT(1) INIT ('1'B);                                        
+    DCL MER_BARN     BIT(1) INIT ('1'B);                                        
+    DCL JA           BIT(1) INIT ('1'B);                                        
+    DCL NEI          BIT(1) INIT ('0'B);                                        
+    DCL J         FIXED DEC (3);                                                
+                                                                                
+    DCL W01_GHU   CHAR(4) INIT ('GHU ');                                        
+    DCL W01_GNP   CHAR(4) INIT ('GNP ');                                        
+    DCL W01_GU    CHAR(4) INIT ('GU  ');                                        
+    DCL W01_REPL  CHAR(4) INIT ('REPL');                                        
+    DCL W01_ISRT  CHAR(4) INIT ('ISRT');                                        
+ %PAGE;                                                                         
+ /* ***************************************************************** */        
+ /*  EKSEKVERING...........                                           */        
+ /* ***************************************************************** */        
+                                                                                
+    PROGRAM_ID    = 'R0011520';                                                 
+    UIBPTR        = UIB_PEKER;                                                  
+    RF0PERSN      = '';                                                         
+    TILBERPO      = '';                                                         
+                                                                                
+    IF TRANS_OPPL_OMR.BLANKETTYPE = 'E2' THEN                                   
+       CALL OPPDATER_TKNR;                                                      
+    ELSE                                                                        
+       CALL OPPDATER_TILLEGGSBLANKETT;                                          
+                                                                                
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+ OPPDATER_TKNR: PROC;                                                           
+                                                                                
+ /* ***************************************************************** */        
+ /* PROCEDUREN ENDRER TKNR.                                           */        
+ /* ENDRINGSBLANKETT E2.                                              */        
+ /* ***************************************************************** */        
+                                                                                
+ %INCLUDE P0011501;                                                             
+                                                                                
+    SEARCH_FNR = E2S.FNR;                                                       
+    FKEY2      = E2S.FNR;                                                       
+                                                                                
+                                                                                
+    /*----------------------------------------------------------*/              
+    /* GHU RF0PERSN KVALIFISERT MED E2S.FNR                     */              
+    /*----------------------------------------------------------*/              
+                                                                                
+    CALL PLITDLI (FIRE,W01_GHU,RF1,RF0PERSN,SSA_RF0PERSN);                      
+                                                                                
+                                                                                
+    IF UIBFCTR          ^=  UIB_RC_OK                        THEN               
+       DO;                                                                      
+ L100:    FEIL_VED_LABEL = 'L100';                                              
+          FEIL_MELD_NR   =  500  ;                                              
+          GO TO L999;                                                           
+       END;                                                                     
+                                                                                
+    /*----------------------------------------------------------*/              
+    /* PERSON IKKE FUNNET  :                                    */              
+    /*----------------------------------------------------------*/              
+                                                                                
+    IF RF1.STATUS_KODE = 'GE' THEN                                              
+       DO;                                                                      
+                                                                                
+ L150:    FEIL_VED_LABEL = 'L150';                                              
+          FEIL_MELD_NR   =  1713 ;   /* 25.3.85 HL  */                          
+          GO TO L999;                                                           
+       /*   SETT FEIL_MELD_NR = PERSONEN FINNES IKKE I BASEN*/ ;                
+                                                                                
+       END;                                                                     
+    ELSE                                                                        
+       IF RF1.STATUS_KODE         = '  '                     THEN               
+          DO;                                                                   
+    /*  ENDRET AV SATISH FOR ACF2 KONTOLL 20.1.2003  */                         
+            BO_TKNR  = RF0PERSN.TKNR;                                           
+            CALL ATK_TK_KONTROLL;                                               
+            IF FEIL_MELD_NR  > 0  THEN                                          
+               DO;                                                              
+ L151:              FEIL_VED_LABEL = 'L150';                                    
+                    GO TO L999;                                                 
+               END;                                                             
+                                                                                
+     /*  ********************   OPPTIL HER  ******************* */              
+             RF0PERSN.TKNR        =  E2S.TKNR_TIL;                              
+                                                                                
+             /*-------------------------------------------------*/              
+             /* REPLACE ROTSEGM                                 */              
+             /*-------------------------------------------------*/              
+                                                                                
+             CALL PLITDLI (TRE,W01_REPL,RF1,RF0PERSN);                          
+                                                                                
+             IF RF1.STATUS_KODE  ^= '  '                  !                     
+                UIBFCTR          ^=  UIB_RC_OK               THEN               
+                DO;                                                             
+ L200:             FEIL_VED_LABEL = 'L200';                                     
+                   FEIL_MELD_NR   =  500;                                       
+                   GO TO L999;                                                  
+                END;                                                            
+                                                                                
+                                                                                
+ /*ENDRET 25.9.87 HL: TKNR SKAL ENDRES I ALLE TRANHISTER - FRAPP 532*/          
+                                                                                
+             DO WHILE (MER_TRANHIST);                                           
+                                                                                
+                CALL PLITDLI (FIRE,'GHNP',RF1,TRANHIST,SSA_TRANHIST);           
+                                                                                
+                IF UIBFCTR          ^=  UIB_RC_OK               THEN            
+                   DO;                                                          
+ L210:                FEIL_VED_LABEL = 'L210';                                  
+                      FEIL_MELD_NR   =  500;                                    
+                      GO TO L999;                                               
+                   END;                                                         
+                                                                                
+                IF RF1.STATUS_KODE = ' '                        THEN            
+                                                                                
+                   DO;                                                          
+                                                                                
+                      TRANHIST.TKNR = E2S.TKNR_TIL;                             
+                                                                                
+                      CALL PLITDLI (TRE,'REPL',RF1,TRANHIST);                   
+                                                                                
+                      IF RF1.STATUS_KODE  ^= '  '                  !            
+                         UIBFCTR          ^=  UIB_RC_OK        THEN             
+                         DO;                                                    
+ L220:                      FEIL_VED_LABEL = 'L220';                            
+                            FEIL_MELD_NR   =  500;                              
+                            GO TO L999;                                         
+                         END;                                                   
+                       IF TRANHIST.GRBLKODE = 'FB' !                            
+                          TRANHIST.GRBLKODE = 'BP' !                            
+                          TRANHIST.GRBLKODE = 'B6' THEN                         
+                          DO;                                                   
+                             DO WHILE (MER_BARN);                               
+                                CALL PLITDLI (                                  
+                                              FIRE,'GHNP',RF1,BARN,             
+                                              SSA_BARN);                        
+                                                                                
+                                IF UIBFCTR ^=  UIB_RC_OK     THEN               
+                                   DO;                                          
+ L230:                                FEIL_VED_LABEL = 'L230';                  
+                                      FEIL_MELD_NR   =  500;                    
+                                      GO TO L999;                               
+                                   END;                                         
+                                                                                
+                                IF RF1.STATUS_KODE = ' '  THEN                  
+                                                                                
+                                   DO;                                          
+                                                                                
+                                      BARN.TKNR = E2S.TKNR_TIL;                 
+                                                                                
+                                      CALL PLITDLI (                            
+                                               TRE,'REPL',RF1,BARN);            
+                                                                                
+                                      IF RF1.STATUS_KODE  ^= '  ' !             
+                                         UIBFCTR  ^=  UIB_RC_OK  THEN           
+                                         DO;                                    
+ L240:                                      FEIL_VED_LABEL = 'L240';            
+                                            FEIL_MELD_NR   =  500;              
+                                            GO TO L999;                         
+                                         END;                                   
+                                   END;                                         
+                                                                                
+                                ELSE                                            
+                                    DO;                                         
+                                        MER_BARN = NEI;                         
+                                        SSA_TRANHIST_Q.KODE                     
+                                                   = TRANHIST.GRBLKODE;         
+                                        CALL PLITDLI (FEM,W01_GU,               
+                                                      RF1,TRANHIST,             
+                                                      SSA_RF0PERSN,             
+                                                      SSA_TRANHIST_Q);          
+                                    END;                                        
+                             END;    /* DO WHILE  */                            
+                          END;                                                  
+                       END;                                                     
+                    ELSE MER_TRANHIST = NEI;                                    
+                                                                                
+             END;    /* DO WHILE  */                                            
+                                                                                
+ /*HIT 25.9.87 HL */                                                            
+                                                                                
+             /*-------------------------------------------------*/              
+             /* GIR DATA TIL NORTRYGD HVIS DET ER ET NORKONTOR  */              
+             /*-------------------------------------------------*/              
+                                                                                
+       /*    CALL P900_NOR_DATA ( RF0PERSN.FNR , RF0PERSN.TKNR);*/              
+                                                                                
+             IF FEIL_MELD_NR      >  0                    THEN                  
+                GOTO L999;                                                      
+             ELSE                                                               
+                PROGRAM_ID        = 'R0011520';                                 
+          END;                                                                  
+                                                                                
+ END OPPDATER_TKNR;                                                             
+                                                                                
+                                                                                
+                                                                                
+ %PAGE;                                                                         
+ OPPDATER_TILLEGGSBLANKETT: PROC;                                               
+                                                                                
+ /* ***************************************************************** */        
+ /* PROCEDUREN ENDRER ELLER INNLEGGER INNTEKTER FØR 1967.             */        
+ /* ANTATT INNTEKT FOR 1967 OPPDATERES I EGEN RUTINE                  */        
+ /* ***************************************************************** */        
+                                                                                
+ %INCLUDE P0011301;                                                             
+                                                                                
+    W_TKNR  = 0;                                                                
+                                                                                
+    DO J = 1 TO 2;                                                              
+                                                                                
+       W_FNR  (J) = 0;                                                          
+       W_NAVN (J) = '                         ';                                
+       W_AI63 (J) = 0;                                                          
+       W_AI64 (J) = 0;                                                          
+       W_AI65 (J) = 0;                                                          
+       W_AI66 (J) = 0;                                                          
+       W_PI66 (J) = 0;                                                          
+                                                                                
+    END;                                                                        
+                                                                                
+    IF TGUF.FNR > 0 THEN                                                        
+                                                                                
+       DO;                                                                      
+                                                                                
+          SEARCH_FNR = TGUF.FNR;                                                
+          W_TKNR     = TGUF.TKNR;                                               
+          W_FNR  (1) = TGUF.FNR;                                                
+          W_NAVN (1) = TGUF.NAVN;                                               
+          W_AI63 (1) = TGUF.AI63;                                               
+          W_AI64 (1) = TGUF.AI64;                                               
+          W_AI65 (1) = TGUF.AI65;                                               
+          W_AI66 (1) = TGUF.AI66;                                               
+          W_PI66 (1) = TGUF.PI_66;                                              
+                                                                                
+       END;                                                                     
+                                                                                
+    ELSE                                                                        
+                                                                                
+       IF TGEP.FNR_EK > 0 THEN                                                  
+                                                                                
+          DO;                                                                   
+                                                                                
+             SEARCH_FNR = TGEP.FNR_EK;                                          
+             W_TKNR     = TGEP.TKNR_EK;                                         
+             W_FNR  (1) = TGEP.FNR_EK;                                          
+             W_NAVN (1) = TGEP.NAVN_EK;                                         
+             W_AI63 (1) = TGEP.AI63_EK;                                         
+             W_AI64 (1) = TGEP.AI64_EK;                                         
+             W_AI65 (1) = TGEP.AI65_EK;                                         
+             W_AI66 (1) = TGEP.AI66_EK;                                         
+             W_PI66 (1) = TGEP.PI_66_EK;                                        
+                                                                                
+          END;                                                                  
+                                                                                
+       ELSE                                                                     
+                                                                                
+          IF TGB.FNR_MOR > 0 THEN                                               
+                                                                                
+             DO;                                                                
+                                                                                
+                SEARCH_FNR = TGB.FNR_MOR;                                       
+                W_TKNR     = TGB.TKNR;                                          
+                W_FNR  (1) = TGB.FNR_MOR;                                       
+                W_NAVN (1) = TGB.NAVN_MOR;                                      
+                W_AI63 (1) = TGB.AI63_MOR;                                      
+                W_AI64 (1) = TGB.AI64_MOR;                                      
+                W_AI65 (1) = TGB.AI65_MOR;                                      
+                W_AI66 (1) = TGB.AI66_MOR;                                      
+                W_PI66 (1) = TGB.PI_66_MOR;                                     
+                                                                                
+             END;                                                               
+                                                                                
+          ELSE                                                                  
+                                                                                
+             IF TGB.FNR_FAR > 0 THEN                                            
+                                                                                
+                DO;                                                             
+                                                                                
+                   SEARCH_FNR = TGB.FNR_FAR;                                    
+                   W_TKNR     = TGB.TKNR;                                       
+                   W_FNR  (2) = TGB.FNR_FAR;                                    
+                   W_NAVN (2) = TGB.NAVN_FAR;                                   
+                   W_AI63 (2) = TGB.AI63_FAR;                                   
+                   W_AI64 (2) = TGB.AI64_FAR;                                   
+                   W_AI65 (2) = TGB.AI65_FAR;                                   
+                   W_AI66 (2) = TGB.AI66_FAR;                                   
+                   W_PI66 (2) = TGB.PI_66_FAR;                                  
+                                                                                
+                END;                                                            
+                                                                                
+  /* TILLEGG 27.3.85  HL                             */                         
+                                                                                
+              ELSE                                                              
+                                                                                
+                 IF TGAI.FNR > 0 THEN                                           
+                                                                                
+                    DO;                                                         
+                                                                                
+                       CALL OPPDATER_AI67; /* INTERN PROSEDYRE */               
+                                                                                
+                       GO TO L999;         /* UT AV PROGRAMMET */               
+                                                                                
+                    END;                                                        
+                                                                                
+  /* HIT 27.3.85  HL                                  */                        
+                                                                                
+    DO J = 1 TO 2;                                                              
+                                                                                
+       IF W_FNR(J) > 0 THEN                                                     
+                                                                                
+          DO;                                                                   
+                                                                                
+             FKEY1              = W_FNR(J);                                     
+             FKEY2              = W_FNR(J);                                     
+                                                                                
+             RF0PERSN.FNR        = W_FNR(J);                                    
+             RF0PERSN.NAVN       = W_NAVN(J);                                   
+             RF0PERSN.TKNR       = W_TKNR;                                      
+                                                                                
+                                                                                
+             CALL PLITDLI (FIRE,W01_ISRT,RF1,RF0PERSN,SSA_ROTS);                
+        /*   INSERT ROT-SEGMENT  */                                             
+                                                                                
+                                                                                
+             IF UIBFCTR = UIB_RC_OK THEN                                        
+                                                                                
+                DO;                                                             
+                                                                                
+                   IF RF1.STATUS_KODE = '  ' THEN                               
+                                                                                
+                      DO;                                                       
+                                                                                
+                   /*    INSERTEN GIKK OK    */                                 
+                                                                                
+                         ROTSWITCH = '0'B;                                      
+                                                                                
+                      END;                                                      
+                                                                                
+                   ELSE                                                         
+                                                                                
+                      IF RF1.STATUS_KODE = 'II' THEN                            
+                                                                                
+                         DO;                                                    
+                                                                                
+                      /*    RF0PERSNSEGMENTET LÅ DER FRA FØR    */              
+                                                                                
+                            ROTSWITCH = '1'B;                                   
+                                                                                
+                         END;                                                   
+                                                                                
+                      ELSE                                                      
+                                                                                
+                         DO;                                                    
+                                                                                
+                      /*    UGYLDIG RETURKODE, MEN OK UIB  */                   
+                                                                                
+                            GO TO L999;                                         
+                                                                                
+                         END;                                                   
+                                                                                
+                END;                                                            
+                                                                                
+             ELSE                                                               
+                                                                                
+                DO;                                                             
+                                                                                
+             /*    FEIL    */                                                   
+                                                                                
+ L300:             FEIL_VED_LABEL = 'L300';                                     
+                   FEIL_MELD_NR   = 500;                                        
+                                                                                
+                   GO TO L999;                                                  
+                                                                                
+                END;                                                            
+                                                                                
+             IF ROTSWITCH THEN                                                  
+                                                                                
+                DO;                                                             
+                                                                                
+                                                                                
+                   CALL PLITDLI (FEM,W01_GHU,RF1,TILBERPO,                      
+                                            SSA_RF0PERSN,SSA_UQUALIC);          
+             /*    GHU TILBERPO-SEGMENT KVALIFISERT MED W_FNR(I)*/              
+                                                                                
+                                                                                
+                   TILBERPO.AI63 = W_AI63(J);                                   
+                   TILBERPO.AI64 = W_AI64(J);                                   
+                   TILBERPO.AI65 = W_AI65(J);                                   
+                   TILBERPO.AI66 = W_AI66(J);                                   
+                   TILBERPO.PI66 = W_PI66(J);                                   
+                                                                                
+                   IF UIBFCTR ^= UIB_RC_OK THEN                                 
+                                                                                
+                      DO;                                                       
+                                                                                
+             /*          FEIL    */                                             
+                                                                                
+ L400:                   FEIL_VED_LABEL = 'L400';                               
+                         FEIL_MELD_NR   = 500;                                  
+                                                                                
+                         GO TO L999;                                            
+                                                                                
+                      END;                                                      
+                                                                                
+                   ELSE                                                         
+                                                                                
+                      DO;  /* UIBFCTR = UIB_RC_OK */                            
+                                                                                
+                         IF RF1.STATUS_KODE = 'GE' THEN /*IKKE FUNNET*/         
+                                                                                
+                            DO;                                                 
+                                                                                
+                                                                                
+                               CALL PLITDLI (FIRE,W01_ISRT,RF1,                 
+                                             TILBERPO,SSA_UQUALIC);             
+                           /*  INSERT TILBERPO-SEGMENT */                       
+                                                                                
+                                                                                
+                               IF RF1.STATUS_KODE ^= '  ' !                     
+                                  UIBFCTR ^= UIB_RC_OK THEN                     
+                                                                                
+                                  DO;                                           
+                                                                                
+                                /*   FEIL   */                                  
+                                                                                
+ L500:                               FEIL_VED_LABEL = 'L500';                   
+                                     FEIL_MELD_NR   = 500;                      
+                                                                                
+                                     GO TO L999;                                
+                                                                                
+                                  END;                                          
+                            END;                                                
+                                                                                
+                         ELSE                                                   
+                                                                                
+                            IF RF1.STATUS_KODE = '  ' THEN                      
+                                                                                
+                               DO;                                              
+                                                                                
+                                                                                
+                                  CALL PLITDLI (TRE,W01_REPL,RF1,               
+                                                    TILBERPO);                  
+                              /*  REPLACE TILBERPO-SEGMENT*/                    
+                                                                                
+                                                                                
+                                  IF RF1.STATUS_KODE ^= '  ' !                  
+                                     UIBFCTR ^= UIB_RC_OK THEN                  
+                                                                                
+                                     DO;                                        
+                                                                                
+                                   /*   FEIL   */                               
+                                                                                
+ L600:                                  FEIL_VED_LABEL = 'L600';                
+                                        FEIL_MELD_NR   = 500;                   
+                                                                                
+                                        GO TO L999;                             
+                                                                                
+                                     END;                                       
+                                                                                
+                               END;                                             
+                                                                                
+                         ELSE                                                   
+                                                                                
+                            DO;                                                 
+                                                                                
+                         /*    FEIL RETURKODE, MEN GYLDIG UIB  */               
+                                                                                
+                               GO TO L999;                                      
+                                                                                
+                            END;                                                
+                                                                                
+                      END; /* IF :  UIBFCTR = UIB_RC_OK       */                
+                                                                                
+                END;       /* IF :  ROTSWITCH                 */                
+                                                                                
+             ELSE                                                               
+                                                                                
+                DO;        /* IF :  ^ROTSWITCH                */                
+                                                                                
+                   TILBERPO.AI63 = W_AI63(J);                                   
+                   TILBERPO.AI64 = W_AI64(J);                                   
+                   TILBERPO.AI65 = W_AI65(J);                                   
+                   TILBERPO.AI66 = W_AI66(J);                                   
+                   TILBERPO.PI66 = W_PI66(J);                                   
+                                                                                
+                                                                                
+                   CALL PLITDLI (FIRE,W01_ISRT,RF1,TILBERPO,                    
+                                                   SSA_UQUALIC);                
+                                                                                
+                                                                                
+                   IF RF1.STATUS_KODE ^= '  ' !                                 
+                      UIBFCTR ^= UIB_RC_OK THEN                                 
+                                                                                
+                      DO;                                                       
+                                                                                
+                    /*   FEIL   */                                              
+                                                                                
+ L700:                   FEIL_VED_LABEL = 'L700';                               
+                         FEIL_MELD_NR   = 500;                                  
+                                                                                
+                         GO TO L999;                                            
+                                                                                
+                      END;                                                      
+                                                                                
+                END;                                                            
+                                                                                
+          END;       /* IF :  W_FNR (J) > 0             */                      
+                                                                                
+    END;             /* DO :  I = 1 TO 2                */                      
+                                                                                
+                                                                                
+ /* ********************************************************* */                
+ /* RUTINEN NEDENFOR ER LAGT INN 27.3.85 - DEN SKAL OPPDATERE */                
+ /* ANTATT INNTEKT FOR 1967 I ROTSEGMENTET           HL       */                
+ /* ********************************************************* */                
+                                                                                
+ OPPDATER_AI67: PROC;                                                           
+                                                                                
+   SEARCH_FNR = TGAI.FNR;                                                       
+   FKEY2      = TGAI.FNR;                                                       
+                                                                                
+    /*----------------------------------------------------------*/              
+    /* GHU RF0PERSN KVALIFISERT MED TGAI.FNR :                  */              
+    /*----------------------------------------------------------*/              
+                                                                                
+    CALL PLITDLI (FIRE,W01_GHU,RF1,RF0PERSN,SSA_RF0PERSN);                      
+                                                                                
+                                                                                
+    IF UIBFCTR          ^=  UIB_RC_OK                        THEN               
+       DO;                                                                      
+ L800:    FEIL_VED_LABEL = 'L800';                                              
+          FEIL_MELD_NR   =  500  ;                                              
+          GO TO L999;                                                           
+       END;                                                                     
+                                                                                
+    /*----------------------------------------------------------*/              
+    /* PERSON IKKE FUNNET  :                                    */              
+    /*----------------------------------------------------------*/              
+                                                                                
+    IF RF1.STATUS_KODE = 'GE' THEN                                              
+       DO;                                                                      
+                                                                                
+ L850:    FEIL_VED_LABEL = 'L850';                                              
+          FEIL_MELD_NR   =  1713 ;                                              
+          GO TO L999;                                                           
+       /*   SETT FEIL_MELD_NR = PERSONEN FINNES IKKE I BASEN*/ ;                
+                                                                                
+       END;                                                                     
+    ELSE                                                                        
+       IF RF1.STATUS_KODE         = '  '                     THEN               
+          DO;                                                                   
+             RF0PERSN.AI67       = TGAI.AI67;                                   
+                                                                                
+             /*-------------------------------------------------*/              
+             /* REPLACE ROTSEGM                                 */              
+             /*-------------------------------------------------*/              
+                                                                                
+             CALL PLITDLI (TRE,W01_REPL,RF1,RF0PERSN);                          
+                                                                                
+             IF RF1.STATUS_KODE  ^= '  '                  !                     
+                UIBFCTR          ^=  UIB_RC_OK               THEN               
+                DO;                                                             
+ L900:             FEIL_VED_LABEL = 'L900';                                     
+                   FEIL_MELD_NR   =  500;                                       
+                   GO TO L999;                                                  
+                END;                                                            
+                                                                                
+             /*-------------------------------------------------*/              
+             /* GIR DATA TIL NORTRYGD HVIS DET ER ET NORKONTOR  */              
+             /*-------------------------------------------------*/              
+                                                                                
+        /*   CALL P900_NOR_DATA ( RF0PERSN.FNR , RF0PERSN.TKNR); */             
+                                                                                
+             IF FEIL_MELD_NR      >  0                    THEN                  
+                GOTO L999;                                                      
+             ELSE                                                               
+                PROGRAM_ID        = 'R0011520';                                 
+                                                                                
+          END;                                                                  
+    END OPPDATER_AI67;                                                          
+                                                                                
+ END OPPDATER_TILLEGGSBLANKETT;                                                 
+                                                                                
+                                                                                
+    /*  %INCLUDE R0019957;   P900_NOR_DATA ( FNR , TKNR )        */             
+                                                                                
+                                                                                
+ L999:                                                                          
+                                                                                
+       /* ENDRET 101286 BF: LAGT INN FEILUTGANG                  */             
+       /* ENDRET 250887 BF: 3301 SKAL IKKE LINKES NÅR            */             
+       /*                   KJØRINGS_TYPE = 'N'                  */             
+                                                                                
+       IF FEIL_MELD_NR   >  0  &                                                
+          KJØRINGS_TYPE ^= 'N' THEN                                             
+          DO;                                                                   
+             DIV_PARAM_OMR.FRA_CICS        = '0'B;                              
+             DIV_PARAM_OMR.HENT_FRAM_MAP   = '1'B;                              
+             DIV_PARAM_OMR.FRA_UTEN_DIALOG = '1'B;                              
+             DIV_PARAM_OMR.FRA_MED_DIALOG  = '0'B;                              
+             EXEC CICS LINK PROGRAM ('R0013301')                                
+                            COMMAREA(KOM_OMR);                                  
+          END;                                                                  
+                                                                                
+       /* HIT    101286 BF                                       */             
+  /* ******************************************************* */                 
+  /* SKRIVER AV :  SATISH PATHAK                             */                 
+  /* DATO       :  16.11.2002                                */                 
+  /* PROGRAM KONTROLLER FNR OG TKNR MOT ATK TILLGANG        */                  
+  /* ******************************************************* */                 
+  ATK_TK_KONTROLL: PROC;                                                        
+                                                                                
+      IF RF0PERSN.PERSN_KODE  = 'I' THEN                                        
+         RF0PERSN.PERSN_KODE  = ' ';                                            
+      IF RF0PERSN.PERSN_KODE  = 'S' THEN                                        
+         ACF2_F_KODE     = ' '  ;                                               
+          IF DIV_PARAM_OMR.FEIL_MELD_NR = 0      THEN                           
+             DO;                                                                
+                IF ACF2_F_KODE     = ' ' &                                      
+                   FEIL_MELD_NR    =  0  THEN                                   
+                   DO;                                                          
+                       BO_TKNR  = RF0PERSN.TKNR ;                               
+                                                                                
+                       IF BO_TKNR  >  0 THEN                                    
+                          CALL  KONTROLL_ACF2;                                  
+                                                                                
+                          IF FEIL_MELD_NR  = 0  &                               
+                             RF0PERSN.PERSN_KODE = 'S'  THEN                    
+                             DO;                                                
+                                SAVE_FUNKSJONSKODE   = FUNKSJONSKODE ;          
+                                FUNKSJONSKODE   = 'M';                          
+                                CALL  KONTROLL_ACF2;                            
+                                FUNKSJONSKODE   = SAVE_FUNKSJONSKODE ;          
+                             END;                                               
+                   END;                                                         
+                                                                                
+                 IF FEIL_MELD_NR  = 0  THEN                                     
+                    ACF2_F_KODE = 'J';  /* FAMILIA KODE ER SET OK */            
+                 ELSE                                                           
+                    ACF2_F_KODE = ' ';  /* FAMILIA KODE ER FJERNT */            
+             END;                                                               
+  END ATK_TK_KONTROLL;                                                          
+  %INCLUDE R0019999;          /* ACF2_KONTROLL   */                             
+ END R001152;                                                                   

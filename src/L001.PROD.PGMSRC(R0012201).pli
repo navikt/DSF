@@ -1,0 +1,395 @@
+ /*   SIST ENDRET PÅ PROD   2002.01.18 10.35.59 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.07.25 15.24.40 AV   SPA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.07.14 14.36.58 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.04.27 12.07.43 AV   JDA7339          */        
+ /*       SIST ENDRET 02/09-98 11.17.51 AV   SPA7339                  */        
+ /*       SIST ENDRET 06/05-98 13.03.17 AV   JDA7339                  */        
+ /*       SIST ENDRET 16/01-98 12.21.49 AV   SPA7339                  */        
+ /*********************************************************************/        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0012201    : PLI/CICS HOVEDPROGRAM                            */        
+ /*    PROGRAMMERER: FARVIK & HANSEN SEPTEMBER -82.                   */        
+ /*********************************************************************/        
+ /*ENDRINGSDATO : 21/2-84                                             */        
+ /*ENDRINGSDATO GJELDER: I VISSE TILFELLER HAR VI IKKE OPPLYSNINGER   */        
+ /*                      OM AVDØD EKTEFELLE / AVDØD MOR / AVDØD FAR.  */        
+ /*                      I DISSE TILFELLENE BLIR DET IKKE GENERERT    */        
+ /*                      DØDSTRANSER I DETTE PROGRAMMET. DA ER DET    */        
+ /*                      KUN SELVE TRANSEN SOM BLIR OPPDATERT.        */        
+ /*ENDRINGEN BLE UTFØRT AV KARIN.                                     */        
+ /*********************************************************************/        
+ /*HENSIKT:                                                           */        
+ /*    R0012201 STYRER BEHANDLINGEN AV FØLGENDE TRANSER ETTER AT DE   */        
+ /*    ER REGISTRERT OG KONTROLLERT:                                  */        
+ /*    - ETTERLATT EKTEFELLE                                          */        
+ /*    - ETTERLATTE BARN                                              */        
+ /*    - FORELDRELØSE BARN                                            */        
+ /*RUTINEN STYRER:                                                    */        
+ /*    - DANNING AV DØDSMELDINGER                                     */        
+ /*    - AJOURFØRINGEN AV STATUS I HENHOLD TIL                        */        
+ /*      DØDSMELDINGENE. (I BEHANDLE_TRANS)                           */        
+ /*    - AJOURFØRE STATUS I HENHOLD TIL SELVE                         */        
+ /*      ETTERLATTE-TRANSEN. (I BEHANDLE_TRANS)                       */        
+ /*    - FEILMELDINGSRUTINE VED EVENTUELLE FEIL V./DØDS-              */        
+ /*      MELDINGER, ETTERLATTE-TRANSER.                               */        
+ /*BRUK:                                                              */        
+ /*    EXEC CICS LINK PROGRAM('R0012201') COMMAREA(KOM_OMR)           */        
+ /* ***************************************************************** */        
+ %SKIP;                                                                         
+  R001220:                                                                      
+     PROC (COMMAREA_PEKER) OPTIONS(MAIN);                                       
+ %PAGE;                                                                         
+  DCL                                                                           
+      COMMAREA_PEKER  PTR;                                                      
+  DCL                                                                           
+     (                                                                          
+     ADDR,                                                                      
+     CSTG                                                                       
+     )          BUILTIN;                                                        
+ /*                                                                   */        
+  DCL 01 W1,                                                                    
+      2 W1_O1_FNR_DØD             PIC'(11)9',                                   
+      2 W1_O1_FNR_GML_DØD         PIC'(11)9',                                   
+      2 W1_O1_DØDSDATO_DØD        PIC'(8)9',                                    
+      2 W1_O1_TKNR_DØD            PIC'(4)9',                                    
+      2 W1_O1_FNR_EK              PIC'(11)9',                                   
+      2 W2_O1_FNR_EK              PIC'(11)9',                                   
+      2 W1_O1_INNT                PIC'(7)9',                                    
+      2 W2_O1_FNR_DØD             PIC'(11)9',                                   
+      2 W2_O1_FNR_GML_DØD         PIC'(11)9',                                   
+      2 W2_O1_DØDSDATO_DØD        PIC'(8)9',                                    
+      2 W2_O1_TKNR_DØD            PIC'(4)9',                                    
+      2 W2_O1_INNT                PIC'(7)9';                                    
+  DCL                                                                           
+     AKSEPTERE        CHAR(1) INIT('A'),                                        
+     FORKASTE         CHAR(1) INIT('F'),                                        
+     OPPBEVARE        CHAR(1) INIT('O');                                        
+  DCL                                                                           
+     SAVE_STYREKODE     CHAR(2),                                                
+     SAVE_PEKER         POINTER,                                                
+     SAVE_OMR           CHAR(1500) BASED (SAVE_PEKER),                          
+     SAVE_FØDSNUMMER    PIC'(11)9',                                             
+     SAVE_VIRKNINGSDATO PIC'(8)9',                                              
+     SAVE_BLANKETTYPE   CHAR(2);                                                
+                                                                                
+  DCL X_DATO            PIC'(8)9';                                              
+  DCL W03_DATO_ÅMD               PIC '(8)9';                                    
+  DCL W03_D DEF W03_DATO_ÅMD POS(7)     PIC '99';                               
+  DCL W03_M DEF W03_DATO_ÅMD POS(5)     PIC '99';                               
+  DCL W03_Å DEF W03_DATO_ÅMD POS(1)     PIC '9999';                             
+                                                                                
+  DCL W_REGN_1291    CHAR (1)  INIT (' ');                                      
+ /*                                                                   */        
+ %PAGE;                                                                         
+ %INCLUDE P0019908;       /*  KOM_OMR         */                                
+ %PAGE;                                                                         
+ %INCLUDE P0019906;       /*  TRANS_OPPL_OMR  */                                
+ %SKIP(2);                                                                      
+ %INCLUDE P0019910;       /*  STYRINGS_OMR    */                                
+ %SKIP(2);                                                                      
+ %INCLUDE P0019912;       /*  DIV PARAM OMR   */                                
+ %SKIP(2);                                                                      
+                                                                                
+      IF FEIL_MELD_NR = 0 THEN                                                  
+           PROGRAM_ID = 'R0012201';                                             
+                                                                                
+ %PAGE;                                                                         
+ /* ****************************************************************  */        
+ /* GENERERER DØDSMELDINGER PÅ GRUNNLAG AV TRANSAKSJONEN              */        
+ /* ****************************************************************  */        
+                                                                                
+                                                                                
+  ALLOCATE SAVE_OMR;                                                            
+  SAVE_OMR = KOM_OMR.TRANS_OMR;                                                 
+  SAVE_FØDSNUMMER    = TRANS_OPPL_OMR.FØDSNUMMER;                               
+  SAVE_VIRKNINGSDATO = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;                        
+  SAVE_BLANKETTYPE   = TRANS_OPPL_OMR.BLANKETTYPE;                              
+  W_REGN_1291        = DIV_PARAM_OMR.REGN_1291;   /*TRUDE */                    
+  W1 ='';                                                                       
+  SELECT(STYREKODE);                                                            
+     WHEN('FB')                                                                 
+           CALL FB_TRANS;                                                       
+     WHEN('EP')                                                                 
+           CALL EP_TRANS;                                                       
+     WHEN('E3')                                                                 
+           CALL E3_TRANS;                                                       
+     WHEN('EE')                                                                 
+           CALL EE_TRANS;                                                       
+     WHEN('B6')                                                                 
+           CALL B6_TRANS;                                                       
+     OTHERWISE                                                                  
+           CALL BP_TRANS;                                                       
+  END;                                                                          
+  CALL O1_TRANS;                                                                
+ %PAGE;                                                                         
+ /*********************************************/                                
+  BP_TRANS:                                                                     
+  PROC;                                                                         
+ %INCLUDE P0011101;       /*  BP_OMR          */                                
+ IF BPB.FNR_DØD = (11)'1' THEN                                                  
+      /* AVDØDES FNR ER IKKE OPPGITT  */                                        
+      W1_O1_FNR_DØD      = (11)'0';                                             
+ ELSE                                                                           
+    DO;                                                                         
+      W1_O1_FNR_DØD      = BPB.FNR_DØD;                                         
+      W1_O1_FNR_GML_DØD  = BPB.FNR_GML_DØD;                                     
+      W1_O1_TKNR_DØD     = BPB.TKNR(1);                                         
+      W1_O1_DØDSDATO_DØD = BPB.DØDSDATO_ÅMD;                                    
+      W1_O1_FNR_EK       = 0;                                                   
+      W1_O1_INNT         = 9999999;                                             
+    END;                                                                        
+  END BP_TRANS;                                                                 
+ %PAGE;                                                                         
+ /*********************************************/                                
+  B6_TRANS:                                                                     
+  PROC;                                                                         
+ %INCLUDE P001NB01;       /*  BP_OMR          */                                
+ IF B6B.FNR_DØD = (11)'1' THEN                                                  
+      /* AVDØDES FNR ER IKKE OPPGITT  */                                        
+      W1_O1_FNR_DØD      = (11)'0';                                             
+ ELSE                                                                           
+    DO;                                                                         
+      W1_O1_FNR_DØD      = B6B.FNR_DØD;                                         
+      W1_O1_FNR_GML_DØD  = B6B.FNR_GML_DØD;                                     
+      W1_O1_TKNR_DØD     = B6B.TKNR(1);                                         
+      W1_O1_DØDSDATO_DØD = B6B.DØDSDATO_ÅMD;                                    
+      W1_O1_FNR_EK       = 0;                                                   
+      W1_O1_INNT         = PI_DØD;                                              
+    END;                                                                        
+  END B6_TRANS;                                                                 
+ %PAGE;                                                                         
+ /*********************************************/                                
+  FB_TRANS:                                                                     
+       PROC;                                                                    
+ %INCLUDE P0011001;       /*  FB_OMR          */                                
+ %PAGE;                                                                         
+  IF FNR_M = (11)'1' THEN                                                       
+      W1_O1_FNR_DØD = (11)'0';                                                  
+      /* AVDØD  MOR ER IKKE OPPGITT  */                                         
+  ELSE                                                                          
+     DO;                                                                        
+      W1_O1_FNR_DØD      = FNR_M;                                               
+      W1_O1_FNR_GML_DØD  = FNR_GML_M;                                           
+      W1_O1_DØDSDATO_DØD = DØDSDATO_ÅMD_M;                                      
+      W1_O1_TKNR_DØD     = TKNR(1);                                             
+      W1_O1_INNT         = PI_M   ;                                             
+      W1_O1_FNR_EK       = FNR_F;                                               
+     END;                                                                       
+  IF FNR_F = (11)'1' THEN                                                       
+      W2_O1_FNR_DØD = (11)'0';                                                  
+      /* AVDØD  FAR ER IKKE OPPGITT  */                                         
+  ELSE                                                                          
+     DO;                                                                        
+      W2_O1_FNR_DØD      = FNR_F;                                               
+      W2_O1_FNR_GML_DØD  = FNR_GML_F;                                           
+      W2_O1_DØDSDATO_DØD = DØDSDATO_ÅMD_F;                                      
+      W2_O1_TKNR_DØD     = TKNR(1);                                             
+      W2_O1_INNT         = PI_F   ;                                             
+      W2_O1_FNR_EK       = FNR_M;                                               
+     END;                                                                       
+  END FB_TRANS;                                                                 
+ %PAGE;                                                                         
+ /*********************************************/                                
+  EP_TRANS:                                                                     
+  PROC;                                                                         
+ %INCLUDE P0010801;       /*  EP_OMR          */                                
+ %PAGE;                                                                         
+  IF EPS.FNR_EK = (11)'1' THEN                                                  
+      /* AVDØD EKTEFELLE ER IKKE OPPGITT */                                     
+      W1_O1_FNR_DØD      = (11)'0';                                             
+  ELSE                                                                          
+     DO;                                                                        
+      W1_O1_FNR_DØD      = EPS.FNR_EK;                                          
+      W1_O1_FNR_GML_DØD  = EPS.FNR_GML_EK;                                      
+      W1_O1_DØDSDATO_DØD = EPS.DØDSDATO_ÅMD_EK;                                 
+      W1_O1_TKNR_DØD     = EPS.TKNR;                                            
+      W1_O1_FNR_EK       = EPS.FNR;                                             
+      W1_O1_INNT         = 9999999;                                             
+     END;                                                                       
+  END EP_TRANS;                                                                 
+ /*********************************************/                                
+ %PAGE;                                                                         
+ /*********************************************/                                
+  E3_TRANS:                                                                     
+  PROC;                                                                         
+ %INCLUDE P001N801;       /*  EP_OMR          */                                
+ %PAGE;                                                                         
+  IF E3S.FNR_EK = (11)'1' THEN                                                  
+      /* AVDØD EKTEFELLE ER IKKE OPPGITT */                                     
+      W1_O1_FNR_DØD      = (11)'0';                                             
+  ELSE                                                                          
+     DO;                                                                        
+      W1_O1_FNR_DØD      = E3S.FNR_EK;                                          
+      W1_O1_FNR_GML_DØD  = E3S.FNR_GML_EK;                                      
+      W1_O1_DØDSDATO_DØD = E3S.DØDSDATO_ÅMD_EK;                                 
+      W1_O1_TKNR_DØD     = E3S.TKNR;                                            
+      W1_O1_FNR_EK       = E3S.FNR;                                             
+      W1_O1_INNT         = 9999999;                                             
+     END;                                                                       
+  END E3_TRANS;                                                                 
+ /*********************************************/                                
+  EE_TRANS:                                                                     
+  PROC;                                                                         
+ %INCLUDE P001U801;       /*  EP_OMR          */                                
+ %PAGE;                                                                         
+  IF EES.FNR_EK = (11)'1' THEN                                                  
+      /* AVDØD EKTEFELLE ER IKKE OPPGITT */                                     
+      W1_O1_FNR_DØD      = (11)'0';                                             
+  ELSE                                                                          
+     DO;                                                                        
+      W1_O1_FNR_DØD      = EES.FNR_EK;                                          
+      W1_O1_FNR_GML_DØD  = EES.FNR_GML_EK;                                      
+      W1_O1_DØDSDATO_DØD = EES.DØDSDATO_ÅMD_EK;                                 
+      W1_O1_TKNR_DØD     = EES.TKNR;                                            
+      W1_O1_FNR_EK       = EES.FNR;                                             
+      W1_O1_INNT         = 9999999;                                             
+     END;                                                                       
+  END EE_TRANS;                                                                 
+ /*********************************************/                                
+  O1_TRANS:                                                                     
+  PROC;                                                                         
+ %INCLUDE P0011601;       /*  O1_OMR          */                                
+  DCL                                                                           
+      W_DØDSDATO_ÅMD                      PIC'99999999',                        
+      W_DØDSDATO_ÅM  DEF W_DØDSDATO_ÅMD POS(1) PIC'999999';                     
+ %PAGE;                                                                         
+  TRANS_OMR.O1 = '';                                                            
+  SAVE_STYREKODE                 = STYREKODE;                                   
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+  IF W1_O1_FNR_DØD = (11)'0' THEN                                               
+     /* AVDØDES FNR ER UOPPGITT */                                              
+     TERMINERINGS_IND = AKSEPTERE;                                              
+  ELSE                                                                          
+     DO;                                                                        
+        O1.FNR_DØD      = W1_O1_FNR_DØD;                                        
+        O1.FNR_GML_DØD  = W1_O1_FNR_GML_DØD;                                    
+        O1.DØDSDATO_ÅMD = W1_O1_DØDSDATO_DØD;                                   
+        O1.TKNR_DØD     = W1_O1_TKNR_DØD;                                       
+        O1.FNR_EK       = W1_O1_FNR_EK;                                         
+        O1.PI_DØD       = W1_O1_INNT;                                           
+ /* ****************************************************************  */        
+ /* LINKER TIL BEHANDLE_TRANS FOR Å BEHANDLE DØDSMELDING              */        
+ /* ****************************************************************  */        
+                                                                                
+        STYREKODE                      = 'O1';                                  
+        TRANS_OPPL_OMR.FØDSNUMMER      = O1.FNR_DØD;                            
+        W_DØDSDATO_ÅMD                 = O1.DØDSDATO_ÅMD;                       
+           W03_DATO_ÅMD          = W_DØDSDATO_ÅMD;                              
+           IF W03_Å > 1990          THEN                                        
+              IF W03_M = 12       THEN                                          
+                 DO;                                                            
+                    W03_Å = W03_Å + 1;                                          
+                    W03_M = 1;                                                  
+                 END;                                                           
+              ELSE                                                              
+                 W03_M = W03_M + 1;                                             
+                                                                                
+        X_DATO   = W03_DATO_ÅMD / 100;                                          
+        X_DATO   = X_DATO * 100;                                                
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = X_DATO;                              
+         /*                                                                     
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = W03_DATO_ÅMD;                        
+        */                                                                      
+        TRANS_OPPL_OMR.BLANKETTYPE     = 'O1';                                  
+                                                                                
+                                                                                
+        EXEC CICS LINK PROGRAM('R0013001') COMMAREA(KOM_OMR);                   
+     END; /*  AVDØDES FNR ER OPPGITT */                                         
+                                                                                
+                                                                                
+ %SKIP(2);                                                                      
+  IF TERMINERINGS_IND = AKSEPTERE THEN                                          
+ /*                                                                   */        
+ /* ********* HVIS FB-BLANKETT ,SKAL OGSÅ EKTEFELLE     BEHANDLES *** */        
+ /*                                                                   */        
+                                                                                
+     IF SAVE_STYREKODE = 'FB' THEN                                              
+        DO;                                                                     
+           IF W2_O1_FNR_DØD = (11)'0' THEN                                      
+              /* AVDØD FARS FNR ER IKKE OPPGITT */                              
+              TERMINERINGS_IND = AKSEPTERE;                                     
+           ELSE                                                                 
+              DO;                                                               
+                 O1.FNR_DØD      = W2_O1_FNR_DØD;                               
+                 O1.FNR_GML_DØD  = W2_O1_FNR_GML_DØD;                           
+                 O1.DØDSDATO_ÅMD = W2_O1_DØDSDATO_DØD;                          
+                 O1.TKNR_DØD     = W2_O1_TKNR_DØD;                              
+                 O1.FNR_EK       = W2_O1_FNR_EK;                                
+                 O1.PI_DØD       = W2_O1_INNT;                                  
+                 TRANS_OPPL_OMR.FØDSNUMMER = O1.FNR_DØD;                        
+                 W_DØDSDATO_ÅMD      = O1.DØDSDATO_ÅMD;                         
+           W03_DATO_ÅMD          = W_DØDSDATO_ÅMD;                              
+           IF W03_Å > 1990          THEN                                        
+              IF W03_M = 12       THEN                                          
+                 DO;                                                            
+                    W03_Å = W03_Å + 1;                                          
+                    W03_M = 1;                                                  
+                 END;                                                           
+              ELSE                                                              
+                 W03_M = W03_M + 1;                                             
+                                                                                
+        X_DATO   = W03_DATO_ÅMD / 100;                                          
+        X_DATO   = X_DATO * 100;                                                
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = X_DATO;                              
+        /*                                                                      
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = W03_DATO_ÅMD;                        
+        */                                                                      
+                 TRANS_OPPL_OMR.BLANKETTYPE     = 'O1';                         
+                 EXEC CICS LINK PROGRAM('R0013001') COMMAREA(KOM_OMR);          
+              END;                                                              
+        END;                                                                    
+  IF TERMINERINGS_IND = AKSEPTERE THEN                                          
+     DO;                                                                        
+ /*                                                                   */        
+ /* ************** DEN OPPRINNELIGE TRANSAKSJONEN BEHANDLES ********* */        
+ /*                                                                   */        
+        KOM_OMR.TRANS_OMR             = SAVE_OMR;                               
+        STYREKODE                     = SAVE_STYREKODE;                         
+        TRANS_OPPL_OMR.FØDSNUMMER     = SAVE_FØDSNUMMER;                        
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = SAVE_VIRKNINGSDATO;                  
+        TRANS_OPPL_OMR.BLANKETTYPE    = SAVE_BLANKETTYPE;                       
+        DIV_PARAM_OMR.REGN_1291       = W_REGN_1291;   /*TRUDE*/                
+                                                                                
+        FREE SAVE_OMR;                                                          
+        EXEC CICS LINK PROGRAM('R0013001') COMMAREA(KOM_OMR);                   
+     END;                                                                       
+ /*******************************************************************/          
+  IF TERMINERINGS_IND = FORKASTE THEN                                           
+ L100:                                                                          
+     DO;                                                                        
+                                                                                
+   /* ENDRET 290188 BF: DERSOM FEILMELDING ER SATT FRA FØR VED  */              
+   /*                   REGISTRERING AV GR.BL. FRA INFOTRYGD OG */              
+   /*                   NORTRYGD, SKAL IKKE NYTT FEILMELDINGS-  */              
+   /*                   NUMMER SETTES.                          */              
+                                                                                
+        IF KJØRINGS_TYPE ^= 'N'  !                 /* 290188 BF */              
+           FEIL_MELD_NR   =  0  THEN               /* 290188 BF */              
+           DO;                                     /* 290188 BF */              
+              FEIL_VED_LABEL = '100';                                           
+              FEIL_MELD_NR   = 225;                                             
+           END;                                    /* 290188 BF */              
+        GO TO L999;                                                             
+     END;                                                                       
+  ELSE                                                                          
+     IF TERMINERINGS_IND = OPPBEVARE THEN                                       
+ L110:                                                                          
+        DO;                                                                     
+           FEIL_VED_LABEL = '110';                                              
+           FEIL_MELD_NR   = 226;                                                
+           GO TO L999;                                                          
+        END;                                                                    
+ %SKIP(5);                                                                      
+  END O1_TRANS;                                                                 
+ %PAGE;                                                                         
+ L999:                                                                          
+  EXEC CICS RETURN;                                                             
+ %SKIP(2);                                                                      
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ END R001220;                                                                   

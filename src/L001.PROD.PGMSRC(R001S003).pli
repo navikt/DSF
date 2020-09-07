@@ -1,0 +1,749 @@
+ /*   SIST ENDRET PÅ PROD   2002.01.23 14.12.13 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.10.22 13.31.49 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.08.15  9.08.47 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.03.15 15.26.29 AV   SPA7339          */        
+ /*       SIST ENDRET 24/11-98 15.08.28 AV   JDA7339                  */        
+ /*       SIST ENDRET 24/11-98 15.07.37 AV   JDA7339                  */        
+ /*       SIST ENDRET 02/09-98 11.58.30 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /*               R 0 0 1 S 0 0 3                                     */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R001S003 -                                       */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : PATAHK                                           */        
+ /*  PROGRAMMET BLE LAGET  ?                                          */        
+ /*  ENDRINGERSDATO :                                                 */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  PROGRAMMET KONTROLLERER REGISTERING AV YRKESKODE                 */        
+ /*   KONTROLLERE     FNR  OG YRKESKODE                               */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMETS TRANSKODER ER R3S0, R3S1                             */        
+ /*  PROGRAMMET KALLES FRA R0010301 - REGISTRERING MED TRANSKODE      */        
+ /*  R3S1:                                                            */        
+ /*    EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR)          */        
+ /*    S0010063:                                                      */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ R001S3:PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                     
+                                                                                
+    %INCLUDE S001S3;   /* UP-MAPSETTET                                */        
+    %INCLUDE P0019906; /* TRANS_OPPL_OMRÅDE (BASED)                   */        
+    %INCLUDE P0019908; /* TRANS_OMRÅDE (BASED)                        */        
+    %INCLUDE P0019910; /* STYRINGS_OMRÅDE (BASED)                     */        
+    %INCLUDE P0019912; /* DIV-PARAM_OMRÅDE (BASED)                    */        
+    %INCLUDE DFHBMSCA;                                                          
+                                                                                
+    DCL                                                                         
+       (BMSMAPBR,COMMAREA_PEKER) PTR;                                           
+                                                                                
+ /* NULLET UT ETTER KONF. MED PATHAK 10.08.2000 MARTIN */                       
+ /* DCL PLIXOPT CHAR(13) VAR STATIC EXTERNAL INIT(                              
+                                                'NOSPIE NOSTAE')                
+ /* NULLET UT ETTER KONF. MED PATHAK 10.08.2000 MARTIN */                       
+                                                                                
+ %INCLUDE P0012002;   /* PCB - PEKER - OMR    */                                
+       DCL 1  RF1              BASED (RF1_PCB_PEKER),                           
+                                                                                
+ %INCLUDE P0012003;                         /* PCB                 */           
+                                                                                
+  DCL                                                                           
+     W01_PSB_NAVN                CHAR (8)       INIT('B001S001');               
+  /* W01_PSB_NAVN                CHAR (8)   INIT('B000R001');   */              
+  DCL                                                                           
+     PLITDLI ENTRY;                                                             
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   ARBEIDSFELTER SOM BRUKES AV UIB (USER INTERFACE BLOCK)       */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+    %INCLUDE DLIUIB;                                                            
+                                                                                
+       DCL 1 RF0PERSN BASED (IO_PEKER),                                         
+    %INCLUDE P0019927;                              /* RF0PERS-SEGM. */         
+                                                                                
+       DCL 1 STATUS BASED (IO_PEKER),                                           
+    %INCLUDE P0019930;                              /* STATUSP-SEGM. */         
+                                                                                
+       DCL 1 GRUNNBUP BASED (IO_PEKER),                                         
+    %INCLUDE P0019942;                            /* GRUNNBUP-SEGM. */          
+       DCL 1 GRUNNBU2 BASED (IO_PEKER),                                         
+    %INCLUDE P0019N42;                            /* GRUNNBU2-SEGM. */          
+       DCL 1 GRUNNBU3 BASED (IO_PEKER),                                         
+    %INCLUDE P0019U42;                            /* GRUNNBU3-SEGM. */          
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   DLI CALL-PARAMETRE + ANDRE KODER .                           */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+ DCL 1  W01_DLI_PARAM,                                                          
+              2   W02_GET                 CHAR (4)   INIT ('    '),             
+              2   W02_GU                  CHAR (4)   INIT ('GU  '),             
+              2   W02_GHNP                CHAR (4)   INIT ('GHNP'),             
+              2   W02_GHU                 CHAR (4)   INIT ('GHU '),             
+              2   W02_REPL                CHAR (4)   INIT ('REPL'),             
+              2   W02_GN                  CHAR (4)   INIT ('GN  '),             
+              2   W02_PARM_CT_1     FIXED BIN  (31)  INIT (1),                  
+              2   W02_PARM_CT_3     FIXED BIN  (31)  INIT (3),                  
+              2   W02_PARM_CT_4     FIXED BIN  (31)  INIT (4),                  
+              2   W02_PARM_CT_5     FIXED BIN  (31)  INIT (5);                  
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   DL1 SSA-OMRÅDER FOR ROT OG STATUS-SEGMENTER.                 */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+ DCL    SSA_UQUAL              STATIC      CHAR (9) INIT ((9)' ');              
+ DCL    SSA_UQUAL_STATUS       STATIC      CHAR (9) INIT ('STATUS   ');         
+                                                                                
+ DCL 1  SSA1_RF0PERSN          STATIC,                                          
+        2    HDEL                          CHAR (17)  INIT                      
+             ('RF0PERSN(FNR     '),                                             
+        2    REL_OP                        CHAR (2)   INIT (' ='),              
+        2    PKEY               FIXED      DEC  (11)  INIT ( 0  ),              
+        2    HP                            CHAR (1)   INIT (')' );              
+                                                                                
+    DCL 1 SSA1_STATUS,                                                          
+           2 SSA_STATUS_FELT   CHAR(9) INIT ('STATUS  ('),                      
+           2 FELT1             CHAR(8)  INIT ('STATKODE'),                      
+           2 RELOOP1           CHAR(2)  INIT (' ='),                            
+           2 SSA_STATUS_KODE   CHAR(1)  INIT ('S'),                             
+           2 HØYRE_PARENTES    CHAR(1)  INIT (')');                             
+                                                                                
+                                                                                
+       DCL 1  SSA1_TRANHIST                   ,                                 
+              2    HDEL                       CHAR (19)  INIT                   
+                                                ('TRANHIST*P(GRBLKODE'),        
+              2    REL_OP_1                   CHAR (2)   INIT ('^='),           
+              2    GRBLKODE                   CHAR (2)   INIT ('US'),           
+              2    HP                         CHAR (1)   INIT (')');            
+                                                                                
+                                                                                
+    DCL                                                                         
+       (ADDR,UNSPEC,CSTG,ONCODE,VERIFY,SUBSTR) BUILTIN;                         
+   DCL END_OF_ROOT          BIT   (1) INIT ('0'B);                              
+   DCL                                                                          
+      (FEIL_FUNNET,FEIL19,FEIL20) BIT(1),                                       
+      FEIL_I_SØKER                BIT(1),                                       
+      FEIL_I_BARN                 BIT(1),                                       
+      FEIL_I_SPES                 BIT(1),                                       
+      ONKODE                      PIC'9999',                                    
+      CURSOR_POS                  FIXED BIN(15) INIT(-1),                       
+      ONK DEF ONKODE              CHAR(4),                                      
+      FEILKODE                    CHAR(4),                                      
+      W_STATUS                    CHAR(4),                                      
+      DSNAVN                      CHAR(8),                                      
+      IO_AREA                     CHAR(300),                                    
+      ANT_FEIL_SKREVET            FIXED DEC (3),                                
+      ANT_BARN                    FIXED BIN(15);                                
+                                                                                
+    DCL IO_PEKER                 POINTER;                                       
+    DCL Y_LOGG                   POINTER;                                       
+    DCL MAP_MELDING              CHAR (78);                                     
+    DCL CUR                      CHAR (78);                                     
+                                                                                
+    DCL   1 S1,                                                                 
+            4  FNRNR           FIXED DEC (5),                                   
+            4  FNR             PIC '(11)9',                                     
+            4  FNR_GML         PIC '(11)9',                                     
+            4  YRKESKODENR     FIXED DEC (5),                                   
+            4  YRKESKODE       PIC '(02)9';                                     
+                                                                                
+   DCL   1  YKODE_REC,                                                          
+            2 FNR            FIXED DEC(11),                                     
+            2 YKODE          PIC '99';                                          
+                                                                                
+ %PAGE;                                                                         
+                                                                                
+ FEILKODE  = 'FEIL';                                                            
+ DSNAVN    = '        ';                                                        
+                                                                                
+ EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                                     
+                                                                                
+                                                                                
+    KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);         
+                                                                                
+    KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);        
+    KOM_OMR.PEKER_LISTE.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);             
+    KOM_OMR.PEKER_LISTE.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);          
+    IO_PEKER                             = ADDR (IO_AREA);                      
+    ATK_KOM_PTR           = ADDR  (KOM_OMR.ATK_COM_OMR  ) ;                     
+                                                                                
+                                                                                
+ IF HENT_FRAM_MAP  THEN                                                         
+   DO;                                                                          
+     ALLOCATE S001S03O;                                                         
+     S001S03O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN;                             
+     EXEC CICS SEND MAP('S001S03') MAPSET('S001S33')                            
+                                              ERASE;                            
+     HENT_FRAM_MAP = '1'B;                                                      
+   END;                                                                         
+                                                                                
+ RECEIVE_MAP:                                                                   
+                                                                                
+                                                                                
+ IF ^HENT_FRAM_MAP THEN                                                         
+    DO;                                                                         
+       EXEC CICS RECEIVE MAP('S001S03')                                         
+                 MAPSET('S001S33') SET(BMSMAPBR);                               
+       FEIL_MELD_NR = 0;                                                        
+    END;                                                                        
+                                                                                
+ IF FUNKSJONKODEL > 0 THEN                                                      
+    DO;                                                                         
+       FUNKSJONSKODE = FUNKSJONKODEI;                                           
+       IF FUNKSJONSKODE ^= 'Y'  THEN                                            
+          DO;                                                                   
+             FRA_CICS = '1'B;                                                   
+             TRANSKODE = 'R031';                                                
+             EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);              
+         END;                                                                   
+                                                                                
+    END;                                                                        
+                                                                                
+                                                                                
+ IF FUNKSJONSKODE ^= 'Y'  &  FRA_CICS THEN                                      
+    TRANSKODE = 'R031';                                                         
+                                                                                
+ ELSE                                                                           
+  DO;                                                                           
+                                                                                
+   ANT_FEIL_SKREVET = 0;                                                        
+   FEIL_FUNNET      = '0'B;                                                     
+   FEIL_MELD_NR     = 0;                                                        
+   TRANS_RETURKODE  = TRANSKODE;                                                
+                                                                                
+   SELECT (TRANSKODE);                                                          
+      WHEN('R3S0')                                                              
+        DO;                                                                     
+            CALL BLANK_S1_SØKER;                 /* R0010502 */                 
+            CALL BLANK_S1_MELDNR;                /* R0010502 */                 
+            CALL OVERFØR_S1_SØKER;               /* R0010509 */                 
+            CALL KONTROLL_S1_SØKER(FEIL_FUNNET);/* R0010503 */                  
+        END;                                                                    
+     WHEN('R3S1')                                                               
+        DO;                                                                     
+            CALL BLANK_S1_MELDNR;                /* R0010502 */                 
+            CALL OVERFØR_S1_SØKER;               /* R0010509 */                 
+            CALL KONTROLL_S1_SØKER(FEIL_FUNNET);/* R0010503 */                  
+        END;                                                                    
+    OTHERWISE;                                                                  
+        END;                                                                    
+                                                                                
+   IF ^FEIL_FUNNET THEN                                                         
+       DO;                                                                      
+         CALL OPPDATE_DATABASE;                                                 
+                                                                                
+         IF ^FEIL_FUNNET THEN                                                   
+             DO;                                                                
+               YKODE_REC.FNR = S1.FNR;                                          
+               YKODE_REC.YKODE = S1.YRKESKODE;                                  
+               EXEC CICS WRITE DATASET ('DSFYKODE')                             
+                               FROM    (YKODE_REC)                              
+                               RIDFLD  (Y_LOGG) RBA;                            
+                                                                                
+               CALL BLANK_S1_MAP;                                               
+               TRANSKODE        = 'R3S0';                                       
+               HENT_FRAM_MAP = '0'B;                                            
+               S001S03I.FNRL          = CURSOR_POS;                             
+               S001S03O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN;                   
+               EXEC CICS SEND MAP('S001S03') MAPSET('S001S33')                  
+                                   ERASE  CURSOR;                               
+            END;                                                                
+     END;                                                                       
+                                                                                
+                                                                                
+   IF FEIL_FUNNET THEN                                                          
+      DO;                                                                       
+         IF TRANSKODE = 'R3S0' THEN                                             
+            TRANSKODE = 'R3S1';                                                 
+         CALL BLANK_S1_MAP;                                                     
+         CALL OVERFØR_S1SØKER_MAP;                                              
+                                                                                
+         S001S03O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN;                         
+                                                                                
+         EXEC CICS SEND MAP('S001S03') MAPSET('S001S33')                        
+                                   ERASE    CURSOR;                             
+         FEIL_MELD_NR  = 666;/* => FEIL_FUNNET ER SATT. */                      
+                                                                                
+         HENT_FRAM_MAP = '0'B;                                                  
+         GO TO RECEIVE_MAP;                                                     
+     END;                                                                       
+  END;                                                                          
+                                                                                
+                                                                                
+      EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);                    
+                                                                                
+  FEILBEH:                                                                      
+                                                                                
+     EXEC CICS HANDLE CONDITION ERROR(ABEND);                                   
+                                                                                
+       S001S03O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN;                           
+     IF FEIL_MELD_NR    =   0  THEN /*AB 10.09.01 */                            
+        PROGRAM_ID = 'R001S003';                                                
+                                                                                
+     S001S03O.MELDING2O =                                                       
+              'F E I L  H A R  O P P S T Å T T ! ! !.';                         
+                                                                                
+     S001S03O.MELDING3O =                                                       
+              'EIBRCODE : ' !! UNSPEC(EIBRCODE);                                
+                                                                                
+     S001S03O.MELDING4O =                                                       
+       'EIBFN    : ' !! UNSPEC(EIBFN) !! '. FEILKODE : ' !! FEILKODE !!         
+                                            '. DATASETT : ' !! DSNAVN;          
+                                                                                
+     S001S03O.MELDING5O =                                                       
+                   'PROGRAMNAVN :  ' !! PROGRAM_ID    !!                        
+                   '.INGEN OPPDATERING ER BLITT UTFØRT.';                       
+                                                                                
+                                                                                
+     EXEC CICS SEND MAP('S001S03')                                              
+                                                 MAPSET('S001S33');             
+                                                                                
+     EXEC CICS RECEIVE MAP('S001S03')                                           
+                                    MAPSET('S001S33') SET(BMSMAPBR);            
+                                                                                
+                                                                                
+     EXEC CICS SYNCPOINT ROLLBACK;                                              
+                                                                                
+                                                                                
+     TERMINERINGS_IND = 'F';                                                    
+                                                                                
+     TRANSKODE  = 'R041';                                                       
+                                                                                
+      EXEC CICS RETURN;                                                         
+                                                                                
+  ABEND:                                                                        
+     EXEC CICS ABEND ABCODE(FEILKODE);                                          
+                                                                                
+     TRANSKODE = 'R041';                                                        
+      EXEC CICS RETURN;                                                         
+                                                                                
+ /* ***************************************************************** */        
+ BLANK_S1_SØKER:                                                                
+   PROC OPTIONS(REENTRANT);                                                     
+      S1.FNR          = 0;                                                      
+      S1.YRKESKODE    = 0;                                                      
+   END BLANK_S1_SØKER;                                                          
+                                                                                
+ BLANK_S1_MELDNR:                                                               
+   PROC;                                                                        
+      S1.FNRNR          = 0;                                                    
+      S1.YRKESKODENR    = 0;                                                    
+   END BLANK_S1_MELDNR;                                                         
+                                                                                
+                                                                                
+ KONTROLL_S1_SØKER:   PROC (FEIL_S);                                            
+ DCL FEIL_S             BIT (1);                                                
+   DCL                                                                          
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),                     
+      KEY_PEKER                  POINTER,                                       
+      TK_RECL                    CHAR (101);                                    
+ %SKIP;                                                                         
+   DCL                                                                          
+      1 FNR_REG,                                                                
+        2 FNR1                                  FIXED DEC(11),                  
+        2 FNR2                                  FIXED DEC(11),                  
+        2 BRUKERID                              CHAR     ( 4),                  
+                                                                                
+      ALDER                                     FIXED DEC (7);                  
+ %SKIP;                                                                         
+   DCL                                                                          
+      W_FNR                                     PIC'(11)9',                     
+      W_YRKESKODE                               PIC'(2)9';                      
+                                                                                
+                                                                                
+                                                                                
+   W_FNR     = S1.FNR;                                                          
+   W_YRKESKODE   = S1.YRKESKODE;                                                
+                                                                                
+                                                                                
+    IF ^F_NUMERISK(S1.FNR) THEN                                                 
+       DO;                                                                      
+          FEIL_S = '1'B;                                                        
+          S1.FNRNR    = 200;                                                    
+       END;                                                                     
+    ELSE                                                                        
+       IF ^F_GYLDIG_FNR(S1.FNR) THEN                                            
+          DO;                                                                   
+             FEIL_S = '1'B;                                                     
+             S1.FNRNR    = 1;                                                   
+          END;                                                                  
+       ELSE                                                                     
+          DO;                                                                   
+             FNR_REG.BRUKERID =   DIV_PARAM_OMR.CICS_IND;                       
+             FNR_REG.FNR1     =   S1.FNR;                                       
+                                                                                
+             EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);              
+                                                                                
+             IF FNR_REG.FNR2 > 0 THEN                                           
+                DO;                                                             
+                   S1.FNRNR    = 203;                                           
+                   S1.FNR_GML = S1.FNR;                                         
+                   S1.FNR      = FNR_REG.FNR2;                                  
+                END;                                                            
+          END;                                                                  
+                                                                                
+      IF  S1.YRKESKODE = 0 !                                                    
+          (S1.YRKESKODE > 10 &                                                  
+           S1.YRKESKODE < 20)  THEN;                                            
+      ELSE                                                                      
+        DO;                                                                     
+           FEIL_S = '1'B;                                                       
+           S1.YRKESKODENR = 0042;                                               
+        END;                                                                    
+   END KONTROLL_S1_SØKER;                                                       
+                                                                                
+                                                                                
+ OVERFØR_S1SØKER_MAP:                                                           
+   PROC;                                                                        
+   DCL                                                                          
+      NORMAL  CHAR (1) INIT(' '),                                               
+      NOR_NUM CHAR (1) INIT('&'),                                               
+      BRI_NUM CHAR (1) INIT('Q');                                               
+                                                                                
+      S001S03O.FNRO          = S1.FNR ;                                         
+      S001S03O.YRKESKODEO    = S1.YRKESKODE;                                    
+ %SKIP(2);                                                                      
+      S001S03O.DUMMYA = '_';                                                    
+                                                                                
+                                                                                
+       IF ^ FRA_CICS THEN                                                       
+          DO;                                                                   
+            IF FEIL_MELD_NR > 0 THEN                                            
+               CALL SKRIV_FEIL(FEIL_MELD_NR);                                   
+             FEIL_MELD_NR = 0;                                                  
+          END;                                                                  
+                                                                                
+                                                                                
+      IF S1.FNRNR = 0 THEN                                                      
+         S001S03O.FNRA = NOR_NUM;                                               
+      ELSE                                                                      
+         DO;                                                                    
+            S001S03O.FNRA = BRI_NUM;                                            
+            S001S03I.FNRL = CURSOR_POS;                                         
+            IF S1.FNRNR ^= 999 THEN                                             
+               CALL SKRIV_FEIL(S1.FNRNR);                                       
+         END;                                                                   
+                                                                                
+                                                                                
+      IF S1.YRKESKODENR = 0 THEN                                                
+         S001S03O.YRKESKODEA = NOR_NUM;                                         
+      ELSE                                                                      
+         DO;                                                                    
+            S001S03O.YRKESKODEA     = BRI_NUM;                                  
+            S001S03I.YRKESKODEL     = CURSOR_POS;                               
+            IF S1.YRKESKODENR ^= 999 THEN                                       
+               CALL SKRIV_FEIL(S1.YRKESKODENR);                                 
+         END;                                                                   
+                                                                                
+      IF FRA_UTEN_DIALOG THEN                                                   
+        DO;                                                                     
+          S001S03O.FNRA          = DFHBMASK;                                    
+          S001S03O.YRKESKODEA    = DFHBMASK;                                    
+        END;                                                                    
+                                                                                
+                                                                                
+   END OVERFØR_S1SØKER_MAP;                                                     
+                                       /*    */                                 
+                                                                                
+ BLANK_S1_MAP:                                                                  
+   PROC;                                                                        
+    DCL                                                                         
+      LOW BUILTIN;                                                              
+      FNRO          = LOW(11);                                                  
+      YRKESKODEO    = LOW(2);                                                   
+      MELDING1O     = (78)' ';                                                  
+      MELDING2O     = (78)' ';                                                  
+      MELDING3O     = (78)' ';                                                  
+      MELDING4O     = (78)' ';                                                  
+      MELDING5O     = (78)' ';                                                  
+   END BLANK_S1_MAP;                                                            
+                                                                                
+ OVERFØR_S1_SØKER:                                                              
+   PROC;                                                                        
+      IF FNRL > 0 THEN                                                          
+         S1.FNR          = FNRI ;                                               
+                                                                                
+      IF YRKESKODEL > 0 THEN                                                    
+         S1.YRKESKODE    = YRKESKODEI ;                                         
+                                                                                
+   END OVERFØR_S1_SØKER;                                                        
+                                                                                
+                                                                                
+  OPPDATE_DATABASE: PROC;                                                       
+   CALL DATABASE('CLOSE');                                                      
+   CALL DATABASE('OPEN');                                                       
+                                                                                
+   W02_GET = W02_GU;                                                            
+   CALL P_LES_DBD_GU;                                                           
+   BO_TKNR  = RF0PERSN.TKNR;                                                    
+   IF ^FEIL_FUNNET                   &                                          
+       DIV_PARAM_OMR.FEIL_MELD_NR = 0 &                                         
+        (SUBSTR(DIV_PARAM_OMR.CICS_NAVN,5,4) = 'P001' !                         
+        SUBSTR(DIV_PARAM_OMR.CICS_NAVN,5,4) = 'ACF2' )  THEN                    
+        DO;                                                                     
+            CALL  KONTROLL_ACF2;                                                
+            IF FEIL_MELD_NR    >  0  THEN                                       
+               DO;                                                              
+                  FEIL_FUNNET = '1'B;                                           
+                  CALL SKRIV_FEIL(FEIL_MELD_NR);                                
+                                                                                
+               END;                                                             
+         END;                                                                   
+                                                                                
+                                                                                
+   W02_GET = W02_GHNP;                                                          
+                                                                                
+   IF ^FEIL_FUNNET   THEN                                                       
+      DO;                                                                       
+          DO WHILE (^END_OF_ROOT & ^FEIL_FUNNET);                               
+           SELECT (RF1.SEGM_NAVN);                                              
+             WHEN ('RF0PERSN')                                                  
+                DO;                                                             
+                  IF S1.FNR ^= RF0PERSN.FNR THEN                                
+                    END_OF_ROOT = '1'B;                                         
+                END;                                                            
+              WHEN ('STATUS  ')                                                 
+                DO;                                                             
+                  IF STATUS.STATUS_KODE = 'S' THEN                              
+                   DO;                                                          
+                      STATUS.YRKES_KODE = S1.YRKESKODE;                         
+                      CALL REP_SEGMENT;                                         
+                   END;                                                         
+                END;                                                            
+                                                                                
+            WHEN ('TRANHIST')                                                   
+                DO;                                                             
+                                                                                
+                END;                                                            
+                                                                                
+                                                                                
+            WHEN ('GRUNNBUP')                                                   
+              DO;                                                               
+               GRUNNBUP.YRKE = S1.YRKESKODE ;                                   
+               CALL REP_SEGMENT;                                                
+              END;                                                              
+           WHEN ('GRUNNBU2')                                                    
+            DO;                                                                 
+               GRUNNBU2.YRKE = S1.YRKESKODE ;                                   
+               CALL REP_SEGMENT;                                                
+            END;                                                                
+        WHEN ('GRUNNBU3')                                                       
+          DO;                                                                   
+               GRUNNBU3.YRKE = S1.YRKESKODE ;                                   
+               CALL REP_SEGMENT;                                                
+          END;                                                                  
+        OTHERWISE;                                                              
+          END;                                  /*  END SELECT     */           
+                                                                                
+       CALL P_LES_DBD_GHNP;                                                     
+                                                                                
+      END;                                  /*  END DO WHILE    */              
+   END;                                         /*  END IF          */          
+                                                                                
+                                                                                
+  END OPPDATE_DATABASE;                                                         
+                                                                                
+  /* *********************************************************** */             
+  /* LES ROT MED KVALIFI-FNR                                     */             
+  /* *********************************************************** */             
+  P_LES_DBD_GU: PROC;                                                           
+                                                                                
+   SSA1_RF0PERSN.PKEY  = S1.FNR;                                                
+   CALL PLITDLI                         (W02_PARM_CT_4,                         
+                                         W02_GET,                               
+                                         RF1,                                   
+                                         IO_AREA,                               
+                                         SSA1_RF0PERSN);                        
+                                                                                
+   W_STATUS = RF1.STATUS_KODE;                                                  
+   IF  UIBFCTR                    =     '00000000'B   THEN                      
+       DO;                                                                      
+          SELECT ( RF1.STATUS_KODE );                                           
+                                                                                
+            WHEN ( '  ' )                                                       
+              DO;                                                               
+                 END_OF_ROOT = '0'B;                                            
+              END;                                                              
+            OTHERWISE                                                           
+              DO;                                                               
+               END_OF_ROOT = '1'B;                                              
+               FEIL_FUNNET = '1'B;                                              
+               S1.FNRNR =  0501 ;                                               
+              END;                                                              
+           END;                                                                 
+       END;                                                                     
+      ELSE                                                                      
+        DO;                                                                     
+               END_OF_ROOT = '1'B;                                              
+          /* ************************************************** */              
+          /*   UIB'S RETUR-CODE ER UAKSEPTABEL                  */              
+          /* ************************************************** */              
+                                                                                
+             MAP_MELDING = 'NOE ER GALT MED DATABASEN PÅ *GU*      '            
+                      !!'YRKESKODEER,:' !! UNSPEC(UIBFCTR) !! ' '               
+                                           !! UNSPEC(UIBDLTR);                  
+                                 FEIL_FUNNET = '1'B;                            
+        END;                                                                    
+                                                                                
+                                                                                
+  END P_LES_DBD_GU;                                                             
+                                                                                
+  /* *********************************************************** */             
+  /* LES ALLE SEGMENT UNDER ROOT                                 */             
+  /* *********************************************************** */             
+  P_LES_DBD_GHNP: PROC;                                                         
+                                                                                
+   CALL PLITDLI                         (W02_PARM_CT_3,                         
+                                         W02_GET,                               
+                                         RF1,                                   
+                                         IO_AREA);                              
+                                                                                
+   W_STATUS = RF1.STATUS_KODE;                                                  
+   IF  UIBFCTR                    =     '00000000'B   THEN                      
+       DO;                                                                      
+          SELECT ( RF1.STATUS_KODE );                                           
+                                                                                
+            WHEN ( '  ' , 'GK', 'GA')                                           
+              DO;                                                               
+                 END_OF_ROOT = '0'B;                                            
+              END;                                                              
+            WHEN ( 'GE','GB')                                                   
+              DO;                                                               
+                 END_OF_ROOT = '1'B;                                            
+              END;                                                              
+            OTHERWISE                                                           
+              DO;                                                               
+               END_OF_ROOT = '1'B;                                              
+               FEIL_FUNNET = '1'B;                                              
+               S1.FNRNR =  0501 ;                                               
+              END;                                                              
+           END;                                                                 
+       END;                                                                     
+      ELSE                                                                      
+        DO;                                                                     
+               END_OF_ROOT = '1'B;                                              
+          /* ************************************************** */              
+          /*   UIB'S RETUR-CODE ER UAKSEPTABEL                  */              
+          /* ************************************************** */              
+                                                                                
+             MAP_MELDING = 'NOE ER GALT MED DATABASEN PÅ GHNP      '            
+                      !!'YRKESKODEER,:' !! UNSPEC(UIBFCTR) !! ' '               
+                                           !! UNSPEC(UIBDLTR);                  
+                                 FEIL_FUNNET = '1'B;                            
+        END;                                                                    
+                                                                                
+                                                                                
+  END P_LES_DBD_GHNP;                                                           
+                                                                                
+  /* ******************************************************** */                
+  /* REPLACE SISTE LES SEGMENT I DBD                          */                
+  /* ******************************************************** */                
+                                                                                
+  REP_SEGMENT: PROC;                                                            
+                                                                                
+   CALL PLITDLI                         (W02_PARM_CT_3,                         
+                                         W02_REPL,                              
+                                         RF1,                                   
+                                         IO_AREA);                              
+                                                                                
+                                                                                
+   W_STATUS = RF1.STATUS_KODE;                                                  
+   IF  UIBFCTR                    =     '00000000'B   THEN                      
+       DO;                                                                      
+          SELECT ( RF1.STATUS_KODE );                                           
+                                                                                
+            WHEN ( '  ' )                                                       
+              DO;                                                               
+                 END_OF_ROOT = '0'B;                                            
+              END;                                                              
+            OTHERWISE                                                           
+              DO;                                                               
+               END_OF_ROOT = '1'B;                                              
+               FEIL_FUNNET = '1'B;                                              
+               S1.FNRNR =  0501 ;                                               
+              END;                                                              
+           END;                                                                 
+       END;                                                                     
+      ELSE                                                                      
+        DO;                                                                     
+               END_OF_ROOT = '1'B;                                              
+          /* ************************************************** */              
+          /*   UIB'S RETUR-CODE ER UAKSEPTABEL                  */              
+          /* ************************************************** */              
+                                                                                
+             MAP_MELDING = 'NOE ER GALT MED DATABASEN PÅ  *REPL*   '            
+                      !!'YRKESKODEER,:' !! UNSPEC(UIBFCTR) !! ' '               
+                                           !! UNSPEC(UIBDLTR);                  
+                                 FEIL_FUNNET = '1'B;                            
+        END;                                                                    
+                                                                                
+                                                                                
+  END REP_SEGMENT;                                                              
+                                                                                
+                                                                                
+                                                                                
+    /* -------------------------------------------------------------- */        
+                                                                                
+    DATABASE:PROC(STYRING);                                                     
+   DCL                                                                          
+     STYRING                               CHAR(5),                             
+     NULL                                  BUILTIN,                             
+     UNSPEC                                BUILTIN;                             
+     DCL                                                                        
+       W01_PCB_FUNCTION            CHAR (4)       INIT('PCB ');                 
+     DCL                                                                        
+       W01_TERM_FUNCTION           CHAR (4)       INIT('TERM');                 
+                                                                                
+     IF STYRING = 'OPEN' THEN                                                   
+        DO;                                                                     
+           CALL   PLITDLI                        (W02_PARM_CT_3,                
+                                                  W01_PCB_FUNCTION,             
+                                                  W01_PSB_NAVN,                 
+                                                  UIBPTR);                      
+                                                                                
+           IF DLIUIB.UIBFCTR                    =    '00000000'B THEN           
+             DO;                                                                
+               ALLOCATE PCB_UIB_PEKER_OMR;                                      
+               PCB_UIB_PEKER_OMR.PCB_PEKER      =    UIBPCBAL;                  
+               PCB_UIB_PEKER_OMR.UIB_PEKER      =    UIBPTR;                    
+             END;                                                               
+           ELSE                                                                 
+             DO;                                                                
+               MAP_MELDING =                                                    
+               'NOE ER GALT MED DATABASEN, KODE: ' !!                           
+               UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);                       
+             END;                                                               
+        END;                                                                    
+     ELSE                                                                       
+        DO;                                                                     
+           CALL   PLITDLI                        (W02_PARM_CT_1,                
+                                                  W01_TERM_FUNCTION);           
+           KOM_OMR.PCB_UIB_PEKER = NULL;                                        
+        END;                                                                    
+                                                                                
+ END DATABASE;                                                                  
+    /* -------------------------------------------------------------- */        
+ /* %INCLUDE R0019920;    DATABASE                                    */        
+    %INCLUDE R0019904; /* FØDSELSNUMMERKONTROLL                       */        
+    %INCLUDE R0019910; /* NUMERISK KONTROLL                           */        
+    %INCLUDE R0019911; /* DATO KONTROLL                               */        
+ /* %INCLUDE R0019912     KONVERTERING CHAR ==> PIC                   */        
+    %INCLUDE R0019944; /* SKRIV_FEIL                                  */        
+    %INCLUDE R0019999; /* ACF2 KONTROLL                               */        
+    /* -------------------------------------------------------------- */        
+ END R001S3;                                                                    

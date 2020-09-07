@@ -1,0 +1,349 @@
+ /*   SIST ENDRET PÅ PROD   2003.02.27 12.42.10 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2002.11.21 13.33.57 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2002.01.08 11.38.14 AV   JDA2970          */        
+                                                                                
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0019928 - HOVEDPROGRAM I PLI                                  */        
+ /*    PROGRAMMERER: KRISTENSEN, MARS 1982                            */        
+ /*    PROGRAMMET ER TOTALT ENDRET AV HANSEN & FARVIK OKT -82.        */        
+ /*HENSIKT:                                                           */        
+ /*    PROGRAMMET INITIERER ET ELEMENT AV B01 OG LINKER INN DE        */        
+ /*    AKTUELLE PROGRAM SOM LESER INFORMASJON FRA BASEN OG INN I B01, */        
+ /*    STATUS FOR PERSON BLIR OPPRETTET.                              */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROGRAMMET BLIR LINKET .                                                 
+ /*BRUK:                                                              */        
+ /*    EXEC CICS LINK PROGRAM('R0019928') COMMAREA(KOM_OMR);          */        
+ /* ***************************************************************** */        
+                                                                                
+ R001992: PROC(COMMAREA_PEKER) OPTIONS (MAIN);                                  
+                                                                                
+                                                                                
+ DCL                                                                            
+   1 B01  BASED                     (B01_PEKER),                                
+ %INCLUDE P0019921;                 /* B01-OMRÅDE (BASED)           */          
+                                                                                
+ %INCLUDE P0019906;                 /* TRANS_OPPL_OMR (BASED)       */          
+                                                                                
+ %INCLUDE P0019908;                 /* KOM-OMRÅDE (BASED)           */          
+                                                                                
+ DCL                                                                            
+   1 TRANS_LISTE_OMR  UNAL   BASED  (TRANS_LISTE_PEKER),                        
+     3  TRANS_LISTE_LINJE (5),                                                  
+ %INCLUDE P0019911;                 /* TRANS-LISTE-OMRÅDE UNDERNIVÅ */          
+                                                                                
+ DCL                                                                            
+   1 WORK_TRANS_LISTE UNAL BASED (WORK_TRANS_LISTE_PEKER),                      
+ %INCLUDE P0019911;  /* TRANS-LISTE-OMRÅDE UNDERNIVÅ)*/                         
+                                                                                
+ %INCLUDE P0019912;                 /* DIV-PARAM-OMRÅDE (BASED)     */          
+                                                                                
+                                                                                
+ DCL                                                                            
+    (ADDR,CSTG,VERIFY)          BUILTIN;                                        
+                                                                                
+ DCL                                                                            
+   COMMAREA_PEKER               PTR;                                            
+                                                                                
+ DCL                                                                            
+   W_TRANS_IKKE_FUNNET          BIT       (1)     INIT  ('1'B);                 
+                                                                                
+ DCL                                                                            
+   (I,J,B01_IND,FORSØRGER_POS_I_B01,T_IND)                                      
+                                                                                
+                                FIXED BIN (15)    INIT  ( 0 ) ;                 
+                                                                                
+                                                                                
+                                                                                
+ /* *************************************************************/              
+ /* ****                                                  ***** */              
+ /* ****         EKSEKVERING  STARTER                     ***** */              
+ /* ****                                                  ***** */              
+ /* *************************************************************/              
+                                                                                
+   IF FEIL_MELD_NR    =   0  THEN /*AB 10.09.01 */                              
+   PROGRAM_ID                      =   'R0019928'                 ;             
+                                                                                
+   B01.PERSON (POS_I_B01)          =   ''                         ;             
+   B01_IND                         =   POS_I_B01                  ;             
+                                                                                
+   STATUS_TYPE                     =   ' '                        ;             
+   ØNSKET_STATUS                   =   ' '                        ;             
+   DIV_PARAM_OMR.TRANS_VIRKDATO_ÅMD  = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD;        
+                                                                                
+   IF ANTALL_TRANS_I_TRANS_LISTE   >   1    THEN                                
+      T_IND                        = ANTALL_TRANS_I_TRANS_LISTE + 1;            
+   ELSE                                                                         
+      T_IND                        =   2                          ;             
+                                                                                
+                                                                                
+   EXEC CICS LINK PROGRAM('R0013110') COMMAREA(KOM_OMR)           ;             
+                                                                                
+   IF FEIL_MELD_NR > 0 THEN                                                     
+      GO TO L999;                                                               
+   ELSE                                                                         
+      PROGRAM_ID         =   'R0019928'        ;                                
+                                                                                
+                                                                                
+   SELECT  (STATUS_TYPE);                                                       
+                                                                                
+      WHEN ('B')                                                                
+         DO;                                                                    
+            DO      I =  3 TO 14 UNTIL (B01.RF0PERSN.FNR(I) = 0);               
+            END;                                                                
+                                                                                
+                                                                                
+            IF      I > 14 THEN                                                 
+                    I = 14     ;                                                
+            POS_I_B01 =  I     ;                                                
+                                                                                
+                                                                                
+            /*------------------------------------------------*/                
+            /*  SJEKKER OM TRANSEN SOM GIR STATUS = FORSØRGET */                
+            /*  BARN ER INNLEST . ER DET TILFELLE BLANKES     */                
+            /*  B01 OG STATUS_TYPE ENDRES FRA B TIL A .       */                
+            /*------------------------------------------------*/                
+                                                                                
+            IF F010_FJERN_STATUS                     THEN                       
+               DO;                                                              
+                  B01.RF0PERSN (B01_IND)  = ''                  ;               
+                  STATUS_TYPE             = 'A'                 ;               
+               END;                                                             
+            ELSE                                                                
+               DO J=1 TO 13 WHILE (B01.FNR_TILKN (B01_IND,J) > 0);              
+                                                                                
+                  DIV_PARAM_OMR.ØNSKET_STATUS = B01.STATUS_KODE                 
+                                                   (B01_IND)     ;              
+                                                                                
+                  IF POS_I_B01          >   14               THEN               
+                     DO;                                                        
+ L100:                  FEIL_VED_LABEL  =  'L100';                              
+                        FEIL_MELD_NR    =   214  ;                              
+                        GO   TO   L999;                                         
+                     END;                                                       
+                  ELSE                                                          
+               IF B01.TILKN.TILKNYTNINGSKODE(B01_IND,J) = 'L'  !                
+  /*HL*/          B01.TILKN.TILKNYTNINGSKODE(B01_IND,J) = 'V'  !                
+                  B01.TILKN.TILKNYTNINGSKODE(B01_IND,J) = 'W'  THEN             
+                                                                                
+                        DO;                                                     
+                          DIV_PARAM_OMR.SEARCH_FNR = B01.FNR_TILKN              
+                                                    (B01_IND,J);                
+                                                                                
+                          EXEC CICS LINK PROGRAM  ('R0013110')                  
+                                         COMMAREA ( KOM_OMR  ) ;                
+                                                                                
+                          IF FEIL_MELD_NR > 0 THEN                              
+                             GO TO L999;                                        
+                          ELSE                                                  
+                             DO;                                                
+                                PROGRAM_ID  =  'R0019928'    ;                  
+                                POS_I_B01   =   POS_I_B01 + 1;                  
+                             END;                                               
+                        END;                                                    
+                                                                                
+               END;     /**    DO   J = 1 TO 13   **/                           
+                                                                                
+         END;           /**    WHEN ('B')         **/                           
+                                                                                
+      WHEN ('C')                                                                
+                                                                                
+         /* ********************************************* */                    
+         /* VTP.TRANS   <   VTP.SS       INGEN  NS        */                    
+         /*                                               */                    
+         /* LESER TRANS HOS SØKER .                       */                    
+         /* ********************************************* */                    
+         DO;                                                                    
+                                                                                
+            CALL P910_LES_FORRIGE_TRANS;                                        
+                                                                                
+            IF   FEIL_MELD_NR >  0 THEN                                         
+                 GO TO L999;                                                    
+            ELSE                                                                
+                 PROGRAM_ID   =  'R0019928';                                    
+                                                                                
+            /******************************************** */                    
+            /* SJEKKER OM TRANS ER FUNNET                 */                    
+            /******************************************** */                    
+                                                 /*2000*/                       
+            IF TRANS_LISTE_LINJE.VIRKNINGSDATO_ÅMD(T_IND) = 0 THEN              
+               TRANS_LISTE_LINJE.FØDSNUMMER   (T_IND) = 0    ;                  
+            ELSE                                                                
+               ANTALL_TRANS_I_TRANS_LISTE             = T_IND;                  
+                                                                                
+            /******************************************** */                    
+            /* SORTERER RESTEN AV TRANSLISTE PÅ           */                    
+            /* VIRKNINGSDATO OG PRIORITETSKODE            */                    
+            /******************************************** */                    
+                                                                                
+            CALL P_SORTER_TRANS_LISTE_OMR ( T_IND );                            
+                                                                                
+         END;  /* WHEN C               */                                       
+                                                                                
+  /*  WHEN ('Z')                                                                
+                                                                                
+         /¤ ********************************************* ¤/                    
+         /¤    T-IND = T-IND - 1 HVIS ????                ¤/                    
+         /¤    DENNE ENDERING GJELLER TIL REG. AV BLANKET ¤/                    
+         /¤    FØR N_SISTE STATUS.     15062001 SATISH    ¤/                    
+         /¤ VTP.TRANS   <   VTP.SS       INGEN  NS        ¤/                    
+         /¤                                               ¤/                    
+         /¤ LESER TRANS HOS SØKER .                       ¤/                    
+         /¤ ********************************************* ¤/                    
+         DO;                                                                    
+                                                                                
+            CALL P910_LES_FORRIGE_TRANS;                                        
+                                                                                
+            IF   FEIL_MELD_NR >  0 THEN                                         
+                 GO TO L999;                                                    
+            ELSE                                                                
+                 PROGRAM_ID   =  'R0019928';                                    
+                                                                                
+            /¤ ****************************************** ¤/                    
+            /¤ SJEKKER OM TRANS ER FUNNET                 ¤/                    
+            /¤ ****************************************** ¤/                    
+                                                 /¤2000¤/                       
+            IF TRANS_LISTE_LINJE.VIRKNINGSDATO_ÅMD(T_IND) = 0 THEN              
+               TRANS_LISTE_LINJE.FØDSNUMMER   (T_IND) = 0    ;                  
+            ELSE                                                                
+               ANTALL_TRANS_I_TRANS_LISTE             = T_IND;                  
+                                                                                
+            /¤ ****************************************** #/                    
+            /¤ T-IND = T-IND - 1 HVIS ????                ¤/                    
+            /¤ DENNE ENDERING GJELLER TIL REG. AV BLANKET ¤/                    
+            /¤ FØR N_SISTE STATUS.     15062001 SATISH    ¤/                    
+            /¤ ****************************************** ¤/                    
+                                                                                
+             IF  TRANS_LISTE_LINJE.BLANKETTYPE (T_IND) = 'O1' &                 
+                (TRANS_LISTE_LINJE.BLANKETTYPE (T_IND - 1) = 'E3' !             
+                 TRANS_LISTE_LINJE.BLANKETTYPE (T_IND - 1) = 'EE' !             
+                 TRANS_LISTE_LINJE.BLANKETTYPE (T_IND - 1) = 'EP' !             
+                 TRANS_LISTE_LINJE.BLANKETTYPE (T_IND - 1) = 'B6' !             
+                 TRANS_LISTE_LINJE.BLANKETTYPE (T_IND - 1) = 'BP' !             
+                 TRANS_LISTE_LINJE.BLANKETTYPE (T_IND - 1) = 'FB' !             
+                 TRANS_LISTE_LINJE.BLANKETTYPE (T_IND - 1) = 'E4' ) THEN        
+                                                                                
+                   T_IND = T_IND - 1;                                           
+                                                                                
+            /¤******************************************* ¤/                    
+            /¤ SORTERER RESTEN AV TRANSLISTE PÅ           ¤/                    
+            /¤ VIRKNINGSDATO OG PRIORITETSKODE            ¤/                    
+            /¤******************************************* ¤/                    
+                                                                                
+            CALL P_SORTER_TRANS_LISTE_OMR ( T_IND );                            
+                                                                                
+         END;  /¤ WHEN Z               */                                       
+                                                                                
+      WHEN ('F')                                                                
+         DO;                                                                    
+            /*-------------------------------------------------*/               
+            /*  LESER SISTE STATUS FOR Å SJEKKE OM DET ER ET   */               
+            /*  FORSØRGET BARN OG OM DEN ER DANNET AV EN AV    */               
+            /*  TRANSENE I TRANS_LISTE                         */               
+            /*-------------------------------------------------*/               
+                                                                                
+            STATUS_TYPE             =   ' '                     ;               
+            ØNSKET_STATUS           =   'S'                     ;               
+                                                                                
+                                                                                
+            EXEC CICS LINK PROGRAM('R0013110') COMMAREA(KOM_OMR);               
+                                                                                
+            IF FEIL_MELD_NR > 0 THEN                                            
+               GO TO L999;                                                      
+            ELSE                                                                
+               PROGRAM_ID         =   'R0019928'        ;                       
+                                                                                
+            /*-------------------------------------------------*/               
+            /*  SJEKKER OM TRANSEN SOM GIR STATUS = FORSØRGET  */               
+            /*  BARN ER I TRANS_LISTE. ER DET TILFELLE BLANKES */               
+            /*  B01 OG STATUS_TYPE ENDRES FRA F TIL A .        */               
+            /*-------------------------------------------------*/               
+                                                                                
+            STATUS_TYPE                   = 'F'                 ;               
+                                                                                
+            IF F010_FJERN_STATUS                     THEN                       
+               DO;                                                              
+                  B01.RF0PERSN (B01_IND)  = ''                  ;               
+                  STATUS_TYPE             = 'A'                 ;               
+               END;                                                             
+                                                                                
+         END;           /**    WHEN ('F')         **/                           
+                                                                                
+      OTHERWISE                                                                 
+                                                                                
+         IF ^(STATUS_TYPE   =   'A'         !                                   
+              STATUS_TYPE   =   'B'         !                                   
+              STATUS_TYPE   =   'C'         !                                   
+              STATUS_TYPE   =   'I'         )  THEN                             
+                                                                                
+              STATUS_TYPE   =   'F'               ;                             
+                                                                                
+                                                                                
+   END;    /* SELECT (STATUS_TYPE)                    */                        
+                                                                                
+                                                                                
+ L999:                                                                          
+   EXEC CICS RETURN;                                                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+   /* ************************************************************ */           
+   /*      I N T E R N E   P R O C E D U R E R                     */           
+   /* ************************************************************ */           
+                                                                                
+                                                                                
+                                                                                
+   /*--------------------------------------------------------------*/           
+   /* HER SJEKKES OM LEST PERSON ER :                              */           
+   /*                                                              */           
+   /*   FORSØRGET BARN    &  VTP I TRANS = VTP I STATUS  &         */           
+   /*   FLERE TRANSER LEST INN  &  SØKER = TILKN. TIL LEST PERSON  */           
+   /*                                                              */           
+   /*   HVIS STATUS_TYPE =  B / F SJEKKES OM TRANSEN, SOM GA       */           
+   /*   STATUS  =  FORSØRGET BARN, ER LEST INN .                   */           
+   /*--------------------------------------------------------------*/           
+                                                                                
+   F010_FJERN_STATUS:                                                           
+     PROC  RETURNS   ( BIT (1) )                                    ;           
+                                                                                
+     DCL RETUR         BIT (1)            INIT ('0'B)               ;           
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+     IF B01.PENSJONSTYPE1   (B01_IND  ) = 'L'                    &              
+                                                                                
+      ((STATUS_TYPE                     = 'B'                    &              
+        B01.VIRK_DATO_ÅMD   (B01_IND  ) =                                       
+                          TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD) ! /*2000*/          
+                                                                                
+       (STATUS_TYPE                     = 'F'                    &              
+        B01.FØRSTE_GANG_REG (B01_IND)   = 'N'                    &              
+        B01.VIRK_DATO_ÅMD   (B01_IND)   >                                       
+                          TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD)) &  /*2000*/        
+                                                                                
+        B01.FNR_TILKN       (B01_IND,1) = TRANS_OPPL_OMR.FØDSNUMMER   &         
+                                                                                
+        ANTALL_TRANS_I_TRANS_LISTE      > 1                        THEN         
+                                                                                
+                                                                                
+        RETUR                           = '1'B                        ;         
+                                                                                
+                                                                                
+     RETURN (RETUR);                                                            
+                                                                                
+   END F010_FJERN_STATUS;                                                       
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ % INCLUDE R0019902;   /*    FINNE KJØNN             */                         
+                                                                                
+ % INCLUDE R0019950;   /*    P_SORTER_TRANS_LISTE_OMR (1)  */                   
+                                                                                
+ % INCLUDE R0019952;   /*    P910_LES_FORRIGE_TRANS  */                         
+                                                                                
+ END R001992;                                                                   

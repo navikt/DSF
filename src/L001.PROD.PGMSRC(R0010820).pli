@@ -1,0 +1,547 @@
+ /*   SIST ENDRET PÅ PROD   2004.12.17 14.40.53 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 13.30.32 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.07.18 12.51.01 AV   HLA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.02.02  7.44.15 AV   HLA7339          */        
+ /*       SIST ENDRET 22/06-98 10.34.48 AV   JDA7339                  */        
+ /*       SIST ENDRET 05/06-98 07.09.32 AV   RFA9991                  */        
+ /******************************************************************* */        
+ /*  IDENTIFIKASJON:                                                  */        
+ /****************************                                        */        
+ /*  PROGRAMIDENT : R0010820-KONTROLL EPTRANS MOT STATUS FOR FAMILIEN */        
+ /*  PROGRAMSPRÅK : PLI/CICS                                          */        
+ /*  PROGRAMMERER : HELEN SHAW                                        */        
+ /*  PROGRAMMET BLE LAGET I JANUAR 1982                               */        
+ /*  ****************************                                     */        
+ /*  HENSIKT:                                                         */        
+ /*      KONTROLLER EPTRANS MOT STATUS FOR FAMILIEN                   */        
+ /*  PROGRAMTILKNYTNING:                                              */        
+ /*      KALLES OPP AV PROGRAM R0013520                               */        
+ /*  BRUK:                                                            */        
+ /*      EXEC CICS XCTL PROGRAM ('R0010820') COMMAREA (KOM_OMR)       */        
+ /*                                                                   */        
+ /*  *****************************                                    */        
+ /*  ENDRING                                                          */        
+ /* ***************************************************************** */        
+ KON_EP:PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                   
+    %INCLUDE P0019908;                                                          
+    %INCLUDE P0019906;                                                          
+    %INCLUDE P0010801;                                                          
+    %INCLUDE P0019910;                                                          
+    %INCLUDE P0019912;                                                          
+                                                                                
+ DCL 1 B01 BASED(B01_PEKER), %INCLUDE P0019921;                                 
+ DCL 1 B02 BASED(B02_PEKER), %INCLUDE P0019921;                                 
+ DCL COMMAREA_PEKER PTR;                                                        
+ DCL (ADDR,CSTG,VERIFY,HBOUND)    BUILTIN;                                      
+ DCL   AVDØD_IND           FIXED BIN (15),                                      
+       I                   FIXED BIN (15),                                      
+       INNT_ÅR             FIXED BIN (15),                                      
+       J                   FIXED BIN (15),                                      
+       TILKNYTTET_SW       CHAR(1),                                             
+       STATUS_TYPE_SØKER   CHAR(1);                                             
+   DCL                                                                          
+       W_DØDSTP_ÅM                                    FIXED(5);                 
+   DCL                                                                          
+       W_DØDSTP_ÅMD                                   PIC '99999999',           
+       W_DØDSTP_ÅR     DEF W_DØDSTP_ÅMD      POS (1)  PIC '9999',               
+       W_DØDSTP_MND    DEF W_DØDSTP_ÅMD      POS (5)  PIC '99',                 
+       W_DØDSDATO_ÅM   DEF W_DØDSTP_ÅMD      POS (1)  PIC '999999';             
+   DCL                                                                          
+       W_VIRKDATO_ÅMD                                  PIC '99999999',          
+       W_VIRKDATO_ÅR   DEF W_VIRKDATO_ÅMD    POS (1)  PIC '9999',               
+       W_VIRKDATO_MND  DEF W_VIRKDATO_ÅMD    POS (3)  PIC '99';                 
+   DCL                                                                          
+       W_ALDER_ÅM                                 PIC '99999';                  
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* HER BEGYNNER PROGRAMMET KON_EP                                    */        
+ /* ENDRET 11/1-85 AV KARIN : SAVING AV SØKERS STATUS_TYPE            */        
+ /* ***************************************************************** */        
+                                                                                
+ PROGRAM_ID      = 'R0010820';                                                  
+ I               = 0;                                                           
+ TRANSTYPE       = ' 3';                                                        
+ STATUS_TYPE_SØKER = STATUS_TYPE;                                               
+                                                                                
+ /* ***************************************************************** */        
+ /* AVDØD EKTEFELLES INDEX FINNES.                                    */        
+ /* ***************************************************************** */        
+                                                                                
+  IF SØKER_IND = 1 THEN                                                         
+     AVDØD_IND = 2;                                                             
+  ELSE                                                                          
+     AVDØD_IND = 1;                                                             
+                                                                                
+                                                                                
+    IF (B01.PENSJONSTYPE1(SØKER_IND) = 'K') THEN                                
+       DO; /* AFP:SØKER ER AFP-PENSJONIST. FOR Å FÅ EP, MÅ VI HA   */           
+           /* OPPHØRSBLANKETT FØRST.BLANKETT AVVISES.TRUDE 080289  */           
+           FEIL_MELD_NR  = 1735;                                                
+           GO TO L999;                                                          
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* AVDØDE ER OPPGITT PÅ BLANKETTEN - FNR ULIK 11111111111            */        
+ /* ***************************************************************** */        
+                                                                                
+ IF EPS.FNR_EK ^= (11)'1' THEN                                                  
+    DO;                                                                         
+                                                                                
+ /* ***************************************************************** */        
+ /* DERSOM AVDØD IKKE ER LEST INN I B01.                              */        
+ /* ***************************************************************** */        
+       IF B01.FNR(AVDØD_IND) = 0 THEN                                           
+          DO;                                                                   
+             DØD = '1'B;                                                        
+             SEARCH_FNR  = EPS.FNR_EK;                                          
+             POS_I_B01   = AVDØD_IND;                                           
+             EXEC CICS LINK PROGRAM ('R0019928') COMMAREA (KOM_OMR);            
+             IF FEIL_MELD_NR > 0 THEN                                           
+                GO   TO L999;                                                   
+             ELSE                                                               
+                PROGRAM_ID = 'R0010820';                                        
+             DØD = '0'B;                                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* KONTROLLERER OM AVDØD ER KJENT OG ER DØD I BASEN.                 */        
+ /* ***************************************************************** */        
+                                                                                
+             IF B01.FNR(AVDØD_IND) = 0 !                                        
+                (B01.FNR(AVDØD_IND) > 0 &                                       
+                B01.DØDSDATO_ÅMD(AVDØD_IND) = 0) THEN                           
+                DO;                                                             
+  L100:                                                                         
+                   FEIL_VED_LABEL = '100';                                      
+                   FEIL_MELD_NR   = 1710;                                       
+                   GO TO L999;                                                  
+                END;                                                            
+             ELSE                                                               
+                                                                                
+ /* ***************************************************************** */        
+ /*  EKTEFELLEN ER DØD OG SØKEREN HAR IKKE PENSJONSSTATUS.            */        
+ /* ***************************************************************** */        
+                                                                                
+                IF B01.PENSJONSTYPE1 (SØKER_IND) = ' ' !                        
+                   B01.STATUS_KODE_HIST (SØKER_IND) ^= ' ' THEN                 
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER I BASEN MED INNTEKTER OG HISTORIKK.                   */        
+ /* ***************************************************************** */        
+                                                                                
+                   DO;                                                          
+                      B02.TKNR  (SØKER_IND) =  EPS.TKNR;                        
+                      B02.NAVN  (SØKER_IND) =  EPS.NAVN;                        
+                      B02.SPRÅK (SØKER_IND) =  EPS.SPRÅK;                       
+                      IF B01.FNR(SØKER_IND) > 0 THEN                            
+                         CALL                                                   
+                         FLYTT_B01_TIL_B02(SØKER_IND);                          
+                      ELSE                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER IKKE I BASEN.                                         */        
+ /*  ENDRING 11/1-85 AV KARIN: RUTINEN OPPRETT_STATUS_EP_SØKER        */        
+ /* ***************************************************************** */        
+                                                                                
+                         B02.FNR   (SØKER_IND) =  EPS.FNR;                      
+                      B02.PERSON(AVDØD_IND) = B01.PERSON(AVDØD_IND);            
+                      CALL                                                      
+                         OPPRETT_STATUS_EP_SØKER; /* R0010821 */                
+                         IF FEIL_MELD_NR > 0  THEN                              
+                            GO TO L999;                                         
+                                                                                
+                      CALL                                                      
+                         KOBLE_TO_PERSONER(SØKER_IND,AVDØD_IND);                
+                   END;                                                         
+                ELSE                                                            
+                   DO;                                                          
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN HAR PENSJONSSTATUS.                                      */        
+ /* ***************************************************************** */        
+                                                                                
+                      IF B01.TKNR(SØKER_IND) > 0  THEN                          
+                         IF B01.TKNR(SØKER_IND) ^= EPS.TKNR THEN                
+                            B02.TKNR(SØKER_IND) = EPS.TKNR;                     
+  /*                        DO;                                                 
+  L110: FJERNA 170701 MARTIN                                                    
+                               FEIL_VED_LABEL = '110';                          
+                               FEIL_MELD_NR   = 1702;                           
+                               GO TO L999;                                      
+                            END; */                                             
+                      SELECT (B01.STATUS.SIVILSTAND(SØKER_IND));                
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER UGIFT.                                                */        
+ /*  SIVILSTAND 'U' På BLANKETTEN ER TILLATT VED YRKESSKADE.    */              
+ /*  SØKEREN HAR DA VÆRT SAMBOER MED AVDØDE.                    */              
+ /* ***************************************************************** */        
+                                                                                
+                         WHEN('U')                                              
+                            DO;                                                 
+                               IF EPS.SIVILSTAND ^= 'U' THEN                    
+                                  DO;                                           
+  L120:                                                                         
+                                     FEIL_VED_LABEL = '120';                    
+                                     FEIL_MELD_NR = 1407;                       
+                                     GO TO L999;                                
+                                  END;                                          
+                               ELSE                                             
+                                  DO;                                           
+                                     CALL                                       
+                                     FLYTT_B01_TIL_B02(SØKER_IND);              
+                                     B02.PERSON(AVDØD_IND) =                    
+                                           B01.PERSON(AVDØD_IND);               
+                                     CALL                                       
+                                     AJOURFØR_B02_MED_EP_TRANS;                 
+                                     IF FEIL_MELD_NR > 0   THEN                 
+                                        GO TO L999;                             
+                                     CALL                                       
+                                     KOBLE_TO_PERSONER                          
+                                     (SØKER_IND,AVDØD_IND);                     
+                                  END;                                          
+                            END;                                                
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER SKILT.                                                */        
+ /* ***************************************************************** */        
+                                                                                
+                        WHEN('S')                                               
+                           DO;                                                  
+                              IF EPS.SIVILSTAND ='E' THEN                       
+                                 DO;                                            
+  L130:                                                                         
+                                    FEIL_VED_LABEL = '130';                     
+                                    FEIL_MELD_NR   = 1409;                      
+                                    GO TO L999;                                 
+                                 END;                                           
+                              ELSE                                              
+                                 DO;                                            
+                                    CALL                                        
+                                    FLYTT_B01_TIL_B02(SØKER_IND);               
+                                    B02.PERSON(AVDØD_IND) =                     
+                                          B01.PERSON(AVDØD_IND);                
+                                    CALL                                        
+                                    AJOURFØR_B02_MED_EP_TRANS;                  
+                                    IF FEIL_MELD_NR > 0  THEN                   
+                                       GO TO L999;                              
+                                    CALL                                        
+                                    KOBLE_TO_PERSONER                           
+                                    (SØKER_IND,AVDØD_IND);                      
+                                 END;                                           
+                           END;                                                 
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN MÅ VÆRE ETTERLATT                                        */        
+ /* ***************************************************************** */        
+                                                                                
+                        WHEN('E')                                               
+                           DO;                                                  
+                              IF EPS.SIVILSTAND ='S' THEN                       
+                                 DO;                                            
+      L140:                                                                     
+                                    FEIL_VED_LABEL = '140';                     
+                                    FEIL_MELD_NR   = 1410;                      
+                                    GO TO L999;                                 
+                                 END;                                           
+                              ELSE                                              
+                                 DO;                                            
+                                    CALL                                        
+                                    FLYTT_B01_TIL_B02(SØKER_IND);               
+                                    B02.PERSON(AVDØD_IND) =                     
+                                              B01.PERSON(AVDØD_IND);            
+                                    CALL                                        
+                                     AJOURFØR_B02_MED_EP_TRANS;                 
+                                     IF FEIL_MELD_NR > 0  THEN                  
+                                        GO TO L999;                             
+                                    CALL                                        
+                                     KOBLE_TO_PERSONER                          
+                                           (SØKER_IND,AVDØD_IND);               
+                                 END;                                           
+                           END;                                                 
+                        OTHERWISE                                               
+                           DO;                                                  
+  L145:                                                                         
+                              FEIL_VED_LABEL = '145';                           
+                              FEIL_MELD_NR   = 1412;                            
+                              GO TO L999;                                       
+                           END;                                                 
+                      END; /* END SELECT */                                     
+                   END;    /* END SØKER HAR PENSJONSSTATUS */                   
+          END;             /* END AVDØD IKKE I B01 */                           
+       ELSE                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /*  AVDØD ER I B01-D.V.S KNYTTET TIL SØKEREN I BASEN.                */        
+ /*  SØKER OG AVDØDE BEHØVER IKKE Å VÆRE TILKNYTTET HVERANDRE,        */        
+ /*  HVIS SØKER FYLLER 67/70 ÅR MELLOM TRANSDATO OG DAGENS-DATO KAN   */        
+ /*  BEGGE LIGGE I B01 UTEN Å VÆRE TILKNYTTET                         */        
+ /* ***************************************************************** */        
+                                                                                
+          DO;                                                                   
+             IF B01.TKNR(SØKER_IND) > 0 THEN                                    
+                IF B01.TKNR(SØKER_IND) ^= EPS.TKNR THEN                         
+                   DO;                                                          
+  L150:                                                                         
+                      FEIL_VED_LABEL = '150';                                   
+                      FEIL_MELD_NR   = 1702;                                    
+                      GO TO L999;                                               
+                   END;                                                         
+                SELECT (B01.STATUS.SIVILSTAND(SØKER_IND));                      
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER GIFT.                                                 */        
+ /* ***************************************************************** */        
+                                                                                
+                   WHEN('G','A')                                                
+                                                                                
+ /* ***************************************************************** */        
+ /*  EKTEFELLEN ER IKKE REGISTRERT SOM DØD I BASEN.                   */        
+ /* ***************************************************************** */        
+                                                                                
+                      DO;                                                       
+                        IF B01.FNR(AVDØD_IND) = EPS.FNR_EK THEN                 
+                           DO;                                                  
+  L160:                                                                         
+                              FEIL_VED_LABEL = '160';                           
+                              FEIL_MELD_NR   = 1710;                            
+                              GO TO L999;                                       
+                           END;                                                 
+                        ELSE                                                    
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER GIFT MED EN ANNEN.                                    */        
+ /* ***************************************************************** */        
+                                                                                
+                           DO;                                                  
+  L170:                                                                         
+                              FEIL_VED_LABEL = '170';                           
+                              FEIL_MELD_NR   = 1408;                            
+                              GO TO L999;                                       
+                           END;                                                 
+                      END;                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER ETTERLATT MED/UTEN TILKNYTTING TIL AVDØDE             */        
+ /* ***************************************************************** */        
+                                                                                
+                   OTHERWISE                                                    
+                      DO;                                                       
+                        IF B01.FNR(AVDØD_IND) = EPS.FNR_EK THEN                 
+                                                                                
+ /* ***************************************************************** */        
+ /*  DET ER DEN SAMME AVDØD.                                          */        
+ /* ***************************************************************** */        
+                                                                                
+                           DO;                                                  
+                              IF EPS.SIVILSTAND ^=                              
+                                  B01.STATUS.SIVILSTAND(SØKER_IND) THEN         
+                                 DO;                                            
+  L180:                                                                         
+                                    FEIL_VED_LABEL = '180';                     
+                                    FEIL_MELD_NR   = 1410;                      
+                                    GO TO L999;                                 
+                                 END;                                           
+                              ELSE                                              
+                                 DO;                                            
+                                    CALL                                        
+                                      FLYTT_B01_TIL_B02(SØKER_IND);             
+                                    B02.PERSON(AVDØD_IND) =                     
+                                            B01.PERSON(AVDØD_IND);              
+                                    CALL                                        
+                                     AJOURFØR_B02_MED_EP_TRANS;                 
+                                    IF FEIL_MELD_NR > 0  THEN                   
+                                       GO TO L999;                              
+                                 /* ENDRET AV KARIN 19/1-84      */             
+                                 /* TESTE OM TILKNYTTING MANGLER */             
+                                    TILKNYTTET_SW = 'N';                        
+                                    DO I = 1 TO 13 WHILE                        
+                                     (B01.FNR_TILKN(AVDØD_IND,I) > 0);          
+                                     IF B01.FNR_TILKN(AVDØD_IND,I) =            
+                                       B01.FNR(SØKER_IND) THEN                  
+                                       TILKNYTTET_SW = 'J';                     
+                                    END;                                        
+                                    IF TILKNYTTET_SW = 'N' THEN                 
+                                      CALL KOBLE_TO_PERSONER                    
+                                          (SØKER_IND,AVDØD_IND);                
+                                 /* ENDRINGEN SLUTTER HER, KS 19/1-84 */        
+                                 END;                                           
+                           END;                                                 
+                                                                                
+ /* ***************************************************************** */        
+ /*  DET ER IKKE DEN SAMME AVDØD.                                     */        
+ /* ***************************************************************** */        
+                                                                                
+                        ELSE                                                    
+                           DO;                                                  
+  L190:                                                                         
+                              FEIL_VED_LABEL = '190';                           
+                              FEIL_MELD_NR   = 1408;                            
+                              GO TO L999;                                       
+                           END;                                                 
+                      END;                                                      
+                END;  /* END SELECT     */                                      
+          END;        /*AVDØD ER I B01 */                                       
+    END;              /*AVDØD ER OPPGITT PÅ BLANKETTEN */                       
+ ELSE                                                                           
+    DO;                                                                         
+ /* ***************************************************************** */        
+ /*  AVDØD EKTEFELLE ER UOPPGITT  - ENDRET AV KARIN 21/2-84           */        
+ /* ***************************************************************** */        
+ /* ***************************************************************** */        
+ /* DERSOM AVDØD ER LEST INN I B01. (DETTE ER FEIL)                   */        
+ /* ***************************************************************** */        
+                                                                                
+       IF B01.FNR(AVDØD_IND) > 0 THEN                                           
+          DO;                                                                   
+  L200:                                                                         
+              FEIL_VED_LABEL = '200';                                           
+              FEIL_MELD_NR   = 1715;                                            
+              GO TO L999;                                                       
+             /* FEIL - UOPPGITT EKTEFELLE På BLANKETTEN */                      
+          END;                                                                  
+                                                                                
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /*  HAR SØKER PENSJONSSTATUS, INNTEKTER , HISTORIKK?                 */        
+ /* ***************************************************************** */        
+                                                                                
+       IF B01.PENSJONSTYPE1 (SØKER_IND) = ' ' !                                 
+          B01.STATUS_KODE_HIST (SØKER_IND) ^= ' ' THEN                          
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER I BASEN MED INNTEKTER OG HISTORIKK.                   */        
+ /* ***************************************************************** */        
+                                                                                
+          DO;                                                                   
+             B02.TKNR  (SØKER_IND) =  EPS.TKNR;                                 
+             B02.NAVN  (SØKER_IND) =  EPS.NAVN;                                 
+             B02.SPRÅK (SØKER_IND) =  EPS.SPRÅK;                                
+             IF B01.FNR(SØKER_IND) > 0 THEN                                     
+                CALL                                                            
+                 FLYTT_B01_TIL_B02(SØKER_IND);                                  
+             ELSE                                                               
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER IKKE I BASEN.                                         */        
+ /* ***************************************************************** */        
+                                                                                
+                 B02.FNR   (SØKER_IND) =  EPS.FNR;                              
+                                                                                
+              CALL                                                              
+                OPPRETT_STATUS_EP_SØKER;                                        
+              IF FEIL_MELD_NR > 0         THEN                                  
+                 GO TO L999;                                                    
+          END;                                                                  
+       ELSE                                                                     
+          DO;                                                                   
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN HAR PENSJONSSTATUS.                                      */        
+ /* ***************************************************************** */        
+                                                                                
+             IF B01.TKNR(SØKER_IND) > 0  THEN                                   
+                IF B01.TKNR(SØKER_IND) ^= EPS.TKNR THEN                         
+                   DO;                                                          
+             L210:                                                              
+                      FEIL_VED_LABEL = '210';                                   
+                      FEIL_MELD_NR   = 1702;                                    
+                      GO TO L999;                                               
+                   END;                                                         
+                                                                                
+             SELECT (B01.STATUS.SIVILSTAND(SØKER_IND));                         
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER UGIFT.                                                */        
+ /*YS      FØDSELSNUMMER AVDØD ER IKKE OPPGITT.  YRKESSKADE OG SIV=U  */        
+ /*YS      SKAL IKKE FOREKOMME.                                       */        
+ /* ***************************************************************** */        
+                                                                                
+                WHEN('U')                                                       
+                   DO;                                                          
+              L220:                                                             
+                      FEIL_VED_LABEL = '220';                                   
+                      FEIL_MELD_NR = 1407;                                      
+                      GO TO L999;                                               
+                   END;                                                         
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN ER SKILT.                                                */        
+ /*YS      FØDSELSNUMMER AVDØD ER IKKE OPPGITT.  YRKESSKADE OG SIV=U  */        
+ /*YS      SKAL IKKE FOREKOMME.                                       */        
+ /* ***************************************************************** */        
+                                                                                
+                WHEN('S')                                                       
+                   DO;                                                          
+                      IF EPS.SIVILSTAND ='E' THEN                               
+                         DO;                                                    
+                L230:                                                           
+                            FEIL_VED_LABEL = '230';                             
+                            FEIL_MELD_NR   = 1409;                              
+                            GO TO L999;                                         
+                          END;                                                  
+                       ELSE                                                     
+                          DO;                                                   
+                             CALL                                               
+                              FLYTT_B01_TIL_B02(SØKER_IND);                     
+                             CALL                                               
+                              AJOURFØR_B02_MED_EP_TRANS;                        
+                             IF FEIL_MELD_NR > 0    THEN                        
+                                GO TO L999;                                     
+                          END;                                                  
+                   END;                                                         
+                                                                                
+ /* ***************************************************************** */        
+ /*  SØKEREN MÅ VÆRE ETTERLATT                                        */        
+ /*YS      FØDSELSNUMMER AVDØD ER IKKE OPPGITT.  YRKESSKADE OG SIV=U  */        
+ /*YS      SKAL IKKE FOREKOMME.                                       */        
+ /* ***************************************************************** */        
+                                                                                
+                WHEN('E')                                                       
+                   DO;                                                          
+                      IF EPS.SIVILSTAND ='S' THEN                               
+                         DO;                                                    
+          L240:                                                                 
+                            FEIL_VED_LABEL = '240';                             
+                            FEIL_MELD_NR   = 1410;                              
+                            GO TO L999;                                         
+                         END;                                                   
+                      ELSE                                                      
+                         DO;                                                    
+                            CALL                                                
+                              FLYTT_B01_TIL_B02(SØKER_IND);                     
+                            CALL                                                
+                                 AJOURFØR_B02_MED_EP_TRANS;                     
+                            IF FEIL_MELD_NR > 0    THEN                         
+                               GO TO L999;                                      
+                         END;                                                   
+                   END;                                                         
+                OTHERWISE                                                       
+                   DO;                                                          
+           L245:                                                                
+                      FEIL_VED_LABEL = '245';                                   
+                      FEIL_MELD_NR   = 1412;                                    
+                      GO TO L999;                                               
+                   END;                                                         
+             END;        /* END SELECT */                                       
+          END;           /* END SØKER HAR PENSJONSSTATUS */                     
+    END;                 /* END AVDØD ER UOPPGITT        */                     
+                                                                                
+                                                                                
+  L999:                                                                         
+  EXEC CICS PURGE MESSAGE;                                                      
+  EXEC CICS RETURN;                                                             
+  %INCLUDE R0010821;    /* OPPRETT_STATUS_EP_SØKER               */             
+  %INCLUDE R0010822;    /* AJOURFØR_B02_MED_EP_TRANS             */             
+  %INCLUDE R0010823;    /* KONTROLL_AJOURFØR_AVDØD_YP            */             
+  %INCLUDE R0019901;    /* F_GYLDIG_DATO                         */             
+  %INCLUDE R0019902;    /* F_KJøNN BRUKES I 9949                 */             
+  %INCLUDE R0019905;    /* F_ALDER                               */             
+  %INCLUDE R0019926;    /* FLYTT_B01_TIL_B02                     */             
+  %INCLUDE R0019924;    /* KOBLE_TO_PERSONER                     */             
+  %INCLUDE R0019949;    /* BEREGNER TT_FRAMT                     */             
+  %INCLUDE R0019965;    /* F_DATO_ÅMD_PLUSS1                     */             
+  %INCLUDE R0019968;    /* F_RULL_FORSI                          */             
+  %INCLUDE R0019995;    /* KONV_FNR11_FNR13          2000-3      */             
+ END KON_EP;                                                                    

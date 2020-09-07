@@ -1,0 +1,497 @@
+ /*   SIST ENDRET PÅ PROD   2005.06.24 12.48.09 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.04.26 12.56.01 AV   JDA2970          */        
+ /*       SIST ENDRET 02/09-98 09.40.24 AV   SPA7339                  */        
+ /*       SIST ENDRET 04/05-98 14.10.09 AV   JDA7339                  */        
+ /*       SIST ENDRET 14/01-98 12.18.31 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R001B470 -                          HOVEDPROGRAM */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : PATHAK                                           */        
+ /*  PROGRAMMET BLE LAGET :      1994                                 */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  PROGRAMMET SKAL BYGGE OPP SIDER SOM BESTÅR AV BLANKETT-MAPENE    */        
+ /*  DETTE GJØRES UT FRA EN LISTE AV TRANSER SOM ER SORTERT PÅ        */        
+ /*  FORHÅND.                                                         */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMET ER EN LOGISK DEL AV 0470                              */        
+ /*    EXEC CICS XCTL PROGRAM ('R001B470') COMMAREA(KOM_OMR);         */        
+ /*  PROGRAMMET INKLUDERER:                                           */        
+ /*    R001N506   -   FLYTTER GRBL-A1 FRA ARB.OMR TIL MAP             */        
+ /*    R001N507   -   FLYTTER GRBL-A1 FORTEKSTER OG ATTRIBUTTER       */        
+ /*    R001N606   -   FLYTTER GRBL-U2 FRA ARB.OMR TIL MAP             */        
+ /*    R001N607   -   FLYTTER GRBL-U2 FORTEKSTER OG ATTRIBUTTER       */        
+ /*    R001N806   -   FLYTTER GRBL-E3 FRA ARB.OMR TIL MAP             */        
+ /*    R001N807   -   FLYTTER GRBL-E3 FORTEKSTER OG ATTRIBUTTER       */        
+ /*    R001N906   -   FLYTTER GRBL-E4 FRA ARB.OMR TIL MAP             */        
+ /*    R001N907   -   FLYTTER GRBL-E4 FORTEKSTER OG ATTRIBUTTER       */        
+ /*    R001NB06   -   FLYTTER GRBL-B6 FRA ARB.OMR TIL MAP             */        
+ /*    R001NC06   -   FLYTTER GRBL-F7 FRA ARB.OMR TIL MAP             */        
+ /*    R001NC07   -   FLYTTER GRBL-F7 FORTEKSTER OG ATTRIBUTTER       */        
+ /*  INTERNE PROCEDURER:                                              */        
+ /*    LOW_VALUES_TIL_MAP - HEXA '00' INN I ET OMRÅDE                 */        
+ /*    SELECT_BLANKETTYPE -                                           */        
+ /*    A1_PROC            - SKRIVER A1-TRANS SOM BLANKETTRANS         */        
+ /*    U2_PROC            - SKRIVER U2-TRANS SOM BLANKETTRANS         */        
+ /*    E3_PROC            - SKRIVER E3-TRANS SOM BLANKETTRANS         */        
+ /*    E4_PROC            - SKRIVER E4-TRANS SOM BLANKETTRANS         */        
+ /*    FB_PROC            - SKRIVER FB-TRANS SOM BLANKETTRANS         */        
+ /*    B6_PROC            - SKRIVER B6-TRANS SOM BLANKETTRANS         */        
+ /*    F7_PROC            - SKRIVER F7-TRANS SOM BLANKETTRANS         */        
+ /*  PROGRAMMET BRUKER FØLGENDE MAPSET:                               */        
+ /*    S001F23:                                                       */        
+ /*  RETUR TIL PROGRAMMET SOM AKTIVISERTE DETTE SLIK:                 */        
+ /*    EXEC CICS RETURN;                                              */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*  DET BLIR IKKE BRUKT NOEN DATASETT I DETTE PROGRAMMET             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /* DET BLIR IKKE SKREVET UT NOEN FEILMELDINGER I PROGRAMMET          */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ R01B470: PROC(COMMAREA_PEKER) OPTIONS (MAIN);                                  
+ %PAGE;                                                                         
+ %INCLUDE S001F2;    /* MAPPER FOR BLANKETTENE    */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019906;  /* TRANS-OPPL-OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019908;  /* KOM-OMRÅDE (BASED)        */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019910;  /* STYRINGS - OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019912;  /* DIV-PARAM-OMRÅDE(BASED)   */                            
+ %PAGE;                                                                         
+                                                                                
+                                                                                
+ DCL                                                                            
+    QUENAME                CHAR(8),                                             
+       QTERMID             CHAR(4) DEF QUENAME POS(1),                          
+       REST                CHAR(4) DEF QUENAME POS(5);                          
+                                                                                
+ DCL                                                                            
+    1 ROUTELIST,                                                                
+      2 PRINTER,                                                                
+        3 TERMID           CHAR(4),                                             
+        3 REST             CHAR(12),                                            
+      2 SISTE,                                                                  
+        3 SLUTT            FIXED BIN(15),                                       
+        3 REST             CHAR(14);                                            
+                                                                                
+ DCL                                                                            
+    CSTG                   BUILTIN,                                             
+    LOW                    BUILTIN,                                             
+    COMMAREA_PEKER         PTR,                                                 
+    BMSMAPBR               PTR,                                                 
+    MAPSET_PTR             PTR,                                                 
+    I                      FIXED BIN(15),                                       
+    START                  FIXED BIN(15) INIT(1),                               
+    LENGTH                 FIXED BIN(15),                                       
+    LABEL_Y                LABEL,                                               
+    MELDING                CHAR(10) INIT('NOE ER GALT'),                        
+    LOW_CHAR_BASED         CHAR(1000) BASED(BMSMAPBR),                          
+    ADDR                   BUILTIN;                                             
+                                                                                
+ /*----------------------------------------------------------------*/           
+ /* DUMMY DEKLARASJONER FOR OVERFØRINGSMODULENE                    */           
+ /*----------------------------------------------------------------*/           
+                                                                                
+ DCL                                                                            
+    CURSOR_POS     FIXED BIN  (15)   INIT (-1),                                 
+    DFHBMUNP             CHAR (1)    INIT (' '),                                
+    DFHBMBRY             CHAR (1)    INIT ('H'),                                
+    DFHBMASK             CHAR (1)    INIT ('8'),/* H.INT + ASKIP  */            
+    FEIL_FUNNET          BIT  (1)    INIT ('1'B),                               
+    FORKASTES            BIT  (1)    INIT ('0'B),                               
+       W01_FAR_BEHANDLES BIT  (1)    INIT ('0'B),                               
+       W01_MOR_BEHANDLES BIT  (1)    INIT ('0'B),                               
+    MELDING6O            CHAR (78),                                             
+    YMELDING6O           CHAR (78);                                             
+                                                                                
+                                                                                
+         DCL  W01_YSKADE      BIT(1)         INIT  ('0'B);                      
+         DCL  W01_NORSK_BOSATT     BIT(1)         INIT  ('0'B);                 
+         DCL  W01_SIDE_ANTALL FIXED BIN(15)  INIT  ( 1  );                      
+    QTERMID        = EIBTRMID;                                                  
+    REST           = 'COMA';                                                    
+    ROUTELIST      = '';                                                        
+    PRINTER.TERMID = 'R41J';                                                    
+    SISTE.SLUTT    = -1;                                                        
+                                                                                
+                                                                                
+    EXEC CICS LOAD PROGRAM('S001F23') SET(BMSMAPBR); /* TRANSMAPSET   */        
+    ALLOCATE  LOW_CHAR_BASED;                                                   
+                                                                                
+    EXEC CICS HANDLE CONDITION OVERFLOW(OVERFLOW);                              
+                                                                                
+                                                                                
+    /*---------------------------------------------*/                           
+    /*  STYRING FOR OVERFØRINGSMODULENE            */                           
+    /*---------------------------------------------*/                           
+                                                                                
+    DIV_PARAM_OMR.FRA_CICS        = '0'B;                                       
+    DIV_PARAM_OMR.HENT_FRAM_MAP   = '0'B;                                       
+    DIV_PARAM_OMR.FRA_UTEN_DIALOG = '1'B;                                       
+    DIV_PARAM_OMR.FRA_MED_DIALOG  = '0'B;                                       
+                                                                                
+                                                                                
+    DO I = 1 TO 2;                                                              
+                                                                                
+       /*---------------------------------------------*/                        
+       /* SETTER X'00' I HELE LOW_CHAR_BASED          */                        
+       /*---------------------------------------------*/                        
+       /* SKRIVER BLANKETT-TRANSEN PÅ SKJERMEN        */                        
+       /* ELLER GJØR DEN KLAR TIL UTSKRIVING          */                        
+       /*---------------------------------------------*/                        
+                                                                                
+       LOW_CHAR_BASED = LOW(1000);                                              
+       CALL SELECT_BLANKETTYPE;                                                 
+                                                                                
+       IF ^W01_YSKADE      THEN                                                 
+         DO;                                                                    
+               I  =  3;                                                         
+          END;                                                                  
+       EXEC CICS SEND PAGE RETAIN NOAUTOPAGE;                                   
+    END;                                                                        
+                                                                                
+    /*-------------------------------------------------------------*/           
+    /* AVSLUTTER MED RETURN TIL CICS.                              */           
+    /*-------------------------------------------------------------*/           
+                                                                                
+    EXEC CICS RETURN;                                                           
+                                                                                
+ OVERFLOW:                                                                      
+    EXEC CICS SEND  TEXT  FROM (MELDING)ACCUM;                                  
+    EXEC CICS SEND  PAGE;                                                       
+    EXEC CICS PURGE MESSAGE;                                                    
+                                                                                
+                                                                                
+                                                                                
+    /*---------------------------------------------*/                           
+    /* BEHANLER AKTUELL BLANKETT                   */                           
+    /*---------------------------------------------*/                           
+                                                                                
+    SELECT_BLANKETTYPE:                                                         
+      PROC;                                                                     
+                                                                                
+                                                                                
+        SELECT(TRANS_OPPL_OMR.BLANKETTYPE);                                     
+           WHEN('A1')                                                           
+              /* SKRIVER  NY AP-TRANS SOM BLANKETTRANS PÅ SKJERM */             
+              CALL A1_PROC;                                                     
+                                                                                
+           WHEN('U2')                                                           
+              /* SKRIVER U2-TRANS SOM BLANKETTRANS PÅ SKJERM */                 
+              CALL U2_PROC;                                                     
+                                                                                
+           WHEN('E3')                                                           
+              /* SKRIVER E3-TRANS SOM BLANKETTRANS PÅ SKJERM */                 
+              CALL E3_PROC;                                                     
+                                                                                
+           WHEN('E4')                                                           
+              /* SKRIVER EF-TRANS SOM BLANKETTRANS PÅ SKJERM */                 
+              CALL E4_PROC;                                                     
+                                                                                
+                                                                                
+           WHEN('B6')                                                           
+              /* SKRIVER B6-TRANS SOM BLANKETTRANS PÅ SKJERM */                 
+              CALL B6_PROC;                                                     
+                                                                                
+                                                                                
+           WHEN('F7')                                                           
+              /* SKRIVER F7-TRANS SOM BLANKETTRANS PÅ SKJERM */                 
+              CALL F7_PROC;                                                     
+                                                                                
+           OTHERWISE;                                                           
+        END;       /*   SELECT     */                                           
+                                                                                
+                                                                                
+        A1_PROC:                                                                
+          PROC;                                                                 
+          %INCLUDE P001N501;   /* TRANS_OMRÅDE AP  */                           
+          %INCLUDE R001N506;   /* AP_TRANS_TIL_MAP */                           
+          %INCLUDE R001N507;   /* OVERF. FORTEKSTER OG ATTRIBUTTER */           
+                                                                                
+                                                                                
+           /* INTERN PROC I R001N506: OVERFØRING AP-DELEN          */           
+                                                                                
+           CALL OVERFØR_A1SØKER_MAP;                                            
+                                                                                
+           IF A1S.BT_ANT > 0 THEN                                               
+              DO;                                                               
+                                                                                
+                 /* INTERN PROC I R001N507: FORTEKSTER OG          */           
+                 /*               ATTRIBUTTER I BARNE_DELEN        */           
+                                                                                
+                 CALL TEKST_BARN_A1;                                            
+                                                                                
+                 /* INTERN PROC I R001N506: OVERFØRING BARNE-DELEN */           
+                                                                                
+                 CALL OVERFØR_A1BARN_MAP;                                       
+              END;                                                              
+           S001N51O.DUMMYA = 'Ø';     /* PROT,DARK  */                          
+           /*  FREE TRANS_OMR,TRANS_OPPL_OMR   ENDERET SP 13.6.93 */            
+                                                                                
+           /* SKRIVER SKJERMBILDE GRUNNBLANKETT-APTRANS */                      
+                                                                                
+           EXEC CICS SEND MAP('S001N51') MAPSET('S001F23') ACCUM                
+                                                  PAGING   ERASE;               
+                                                                                
+        END A1_PROC;                                                            
+                                                                                
+                                                                                
+                                                                                
+        U2_PROC:                                                                
+          PROC;                                                                 
+          %INCLUDE P001N601;                                                    
+          %INCLUDE R001N606;                                                    
+          %INCLUDE R001N607;                                                    
+                                                                                
+           IF ^W01_YSKADE THEN                                                  
+              DO;                                                               
+                 CALL OVERFØR_U2SØKER_MAP;          /* R001N606 */              
+                 IF U2S.NORSK_BOSATT = 'N'  THEN                                
+                    DO;                                                         
+                       CALL TEKST_SPES_U2;          /* R001N607 */              
+                       CALL OVERFØR_U2SPES_MAP;     /* R001N606 */              
+                    END;                                                        
+                 IF U2S.BT_ANT > 0 THEN                                         
+                    DO;                                                         
+                       CALL TEKST_BARN_U2;          /* R001N607 */              
+                       CALL OVERFØR_U2BARN_MAP;     /* R001N606 */              
+                    END;                                                        
+                                                                                
+                 IF U2S.YSKADE_TILLEGG = 'J' THEN                               
+                    DO;                                                         
+                       W01_YSKADE = '1'B;                                       
+                       W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                   
+                    END;                                                        
+        /*       ELSE                                                           
+                 FREE TRANS_OMR,TRANS_OPPL_OMR   ENDERET SP 13.6.93 */          
+                                                                                
+                 S001N61O.DUMMYA = 'Ø';             /* PROT,DARK  */            
+                 EXEC CICS SEND MAP('S001N61') MAPSET('S001F23') ACCUM          
+                                                        PAGING ERASE;           
+              END;                                                              
+           ELSE                                                                 
+              DO;                                                               
+                                                                                
+                 CALL OVERFØR_YP_MAP_U2;            /* R001N606 */              
+                                                                                
+                 W01_YSKADE = '0'B;                                             
+                                                                                
+                 S001201O.DUMMYA = 'Ø';             /* PROT,DARK  */            
+            /*  FREE TRANS_OMR,TRANS_OPPL_OMR   ENDERET SP 13.6.93 */           
+                 EXEC CICS SEND MAP('S001201') MAPSET('S001F23') ACCUM          
+                                                  PAGING   ERASE;               
+                                                                                
+              END;                                                              
+                                                                                
+        END U2_PROC;                                                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+        E3_PROC:                                                                
+          PROC;                                                                 
+          %INCLUDE P001N801;   /* TRANS_OMRÅDE EP  */                           
+          %INCLUDE R001N806;   /* EP_TRANS TIL MAP */                           
+          %INCLUDE R001N807;   /* OVERF. FORTEKSTER OG ATTRIBUTTER */           
+                                                                                
+           IF ^W01_YSKADE THEN                                                  
+              DO;                                                               
+                                                                                
+                 /* INTERN PROC I R0010806: OVERFØRING E3-DELEN */              
+                                                                                
+                 CALL OVERFØR_E3SØKER_MAP;                                      
+                 IF E3S.NORSK_BOSATT = 'N' THEN                                 
+                    DO;                                                         
+                                                                                
+                       /* INTERN PROC I R001N807: FORTEKSTER OG    */           
+                       /*                   ATTRIBUTTER I SPES-DEL */           
+                                                                                
+                       CALL TEKST_SPES_SØKER;                                   
+                                                                                
+                       /* INTERN PROC I R001N806: OVERFØRING SPES_DEL */        
+                                                                                
+                       CALL OVERFØR_E3SPES_SØKER_MAP;                           
+                    END;                                                        
+                 IF E3S.NORSK_BOSATT_EK = 'N' THEN                              
+                    DO;                                                         
+                                                                                
+                       /* INTERN PROC I R001N807: FORTEKSTER OG    */           
+                       /*  ATTRIBUTTER I SPESIELL DEL AVDØDE       */           
+                                                                                
+                       CALL TEKST_SPES_AVDØDE;                                  
+                                                                                
+                       /* INTERN PROC I R001N806:                  */           
+                       /* OVERFØRING SPES-DEL AVD                  */           
+                                                                                
+                       CALL OVERFØR_E3SPES_AVDØDE_MAP;                          
+                    END;                                                        
+                 IF E3S.YSKADE_TILLEGG = 'J' THEN                               
+                    DO;                                                         
+                                                                                
+                       W01_YSKADE = '1'B;                                       
+                       W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                   
+                    END;                                                        
+                 ELSE                                                           
+                    /*  FREE TRANS_OMR,TRANS_OPPL_OMR ;  */                     
+                                                                                
+                 S001N81O.DUMMYA = 'Ø'; /* PROT,DARK */                         
+                                                                                
+                 /* SKRIVER SKJERMBILDE GRUNNBLANKETT-EPTRANS */                
+                                                                                
+                 EXEC CICS SEND MAP('S001N81') MAPSET('S001F23') ACCUM          
+                                                  PAGING   ERASE;               
+              END;                                                              
+           ELSE                                                                 
+              DO;                                                               
+                 CALL OVERFØR_E3Y_MAP;             /* R001N806 */               
+                                                                                
+                 W01_YSKADE     = '0'B;                                         
+                                                                                
+                 S001201O.DUMMYA = 'Ø';              /* PROT,DARK */            
+                 /*  FREE TRANS_OMR,TRANS_OPPL_OMR ;  */                        
+                 EXEC CICS SEND MAP('S001201') MAPSET('S001F23') ACCUM          
+                                               PAGING ERASE;                    
+              END;                                                              
+                                                                                
+        END E3_PROC;                                                            
+                                                                                
+                                                                                
+        E4_PROC:                                                                
+          PROC;                                                                 
+          %INCLUDE P001N901;   /* TRANS_OMRÅDE EF  */                           
+          %INCLUDE R001N906;   /* EF_TRANS TIL MAP */                           
+          %INCLUDE R001N907;   /* OVERF. FORTEKSTER OG ATTRIBUTTER */           
+                                                                                
+                                                                                
+           /* INTERN PROC I R001N906: OVERFØRING EF-DELEN          */           
+                                                                                
+           CALL OVERFØR_E4SØKER_MAP;                                            
+           IF E4S.NORSK_BOSATT = 'N' THEN                                       
+              DO;                                                               
+                                                                                
+                 /* INTERN PROC I R0010907: FORTEKSTER OG          */           
+                 /*                         ATTRIBUTTER I SPES-DEL */           
+                                                                                
+                 CALL TEKST_SPES;                                               
+                                                                                
+                 /* INTERN PROC I R001N906: OVERFØRING SPES_DEL    */           
+                                                                                
+                 CALL OVERFØR_E4SPES_MAP;                                       
+              END;                                                              
+           S001N91O.DUMMYA = 'Ø';     /* PROT,DARK  */                          
+           /*  FREE TRANS_OMR,TRANS_OPPL_OMR ;  */                              
+                                                                                
+           /* SKRIVER SKJERMBILDE GRUNNBLANKETT-E4TRANS */                      
+                                                                                
+           EXEC CICS SEND MAP('S001N91') MAPSET('S001F23') ACCUM                
+                                                  PAGING   ERASE;               
+                                                                                
+        END E4_PROC;                                                            
+                                                                                
+                                                                                
+        B6_PROC:                                                                
+          PROC;                                                                 
+          %INCLUDE P001NB01;   /* TRANS_OMRÅDE B6-TRANS     */                  
+                                                                                
+                               /* BP_TRANS TIL MAP, OVERF.  */                  
+          %INCLUDE R001NB06;   /* FORTEKSTER OG ATTRIBUTTER */                  
+                                                                                
+                                                                                
+           /* INTERN PROC I R001NB06: OVERFØRING BP_BARNE_DEL      */           
+                                                                                
+           CALL OVERFØR_B6_MAP;                                                 
+           S001NB1O.DUMMYA = 'Ø';     /* PROT,DARK  */                          
+           /*  FREE TRANS_OMR,TRANS_OPPL_OMR ;  */                              
+                                                                                
+           /* SKRIVER SKJERMBILDE GRUNNBLANKETT-BPTRANS */                      
+                                                                                
+           EXEC CICS SEND MAP('S001NB1') MAPSET('S001F23') ACCUM                
+                                                  PAGING   ERASE;               
+                                                                                
+        END B6_PROC;                                                            
+                                                                                
+                                                                                
+        F7_PROC:                                                                
+          PROC;                                                                 
+          %INCLUDE P001NC01;/* TRANS_OMRÅDE TIL F7_TRANS */                     
+          %INCLUDE R001NC06;/* F7_TRANS TIL MAP          */                     
+          %INCLUDE R001NC07;/* OVERF.FORTEKSTER OG ATTR.B*/                     
+                                                                                
+                                                                                
+           /* INTERN PROC I R0011206: OVERFØRING F7_SØKER_DEL      */           
+                                                                                
+           CALL OVERFØR_F7_SØKER_MAP;                                           
+           CALL TEKST_SØKER2;                                                   
+           CALL OVERFØR_F7_SØKER2_MAP;                                          
+           S001NC1O.DUMMYA = 'Ø';     /* PROT,DARK  */                          
+           EXEC CICS ENTER TRACEID(70) FROM (F7S.TILL_EK);                      
+           EXEC CICS ENTER TRACEID(71) FROM (F7S.BT_ANT);                       
+           EXEC CICS ENTER TRACEID(72) FROM (F7S.FNR_EK);                       
+           EXEC CICS ENTER TRACEID(73) FROM                                     
+             (TRANS_OMR.F7S.BT_ANT);                                            
+           IF TRANS_OMR.F7S.BT_ANT > 0 THEN                                     
+              DO;                                                               
+                                                                                
+                 /* INTERN PROC I R001NC07: FORTEKSTER OG          */           
+                 /*                         ATTRIBUTTER I BARNEDEL */           
+                                                                                
+                 CALL TEKST_BARN;                                               
+                                                                                
+                 /* INTERN PROC I R001NC06: OVERFØRING F7_BARNE_DEL*/           
+                                                                                
+                 CALL OVERFØR_F7_BARN_MAP;                                      
+              END;                                                              
+                                                                                
+           /*  FREE TRANS_OMR,TRANS_OPPL_OMR    */                              
+                                                                                
+           /* SKRIVER SKJERMBILDE GRUNNBLANKETT-FTTRANS */                      
+                                                                                
+           EXEC CICS SEND MAP('S001NC1') MAPSET('S001F23') ACCUM                
+                                                   PAGING  ERASE;               
+                                                                                
+        END F7_PROC;                                                            
+                                                                                
+                                                                                
+    END SELECT_BLANKETTYPE;                                                     
+                                                                                
+   SKRIV_FEIL:                       /**   DUMMY PROC  **/                      
+      PROC(FIXED_DEC_5);                                                        
+                                                                                
+      DCL                                                                       
+        FIXED_DEC_5 UNAL FIXED DEC(5);                                          
+                                                                                
+   END SKRIV_FEIL;                                                              
+                                                                                
+   SKRIV_FEIL_YP:                    /**   DUMMY PROC  **/                      
+      PROC(FIXED_DEC_5);                                                        
+                                                                                
+      DCL                                                                       
+        FIXED_DEC_5 UNAL FIXED DEC(5);                                          
+                                                                                
+   END SKRIV_FEIL_YP;                                                           
+                                                                                
+                                                                                
+                                                                                
+   %INCLUDE R0019910;  /* F_NUMERIC               */                            
+   %INCLUDE R0019912;  /* PIC TIL CHAR OG MOTSATT */                            
+   %INCLUDE  R0019983;                        /*  KONV_ÅMD_HÅMD       */        
+   %INCLUDE  R0019984;                        /*  KONV_MÅ-HÅMD        */        
+   %INCLUDE  R0019988;                        /*  KONV_HÅMD_ÅMD       */        
+   %INCLUDE  R0019989;                        /*  KONV_HÅMD_MÅ        */        
+   %INCLUDE  R0019990;                        /*  KONV_HÅMD_DMÅ       */        
+ END R01B470;                                                                   

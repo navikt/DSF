@@ -1,0 +1,263 @@
+ /*   SIST ENDRET PÅ PROD   2002.10.30  8.56.06 AV   JDA2970          */        
+ /*       SIST ENDRET 04/05-98 12.24.43 AV   JDA7339                  */        
+ /*       SIST ENDRET 16/03-98 15.14.59 AV   RFA9991                  */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R0011905   KONTROLL_AFP_SPES  SUBPROGRAM         */        
+ /*  PROGRAM-SPRÅK : PLI                                              */        
+ /*  PROGRAMMERER  : SATISH                                           */        
+ /*  PROGRAMMET BLE LAGET : 20.10.88                                  */        
+ /*  ENDRINGSDATO  :                                                  */        
+ /*  ENDRINGEN GJELDER:                                               */        
+ /*  ENDRINGEN BLE UTFØRT AV :  ERIK                                  */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*  KONTROLLERER GRUNNBLANKETT AFP - DEN SPESIELLE DEL.              */        
+ /*  RETURNERER FEIL_FUNNET = '1'B VED FEIL, ELLERS '0'B.             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*  PROGRAMMET INCLUDES AV R0011901 - KONTROLL_GRUNNBLANKEF TT_AFP   */        
+ /*  ARBEIDSOMRÅDET P0011901 ER INCLUDET I HOVEDPROG.                 */        
+ /*  BRUK :                                                           */        
+ /*      CALL KONTROLL_AFP_SPES(FEIL_FUNNET)                          */        
+ /*                                                                   */        
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN INCLUDES I HOVEDPROG :       */        
+ /*      R0019907 - F_TABSØKC_FUNNET                                  */        
+ /*      R0019910 - F_NUMERISK                                        */        
+ /*      R0019912 - F_FELT_PIC_CHARNN                                 */        
+ /*      VERIFY   - BUILTIN-FUNCTION                                  */        
+ /*                                                                   */        
+ /*  EKSTERN PROSEDYRE SOM CALLES :                                   */        
+ /*      R0011908 - TT_AFP       (INCLUDE I HOVEDPROG)                */        
+ /*                                                                   */        
+ /*  INTERNE PROSEDYRER :                                             */        
+ /*      KONTROLL_AFP_SPES(FEIL_FUNNET)                               */        
+ /*      SJEKK_TT_NUMERISK                                            */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*   INGEN                                                           */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */        
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */        
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDINGER PÅ SKJERMBILDET.   */        
+ /*   AFP SKAL HA FEILMELDINGSNUMRE FRA 400 TIL 494.  ERIK 31.10.88   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ KONTROLL_AFP_SPES:                                                             
+   PROC(FEIL_FUNNET);                                                           
+ %PAGE;                                                                         
+   DCL                                                                          
+      FEIL_FUNNET                        BIT(1);                                
+   DCL                                                                          
+      KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),                    
+      KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),                    
+      KEY_PEKER1                 POINTER,                                       
+      KEY_PEKER2                 POINTER,                                       
+      ST_RECL                    CHAR (35);                                     
+   DCL                                                                          
+      T_FNR                              PIC'(11)9',                            
+      T_VIRK_DATO                        PIC'(8)9';                             
+   DCL                                                                          
+      1 NR DEF T_FNR,                                                           
+        2 DG                             PIC'99',                               
+        2 MN                             PIC'99',                               
+        2 ÅR                             PIC'99',                               
+        2 PERSNR,                                                               
+          3 ÅRHUNDRE                     PIC'999',                              
+          3 REST                         PIC'99';                               
+   DCL                                                                          
+      FNR13                             PIC'(13)9';                             
+   DCL                                                                          
+      F_AAR    DEF FNR13  POS(5)         PIC'(4)9';                             
+   DCL                                                                          
+      FYLT_SEKSTISJU                     PIC'(5)9';                             
+   DCL                                                                          
+      FYLT_SEKSTISEKS                    PIC'(5)9'; /* ERIK 28.10.88 */         
+   DCL                                                                          
+      FYLT_SEKSTIFEM                     PIC'(5)9'; /* ERIK 28.10.88 */         
+   DCL                                                                          
+      TT_VENT_UTL_Å                      PIC'99',                               
+      TT_VENT_UTL_ÅM                     PIC'(4)9',                             
+      OVER_MND                           PIC'99',                               
+      TT                                 PIC'99';                               
+   DCL                                                                          
+      MAKS_TT_FØR_1967                   PIC'99',                               
+      TT_TIL_TPK                         PIC'(6)9',                             
+      TT_E66_ÅM                          PIC'(6)9';                             
+ %SKIP(2);                                                                      
+      FNR13       = KONV_FNR11_FNR13( AFP.FNR);                                 
+      TT_E66_ÅM  = (AFPSP.TT_E66_Å * 100) + AFPSP.TT_E66_M;                     
+      KEY_PEKER1  = ADDR(AFPSP.STATSBORGER);                                    
+      KEY_PEKER2  = ADDR(AFPSP.BOSATT);                                         
+ %PAGE;                                /*    */                                 
+ /* ***************************************************************** */        
+ /* TESTER OM FORUTSETNINGENE FOR Å KONTROLLERE FELTENE I SPES.INFO   */        
+ /* DELEN ER TILSTEDE.                                                */        
+ /* ***************************************************************** */        
+  FEIL_FUNNET = '0'B;                                                           
+  CALL SJEKK_TT_NUMERISK;                                                       
+  IF ^FEIL_FUNNET THEN                                                          
+    DO;                                                                         
+      IF AFPSP.TT_F67     = 0 & AFPSP.TT_E66_Å      =  0 &                      
+         AFPSP.TT_E66_M   = 0 &                                                 
+         F_FELT_PIC_CHAR3(AFPSP.STATSBORGER)        = '000' &                   
+         F_FELT_PIC_CHAR3(AFPSP.BOSATT)             = '000' &                   
+         AFPSP.OVERKOMP_UTL                         = ' ' THEN                  
+        DO;                                                                     
+          FEIL_FUNNET        = '1'B;                                            
+          AFP.NORSK_BOSATTNR = 61;                                              
+        END;                                                                    
+      ELSE                                                                      
+        DO;                                                                     
+ /* ***************************************************************** */        
+ /* FELTKONTROLLER.........                                           */        
+ /* ***************************************************************** */        
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)               
+                                               INTO(ST_RECL);                   
+              GOTO STAT_UT;                                                     
+          NOTFND1:                                                              
+              FEIL_FUNNET        = '1'B;                                        
+              AFPSP.STATSBORGERNR = 24;                                         
+              GOTO STAT_UT;                                                     
+          STAT_UT:                                                              
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);                       
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT2)               
+                                               INTO(ST_RECL);                   
+              GOTO BO_UT;                                                       
+          NOTFND2:                                                              
+              FEIL_FUNNET   = '1'B;                                             
+              AFPSP.BOSATTNR = 25;                                              
+              GOTO BO_UT;                                                       
+          BO_UT:                                                                
+                                                                                
+          IF   AFPSP.FRAVIK_FLYKT ^= ' ' THEN                                   
+            DO;                                                                 
+              FEIL_FUNNET         = '1'B;                                       
+              AFPSP.FRAVIK_FLYKTNR = 403;                                       
+            END;                                                                
+          IF ^(AFPSP.OVERKOMP_UTL = 'J' !                                       
+                               AFPSP.OVERKOMP_UTL = 'N')  &                     
+                               F_AAR < 1937 THEN                                
+            DO;                                                                 
+              FEIL_FUNNET         = '1';                                        
+              AFPSP.OVERKOMP_UTLNR = 35;                                        
+            END;                                                                
+          IF ^(AFPSP.OVERKOMP_UTL = ' ' ) &                                     
+                               F_AAR > 1936 THEN                                
+            DO;                                                                 
+              FEIL_FUNNET         = '1';                                        
+              AFPSP.OVERKOMP_UTLNR = 623;                                       
+            END;                                                                
+          IF AFPSP.TT_E66_M > 12 THEN                                           
+            DO;                                                                 
+              FEIL_FUNNET = '1'B;                                               
+              AFPSP.TT_E66_MNR = 31;                                            
+            END;                                                                
+      END;                                                                      
+ %PAGE;                                                                         
+ /* ***************************************************************** */        
+ /* KRYSSKONTROLLER                                                   */        
+ /* ***************************************************************** */        
+        IF ^FEIL_FUNNET THEN                                                    
+          DO;                                                                   
+            IF AFPSP.FRAVIK_FLYKT = 'J' & AFPSP.TT_F67 > 0 THEN                 
+              DO;                                                               
+                FEIL_FUNNET         = '1'B;                                     
+                AFPSP.FRAVIK_FLYKTNR = 403;                                     
+                AFPSP.TT_F67NR      = 999;                                      
+              END;                                                              
+ %PAGE;                                /*    */                                 
+ /* ***************************************************************** */        
+ /* REGNER UT ÅR OG MND VEDKOMMENDE FYLLER 66 ÅR (ÅÅMM)               */        
+ /*(SIFFER 7-9 ANGIR ÅRHUNDRE:1800-TALLET 500-749,1900-TALLET 000-499)*/        
+ /* ***************************************************************** */        
+        IF ÅRHUNDRE <= 499 THEN                                                 
+           FYLT_SEKSTISEKS = ((ÅR + 66) * 12) + MN;                             
+        ELSE                                                                    
+           FYLT_SEKSTISEKS = (((ÅR + 66) - 100) * 12) + MN;                     
+ /* ***************************************************************** */        
+ /* REGNER UT ÅR OG MND VEDKOMMENDE FYLLER 65 ÅR (ÅÅMM)               */        
+ /*(SIFFER 7-9 ANGIR ÅRHUNDRE:1800-TALLET 500-749,1900-TALLET 000-499)*/        
+ /* ***************************************************************** */        
+        IF ÅRHUNDRE <= 499 THEN                                                 
+           FYLT_SEKSTIFEM = ((ÅR + 65) * 12) + MN;                              
+        ELSE                                                                    
+           FYLT_SEKSTIFEM = (((ÅR + 65) - 100) * 12) + MN;                      
+ /* ***************************************************************** */        
+ /* REGNER OM ANT.MND.VENTET I UTLANDET (MM) TIL ÅR OG MND (ÅÅMM)     */        
+ %PAGE;                                /*   */                                  
+ /* ***************************************************************** */        
+ /* KONTROLL AV SØKERENS TRYGDETID:                                   */        
+ /* - OM TT FØR 1967 ER FOR HØY                                       */        
+ /* - OM TT FRA 1966 TIL FYLTE 67 ÅR ER FOR HØY                       */        
+ /* ***************************************************************** */        
+                                                                                
+        IF ^FEIL_FUNNET THEN                                                    
+          DO;                                                                   
+            /* TRYGDETIDEM MÅ ALLTID OPPGIS NÅR DET ER SPESIELLE  */            
+            /* OPPLYSNINGER                                       */            
+            IF AFPSP.TT_F67 = 0 & AFPSP.TT_E66_Å = 0 &                          
+               AFPSP.TT_E66_M = 0 THEN                                          
+               DO;                                                              
+                 FEIL_FUNNET = '1'B;                                            
+                 AFPSP.TT_F67NR = 195;                                          
+                 AFPSP.TT_E66_ÅNR = 999;                                        
+                 AFPSP.TT_E66_MNR = 999;                                        
+               END;                                                             
+                                                                                
+            CALL TT_AFP(AFP.FNR,AFP.VIRK_DATO_ÅMD,                              
+                        MAKS_TT_FØR_1967,TT_TIL_TPK);   /*R0011908 */           
+                                                                                
+            IF AFPSP.TT_F67 > MAKS_TT_FØR_1967 THEN                             
+              DO;                                                               
+                FEIL_FUNNET     = '1'B;                                         
+                AFPSP.TT_F67NR = 31;                                            
+              END;                                                              
+            IF TT_E66_ÅM > TT_TIL_TPK THEN                                      
+              DO;                                                               
+                FEIL_FUNNET     = '1'B;                                         
+                AFPSP.TT_E66_ÅNR = 112;                                         
+                AFPSP.TT_E66_MNR = 999;                                         
+              END;                                                              
+          END;                                                                  
+ %PAGE;                                /*   */                                  
+ /* ***************************************************************** */        
+ /* KRYSSKONTROLL AFPSP.FRAVIK_19_3 OG TT                             */        
+ /* ***************************************************************** */        
+            IF AFPSP.TT_E66_M > 0 THEN                                          
+               TT = AFPSP.TT_F67 + (AFPSP.TT_E66_Å + 1);                        
+            ELSE                                                                
+               TT = AFPSP.TT_F67 + AFPSP.TT_E66_Å;                              
+         END;                                                                   
+     END;                                                                       
+ /* ***************************************************************** */        
+  SJEKK_TT_NUMERISK:                                                            
+      PROC;                                                                     
+            IF ^F_NUMERISK(F_FELT_PIC_CHAR2(AFPSP.TT_F67)) THEN                 
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  AFPSP.TT_F67NR      = 200;                                    
+               END;                                                             
+            IF ^F_NUMERISK(F_FELT_PIC_CHAR2(AFPSP.TT_E66_Å)) THEN               
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  AFPSP.TT_E66_ÅNR    = 200;                                    
+               END;                                                             
+            IF ^F_NUMERISK(F_FELT_PIC_CHAR2(AFPSP.TT_E66_M)) THEN               
+               DO;                                                              
+                  FEIL_FUNNET         = '1'B;                                   
+                  AFPSP.TT_E66_MNR    = 200;                                    
+               END;                                                             
+      END SJEKK_TT_NUMERISK;                                                    
+   END KONTROLL_AFP_SPES;                                                       

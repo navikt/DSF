@@ -1,0 +1,349 @@
+ /*   SIST ENDRET PÅ PROD   2006.07.18 11.37.11 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.04.24  9.42.29 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ QASS   2006.04.19 12.10.41 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.03.24  8.43.45 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2005.08.30 11.02.42 AV   TSB2970          */        
+ /*   SIST ENDRET PÅ PROD   2005.04.19 13.03.51 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.11.18 11.28.00 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.11.17 13.39.32 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.04.17 12.07.30 AV   JDA7339          */        
+ /*       SIST ENDRET 21/09-99 08.19.15 AV   JDA7339                  */        
+ /*       SIST ENDRET 21/09-99 08.15.37 AV   JDA7339                  */        
+ /*       SIST ENDRET 20/07-98 10.03.32 AV   JDA7339                  */        
+ /*       SIST ENDRET 22/06-98 08.58.21 AV   RFA9991                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0014129 - BEREGN_ETTERLATT_AP_YP                              */        
+ /*    PROGRAMMERER: HERMAN OKT 89                                    */        
+ /*HENSIKT:                                                           */        
+ /*    FINNER HVILKEN BEREGNING SOM GIR MEST :                        */        
+ /*     1. VANLIG MED TP_EGEN                                         */        
+ /*     2. VANLIG MED TP_EGEN_PT_55 + TP_BRUTTO                       */        
+ /*     3. YP-FORDEL OG BARE EGET BEREGNINGSGRUNNLAG                  */        
+ /*     4. YP-FORDEL MEN MED TP_BRUTTO (AVDØDES)                      */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROGRAMMET BLIR INKLUDERT I R0014101 - (BEREGN_ETTERLATT_AP)   */        
+ /*    OG CALLET FRA 4121                                             */        
+ /*BRUK:                                                              */        
+ /*    CALL BEREGN_ETTERLATT_AP_YP;                                   */        
+ /* ***************************************************************** */        
+ BEREGN_ETTERLATT_AP_YP:                                                        
+  PROC;                                                                         
+  /* ***************************************************                        
+ DCL REST_GRAD_4129       FIXED DEC (3) INIT (0);                               
+ DCL YRKE_GP_4129         FIXED DEC (7) INIT (0);                               
+ DCL ALDER_GP_4129        FIXED DEC (7) INIT (0);                               
+ DCL GP_100_4129          FIXED DEC (7) INIT (0);                               
+ DCL  GP_FAKTOR_4129      FIXED DEC (5,4);                                      
+  ************************** */                                                 
+ DCL YRKE_TP              FIXED DEC (7) INIT (0);                               
+ DCL ALDER_TP             FIXED DEC (7) INIT (0);                               
+ DCL ALDER_TP_55          FIXED DEC (7) INIT (0);                               
+ DCL TP_YA_PT_55          FIXED DEC (7) INIT (0);                               
+ DCL YRKE_EGEN            FIXED DEC (7) INIT (0);                               
+ DCL YRKE_55              FIXED DEC (7) INIT (0);                               
+ DCL ALDER_EGEN           FIXED DEC (7) INIT (0);                               
+ DCL ALDER_55             FIXED DEC (7) INIT (0);                               
+ DCL SISTE                FIXED BIN (15);                                       
+ DCL YPT_UTEN             FIXED DEC (3,2) INIT (0);                             
+  DCL        TP_WORK           FIXED DEC (13,4);                                
+  DCL        FAKTOR1           FIXED DEC (13,4);                                
+  DCL        FAKTOR2           FIXED DEC (13,4);                                
+                                                                                
+ /* ***************************************************************** */        
+ /* FØRST BEREGNES PENSJON MED YP-FORDEL - MED ETTERLATTEFORDEL, OG   */        
+ /* MED EVT POENGTILLEGG                                              */        
+ /* ***************************************************************** */        
+                                                                                
+ /* SAMBOERE JFA 1.10.03 */                                                     
+    IF B02.PENSJON_FØR_9802(BER_SØ_IND) ^= 'J'   &                              
+       B02.RED_GP_3_2_5(BER_SØ_IND)      = 'J'    THEN                          
+       DO;                                                                      
+          GP_FAKTOR_4129 = GP_PROSENT;                                          
+          DIV_PARAM_OMR.REDUSERT_GP_2G(BER_SØ_IND) = 'X';                       
+          B02.GP_REDUKSJON_KODE(BER_SØ_IND)        = 'X';                       
+       END;                                                                     
+    ELSE                                                                        
+       DO;                                                                      
+          GP_FAKTOR_4129 = 1;                                                   
+          B02.GP_REDUKSJON_KODE(BER_SØ_IND)        = ' ';                       
+       END; /* HIT 1.10.03 */                                                   
+                                                                                
+                                                                                
+    IF B02.YRKEPENS.YPT(BER_SØ_IND) <                                           
+       B02.YRKE_POENG_1291(BER_SØ_IND)         THEN                             
+       B02.YRKEPENS.YPT(BER_SØ_IND) =                                           
+       B02.YRKE_POENG_1291(BER_SØ_IND);                                         
+                                                                                
+       TP_WORK  = G * B02.YRKEPENS.YPT(BER_SØ_IND) * 0.55;                      
+       TP_WORK  = TP_WORK * B02.YRKEPENS.YUG(BER_SØ_IND) /100;                  
+       TP_WORK  = TP_WORK / 12;                                                 
+       IF B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) = 0    THEN                       
+          TP_YA_PT_55 = TP_WORK * 0.45 + 0.5;                                   
+                                                                                
+       ELSE                                                                     
+          DO;                                                                   
+             FAKTOR1 = (B02.YRKEPENS.PÅ(BER_SØ_IND)                             
+                        - B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) )                 
+                      / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.45;                     
+             FAKTOR2 = B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND)                      
+                      / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.42;                     
+            TP_YA_PT_55 = TP_WORK * (FAKTOR1 + FAKTOR2 + 0.00005) + 0.5;        
+         END;                                                                   
+                                                                                
+ /* TP_YA_PT_55 = B02.YRKEPENS.YPT(BER_SØ_IND) * G * 0.45 * 0.55                
+             * B02.YRKEPENS.YUG(BER_SØ_IND) / (100 * 12) + 0.5; */              
+                                                                                
+    YRKE_GP_4129 = B02.YRKEPENS.YUG(BER_SØ_IND) * G / (100 * 12)                
+                                           * GP_FAKTOR_4129 + 0.5;              
+                                                                                
+    REST_GRAD_4129 = 100 - B02.YRKEPENS.YUG(BER_SØ_IND);                        
+                                                                                
+    ALDER_TP_55 = F_TP92(W_FNR_R13.ÅR,G,                                        
+                  POREKKE.SPT(BER_SØ_IND),                                      
+                  POREKKE.OPT(BER_SØ_IND),                                      
+                  POREKKE.PÅ (BER_SØ_IND),                                      
+          POREKKE.PÅ_ETTER91 (BER_SØ_IND),                                      
+                  (REST_GRAD_4129),55,'J');                                     
+    IF ALDER_TP_55 > 4900 THEN                                                  
+       EXEC CICS ENTER TRACEID(29) FROM (ALDER_TP_55);                          
+                                                                                
+    ALDER_GP_4129 = G * B02.TT_ANV(BER_SØ_IND) * REST_GRAD_4129                 
+                   /*JFA*/   / (100 * 40 * 12) * GP_FAKTOR_4129 + 0.5;          
+                                                                                
+ /*200508 HL : HVIS DET BLIR EN KRONE FOR MEGET */                              
+    GP_100_4129 = (G/12) * GP_FAKTOR_4129 + 0.5;                                
+    IF GP_100_4129 < (YRKE_GP_4129 + ALDER_GP_4129) THEN                        
+       YRKE_GP_4129 = GP_100_4129 - ALDER_GP_4129;                              
+ /*200504 HL : HVIS DET BLIR EN KRONE FOR LITE */                               
+    GP_100_4129 = G * B02.TT_ANV(BER_SØ_IND) * 100                              
+                             / (100 * 40 * 12) * GP_FAKTOR_4129 + 0.5;          
+    IF GP_100_4129 > (YRKE_GP_4129 + ALDER_GP_4129) THEN                        
+       YRKE_GP_4129 = GP_100_4129 - ALDER_GP_4129;                              
+ /* ***************************************************************** */        
+ /* SÅ BEREGNES YPT UTEN EVT POENGTILLEGG                             */        
+ /* ***************************************************************** */        
+                                                                                
+                                                                                
+      /** FINNE SISTE UTFYLTE YUFT_ÅM   **/                                     
+      DO J = 10  TO 1 BY -1 UNTIL(B02.YRKEHIST.YUFT_ÅMD                         
+                            (BER_SØ_IND,J) > 0);                                
+         SISTE = J;                                                             
+      END;                                                                      
+                                                                                
+                                                                                
+      IF B02.YRKEPENS.YPT(BER_SØ_IND) >                                         
+         B02.YRKEHIST.PAÅ(BER_SØ_IND,SISTE)       THEN                          
+                                                                                
+         DO;                                                                    
+                                                                                
+            IF B01.POENGTILLEGG_KODE(BER_SØ_IND) = 'A'  THEN                    
+               DO;                                                              
+                  IF B02.YRKEPENS.YPT(BER_SØ_IND) - 1  <                        
+                     B02.YRKEHIST.PAÅ(BER_SØ_IND,SISTE) THEN                    
+                                                                                
+                     YPT_UTEN = B02.YRKEHIST.PAÅ(BER_SØ_IND,SISTE);             
+                                                                                
+                  ELSE                                                          
+                                                                                
+                     YPT_UTEN = B02.YRKEPENS.YPT(BER_SØ_IND) - 1;               
+               END;                                                             
+            ELSE                                                                
+            IF B01.POENGTILLEGG_KODE(BER_SØ_IND) = 'B'  THEN                    
+               DO;                                                              
+                  IF B02.YRKEPENS.YPT(BER_SØ_IND) - 0.5  <                      
+                     B02.YRKEHIST.PAÅ(BER_SØ_IND,SISTE) THEN                    
+                                                                                
+                     YPT_UTEN = B02.YRKEHIST.PAÅ(BER_SØ_IND,SISTE);             
+                                                                                
+                  ELSE                                                          
+                                                                                
+                     YPT_UTEN = B02.YRKEPENS.YPT(BER_SØ_IND) - 0.5;             
+               END;                                                             
+                                                                                
+                                                                                
+            ELSE                                                                
+               YPT_UTEN = B02.YRKEPENS.YPT(BER_SØ_IND);                         
+                                                                                
+                                                                                
+         END;                                                                   
+                                                                                
+      ELSE                                                                      
+                                                                                
+         YPT_UTEN = B02.YRKEPENS.YPT(BER_SØ_IND);                               
+                                                                                
+ /* ***************************************************************** */        
+ /* SÅ BEREGNES PENSJON MED YP-FORDEL - UTEN ETTERLATTEFORDEL OG      */        
+ /* UTEN POENGTILLEGG                                                 */        
+ /* ***************************************************************** */        
+                                                                                
+       TP_WORK  = G * YPT_UTEN;                                                 
+       TP_WORK  = TP_WORK * B02.YRKEPENS.YUG(BER_SØ_IND) /100;                  
+       TP_WORK  = TP_WORK / 12;                                                 
+       IF B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) = 0    THEN                       
+          YRKE_TP = TP_WORK * 0.45 + 0.5;                                       
+                                                                                
+       ELSE                                                                     
+          DO;                                                                   
+             FAKTOR1 = (B02.YRKEPENS.PÅ(BER_SØ_IND)                             
+                        - B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) )                 
+                      / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.45;                     
+             FAKTOR2 = B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND)                      
+                      / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.42;                     
+             YRKE_TP = TP_WORK * (FAKTOR1 + FAKTOR2 + 0.00005) + 0.5;           
+         END;                                                                   
+                                                                                
+                                                                                
+    ALDER_TP = F_TP92(W_FNR_R13.ÅR,G,                                           
+               POREKKE.SPT(14),/*POENGREKKEN UTEN PT LIGGER */                  
+               POREKKE.OPT(14),/*PÅ PLASS NR 14 */                              
+               POREKKE.PÅ (14),                                                 
+               POREKKE.PÅ_ETTER91 (14),                                         
+               (REST_GRAD_4129),100,'J');                                       
+                                                                                
+    IF ALDER_TP > 4900 THEN                                                     
+       EXEC CICS ENTER TRACEID(30) FROM (ALDER_TP);                             
+ /* ***************************************************************** */        
+ /* SAMMENLIGNING FORETAS, OG RESULTATET MERKES I YPT_KODE            */        
+ /* ***************************************************************** */        
+                                                                                
+    YRKE_EGEN  = YRKE_TP + YRKE_GP_4129 + ALDER_TP + ALDER_GP_4129;             
+   /* 20050824 HL : ALDER_GP_4129 VAR FALT UT - FORSKYVNING*/                   
+    YRKE_55    = TP_YA_PT_55 + ALDER_TP_55 + YRKE_GP_4129                       
+                             + ALDER_GP_4129 + TP_EK_PT;                        
+    ALDER_EGEN = TP_EGEN + B02.ALDERSP.GP(BER_SØ_IND);                          
+    ALDER_55 = TP_PT_EGEN_55 + TP_EK_PT + B02.ALDERSP.GP(BER_SØ_IND);           
+                                                                                
+    IF YRKE_EGEN > ALDER_EGEN                THEN                               
+       IF YRKE_EGEN > ALDER_55                 THEN                             
+          IF YRKE_EGEN > YRKE_55                 THEN                           
+             DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '3';                           
+                                           /*YRKE_EGEN ER STØRST*/              
+          ELSE                                                                  
+             DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '4';                           
+                                           /*YRKE_55 ER STØRST*/                
+       ELSE                                                                     
+       IF ALDER_55 > YRKE_55                 THEN                               
+          DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '2';                              
+                                           /*ALDER_55 ER STØRST*/               
+       ELSE                                                                     
+          DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '4';                              
+                                           /*YRKE_55 ER STØRST*/                
+    ELSE                                                                        
+    IF ALDER_EGEN > ALDER_55                 THEN                               
+       IF ALDER_EGEN > YRKE_55                 THEN                             
+          DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '1';                              
+                                           /*ALDER_EGEN ER STØRST*/             
+       ELSE                                                                     
+          DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '4';                              
+                                           /*YRKE_55 ER STØRST*/                
+    ELSE                                                                        
+    IF ALDER_55 > YRKE_55                    THEN                               
+       DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '2';                                 
+                                           /*ALDER_55 ER STØRST*/               
+    ELSE                                                                        
+       DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '4';                                 
+                                           /*YRKE_55 ER STØRST*/                
+                                                                                
+ /* ***************************************************************** */        
+ /* PENSJON OG POENGTALL OPPDATERES                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ SELECT (DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN);                                    
+                                                                                
+    WHEN ('1')  /* ALDER_EGEN ER STØRST*/                                       
+                                                                                
+    DO;                                                                         
+                                                                                
+       B02.POENGTILLEGG_DATO_ÅMD(BER_SØ_IND) = 0;                               
+       B02.POENGTILLEGG_KODE   (BER_SØ_IND) = ' ';                              
+       B02.POENGTILLEGG_DATO_ÅMD(BER_EK_IND) = 0;                               
+       B02.POENGTILLEGG_KODE   (BER_EK_IND) = ' ';                              
+                                                                                
+       POREKKE(BER_SØ_IND)     = POREKKE(14);                                   
+ /* PLASS 14 BRUKES SOM OPPBEVARINGSOMR. DA DENNE PLASSEN     */                
+ /* ALLTID ER LEDIG I ALDERSPENSJON.                          */                
+       POREKKE_P67(BER_SØ_IND) = W_POREKKE;                                     
+                                                                                
+       B02.ALDERSP.TP(BER_SØ_IND)   = TP_EGEN;                                  
+       B02.ALDERSP.SPT(BER_SØ_IND)  = POREKKE.SPT(BER_SØ_IND);                  
+       B02.ALDERSP.OPT(BER_SØ_IND)  = POREKKE.OPT(BER_SØ_IND);                  
+       B02.ALDERSP.PÅ(BER_SØ_IND)   = POREKKE.PÅ (BER_SØ_IND);                  
+                                                                                
+       B02.VT_SPT(BER_SØ_IND)   = POREKKE_P67.SPT(BER_SØ_IND);                  
+       B02.VT_OPT(BER_SØ_IND)   = POREKKE_P67.OPT(BER_SØ_IND);                  
+       B02.VT_PÅ (BER_SØ_IND)   = POREKKE_P67.PÅ (BER_SØ_IND);                  
+                                                                                
+       B02.ETTEPENS.TP_BRUTTO(BER_SØ_IND) = 0;                                  
+       B02.ETTEPENS.TP_NETTO(BER_SØ_IND)  = 0;                                  
+     END;                                                                       
+                                                                                
+    WHEN ('2')  /* ALDER_55 ER STØRST*/                                         
+                                                                                
+     DO;                                                                        
+        B02.ALDERSP.TP(BER_SØ_IND)   = TP_PT_EGEN_55;                           
+        B02.ALDERSP.SPT(BER_SØ_IND)  = POREKKE.SPT(BER_SØ_IND);                 
+        B02.ALDERSP.OPT(BER_SØ_IND)  = POREKKE.OPT(BER_SØ_IND);                 
+        B02.ALDERSP.PÅ(BER_SØ_IND)   = POREKKE.PÅ (BER_SØ_IND);                 
+                                                                                
+        B02.VT_SPT(BER_SØ_IND)   = POREKKE_P67.SPT(BER_SØ_IND);                 
+        B02.VT_OPT(BER_SØ_IND)   = POREKKE_P67.OPT(BER_SØ_IND);                 
+        B02.VT_PÅ (BER_SØ_IND)   = POREKKE_P67.PÅ (BER_SØ_IND);                 
+                                                                                
+        B02.ETTEPENS.TP_BRUTTO(BER_SØ_IND) = TP_EK_PT;                          
+        B02.ETTEPENS.TP_NETTO(BER_SØ_IND)  = TP_EK_PT;                          
+                                                                                
+     END;                                                                       
+                                                                                
+    WHEN ('3')  /* YRKE_EGEN ER STØRST*/                                        
+                                                                                
+     DO;                                                                        
+       B02.POENGTILLEGG_DATO_ÅMD(BER_SØ_IND) = 0;                               
+       B02.POENGTILLEGG_KODE   (BER_SØ_IND) = ' ';                              
+       B02.POENGTILLEGG_DATO_ÅMD(BER_EK_IND) = 0;                               
+       B02.POENGTILLEGG_KODE   (BER_EK_IND) = ' ';                              
+                                                                                
+       POREKKE(BER_SØ_IND)     = POREKKE(14);                                   
+ /* PLASS 14 BRUKES SOM OPPBEVARINGSOMR. DA DENNE PLASSEN     */                
+ /* ALLTID ER LEDIG I ALDERSPENSJON.                          */                
+       POREKKE_P67(BER_SØ_IND) = W_POREKKE;                                     
+                                                                                
+       B02.ALDERSP.GP(BER_SØ_IND)   = YRKE_GP_4129 + ALDER_GP_4129;             
+       B02.ALDERSP.TP(BER_SØ_IND)   = YRKE_TP + ALDER_TP;                       
+       B02.ALDERSP.SPT(BER_SØ_IND)  = POREKKE.SPT(BER_SØ_IND);                  
+       B02.ALDERSP.OPT(BER_SØ_IND)  = POREKKE.OPT(BER_SØ_IND);                  
+       B02.ALDERSP.PÅ(BER_SØ_IND)   = POREKKE.PÅ (BER_SØ_IND);                  
+                                                                                
+       B02.VT_SPT(BER_SØ_IND)   = POREKKE_P67.SPT(BER_SØ_IND);                  
+       B02.VT_OPT(BER_SØ_IND)   = POREKKE_P67.OPT(BER_SØ_IND);                  
+       B02.VT_PÅ (BER_SØ_IND)   = POREKKE_P67.PÅ (BER_SØ_IND);                  
+                                                                                
+       B02.ETTEPENS.TP_BRUTTO(BER_SØ_IND) = 0;                                  
+       B02.ETTEPENS.TP_NETTO(BER_SØ_IND)  = 0;                                  
+                                                                                
+       B02.YRKEPENS.YPT(BER_SØ_IND) = YPT_UTEN;                                 
+     END;                                                                       
+                                                                                
+    WHEN ('4')  /* YRKE_55 ER STØRST*/                                          
+                                                                                
+     DO;                                                                        
+        B02.ALDERSP.TP(BER_SØ_IND)   = TP_YA_PT_55 + ALDER_TP_55;               
+        B02.ALDERSP.GP(BER_SØ_IND)   = YRKE_GP_4129 + ALDER_GP_4129;            
+        B02.ALDERSP.SPT(BER_SØ_IND)  = POREKKE.SPT(BER_SØ_IND);                 
+        B02.ALDERSP.OPT(BER_SØ_IND)  = POREKKE.OPT(BER_SØ_IND);                 
+        B02.ALDERSP.PÅ(BER_SØ_IND)   = POREKKE.PÅ (BER_SØ_IND);                 
+                                                                                
+        B02.VT_SPT(BER_SØ_IND)   = POREKKE_P67.SPT(BER_SØ_IND);                 
+        B02.VT_OPT(BER_SØ_IND)   = POREKKE_P67.OPT(BER_SØ_IND);                 
+        B02.VT_PÅ (BER_SØ_IND)   = POREKKE_P67.PÅ (BER_SØ_IND);                 
+                                                                                
+        B02.ETTEPENS.TP_BRUTTO(BER_SØ_IND) = TP_EK_PT;                          
+        B02.ETTEPENS.TP_NETTO(BER_SØ_IND)  = TP_EK_PT;                          
+                                                                                
+     END;                                                                       
+                                                                                
+    OTHERWISE;                                                                  
+                                                                                
+ END;                                                                           
+                                                                                
+ END BEREGN_ETTERLATT_AP_YP;                                                    

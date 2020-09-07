@@ -1,0 +1,468 @@
+ /*   SIST ENDRET PÅ PROD   2005.06.24 12.50.56 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.04.26 12.58.37 AV   JDA2970          */        
+ /*       SIST ENDRET 02/09-98 10.29.08 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /* PROGRAM NAME  : R001I601                                          */        
+ /* LANGUAGE      : PL/1                                              */        
+ /* ***************************************************************** */        
+ %SKIP;                                /*  */                                   
+ /* ***************************************************************** */        
+ /*  PROGRAMMET FORETAR OMREGNING PGA INNTEKTSENDRING.                */        
+ /*                                                                   */        
+ /*  PROGRAMMERER ROLF FARVIK, JULI 1983.                             */        
+ /*                                                                   */        
+ /*  ENDRET AV O.GØYTIL 08.06.1998  (ÅR2000-TILPASNING).              */        
+ /*                                                                   */        
+ /*  DATETIME DEF.                                                    */        
+ /*  W02_PI_RAPPDATO (FD6 --> 8) + W02_DAGENS_DATO (FD6 --> 8).       */        
+ /*  DIV_PARAM.TRANS_VIRKDATO_ÅM(D) ØKET FRA 4 TIL 9 POS.             */        
+ /*  B01.STATUS.VIRK_DATO_ÅM   ---> VIRK_DATO_ÅMD.                    */        
+ /*  TRANS_OPPL.VIRKNINGSDATO_ÅM--> VIRKNINGSDATO_ÅMD (4--> 8).       */        
+ /* ***************************************************************** */        
+                                                                                
+ R001I60:                                                                       
+   PROC (COMMAREA_PEKER) OPTIONS(MAIN);                                         
+ %PAGE;                                                                         
+      %INCLUDE S001I4;     /*  INNTEKTMAPSET4    (BASED) */                     
+                                                                                
+ %PAGE;                                                                         
+      %INCLUDE P001I401;   /*  TRANS_OMR          (BASED) */                    
+ %PAGE;                                                                         
+      %INCLUDE P0019906;   /*  TRANS_OPPL_OMRÅDE  (BASED) */                    
+ %PAGE;                                                                         
+      %INCLUDE P0019908;   /*  KOM_OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+      %INCLUDE P0019910;   /*  STYRINGS_OMRÅDE (BASED) */                       
+ %PAGE;                                                                         
+      %INCLUDE P0019912;   /*  DIV_PARAM_OMRÅDE (BASED) */                      
+ %PAGE;                                                                         
+      %INCLUDE P0019014;   /*  FNRTAB             (BASED) */                    
+                                                                                
+   DCL 1 WORK_TRANS_LISTE UNAL BASED (WORK_TRANS_LISTE_PEKER),                  
+ %INCLUDE P0019911;                                                             
+ %PAGE;                                                                         
+ %SKIP(1);                                                                      
+   DCL                                                                          
+       MAP_MELDING              CHAR(78)      INIT((78)' '),                    
+       1  FEIL_STRUC,                                                           
+          2  FEIL_NR               FIXED DEC(5),                                
+          2  FEIL_MELDING          CHAR     (78),                               
+          2  KOM_OMR_PEKER         POINTER;                                     
+    %PAGE;                                                                      
+    /* ************************************************************** */        
+    /*   INNEBYGDE PLI-FUNKSJONER                                     */        
+    /* ************************************************************** */        
+                                                                                
+       DCL                                                                      
+         ( DATE ,ADDR , CSTG , LOW , STG , SUBSTR ,ONCODE , NULL ,              
+           UNSPEC , VERIFY ,DATETIME)  BUILTIN;                                 
+       DCL                                                                      
+         PLITDLI ENTRY,                                                         
+              BMSMAPBR  PTR;                                                    
+                                                                                
+       DCL W_BA_FNR        PIC '(11)9'             ;                            
+                                                                                
+       DCL 1 TILKNSEGM,                                                         
+             2 FNR_TILKN           FIXED DEC (11),                              
+             2 TILKNYTNINGSKODE    CHAR(1)         ,                            
+             2 FT_FØR_91           CHAR(1)         ;   /*NY*/                   
+       DCL 1 HJ_TILKN(13),                                                      
+             2 FNR_TILKN           FIXED DEC (11),                              
+             2 TILKNYTNINGSKODE    CHAR(1)         ,                            
+             2 FT_FØR_91           CHAR(1)         ;   /*NY*/                   
+                                                                                
+       DCL KODE CHAR(2);                                                        
+                                                                                
+       DCL I               FIXED BIN (15)              ;                        
+       DCL BA_KJONN        DEF W_BA_FNR POS(9) PIC '9' ;                        
+       DCL W_FNR           PIC '(11)9'                 ;                        
+       DCL OK              BIT (1) INIT ('0'B)         ;                        
+       DCL DAGENS_DATO     PIC '(8)9'                  ;                        
+       DCL Y2K_DATO_X      CHAR(8)                     ;                        
+       DCL Y2K_DATO_N      PIC '(8)9'                  ;                        
+       DCL K               FIXED DEC (3)               ;                        
+       DCL IJ              FIXED DEC (7)               ;                        
+       DCL ALDER           FIXED DEC (5)               ;                        
+       DCL DUMMY_DATO      FIXED DEC (9)               ;                        
+                                                                                
+       DCL FNR_PIC         PIC '(11)9'                 ;                        
+       DCL FNR_CHAR DEF FNR_PIC POS(1)  CHAR(11)       ;                        
+       DCL PIC11           PIC '(11)9'                 ;                        
+       DCL W_ROT_FNR       PIC '(11)9'                 ;                        
+       DCL ROT_KJONN       DEF W_ROT_FNR POS(9) PIC '9';                        
+                                                                                
+    /* ************************************************************** */        
+    /*   ARBEIDSFELTER SOM BRUKES AV UIB (USER INTERFACE BLOCK)       */        
+    /* ************************************************************** */        
+                                                                                
+    %INCLUDE DLIUIB;                                                            
+                                                                                
+       DCL                                                                      
+           UIB_RC_OK                 BIT  (8)             INIT ( 0 );           
+                                                                                
+       DCL                                                                      
+         ( COMMAREA_PEKER , W01_HJELPE_PEKER , TRANS_SEGM_PEKER )               
+                                               POINTER;                         
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   ROT_SEGMENT.                                                 */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+       DCL 1  W01_ROT                UNALIGNED,                                 
+              2   W02_FNR            FIXED    DEC   (11) ,                      
+              2   W02_NAVN                    CHAR  (25) ,                      
+              2   W02_TKNR           FIXED    DEC   (5)  ,                      
+              2   W02_SPRÅK                   CHAR  ( 1) ,                      
+              2   W02_AI             FIXED    DEC   (5)  ,                      
+              2   W02_SPERRE                  CHAR  ( 1) ;                      
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   INNTEKT-SEGMENTET                                            */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+       DCL 1  W01_PINT               UNALIGNED,                                 
+              2   W02_PI_ÅR          FIXED    DEC   (5) ,                       
+              2   W02_PI_KODE                 CHAR  (2) ,                       
+              2   W02_PI             FIXED    DEC   (9) , /*7->9*/              
+              2   W02_PI_KOMMNR      FIXED    DEC   (4) ,                       
+              2   W02_PI_RAPPDATO    FIXED    DEC   (8) ;                       
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*   DIV HJELPEFELT.                                              */        
+    /*                                                                */        
+    /* ************************************************************** */        
+       DCL 1  W01,                                                              
+              2   W02_INNT_TYPE               CHAR (1),                         
+              2   W02_INNT_ALDER              PIC '(2)9',                       
+              2   W02_INNT_MÅ                 PIC '(4)9',                       
+              2   W02_DAGENS_DATO             FIXED DEC(8),                     
+              2   MER_DATA                    BIT (1) INIT ('0'B);              
+                                                                                
+    /* ************************************************************** */        
+    /*   DLI CALL-PARAMETRE + ANDRE KODER .                           */        
+    /* ************************************************************** */        
+                                                                                
+       DCL 1  W01_DLI_PARAM,                                                    
+              2   W02_GET                 CHAR (4)   INIT ('    '),             
+              2   W02_GHU                 CHAR (4)   INIT('GHU '),              
+              2   W02_DLET                CHAR (4)   INIT('DLET'),              
+              2   W02_ISRT                CHAR (4)   INIT('ISRT'),              
+              2   W02_GU                  CHAR (4)   INIT ('GU  '),             
+              2   W02_GN                  CHAR (4)   INIT ('GN  '),             
+              2   W02_GNP                 CHAR (4)   INIT ('GNP '),             
+              2   W02_PARM_CT_3     FIXED BIN  (31)  INIT (3),                  
+              2   W02_PARM_CT_4     FIXED BIN  (31)  INIT (4),                  
+              2   W02_PARM_CT_5     FIXED BIN  (31)  INIT (5),                  
+              2   W02_OUT2                CHAR (20)  INIT ( (20) ' ');          
+                                                                                
+       DCL    W01_IO                CHAR (150)       INIT ( (150) ' ' );        
+                                                                                
+    /* ************************************************************** */        
+    /*   DL1 SSA-OMRÅDER FOR ROT OG STATUS-SEGMENTER.                 */        
+    /* ************************************************************** */        
+                                                                                
+       DCL    SSA_UQUAL_ROT      UNALIGNED    CHAR (9) INIT                     
+                                                      ('RF0PERSN ');            
+       DCL 1  SSA_UQUAL_PINNTEKT     UNALIGNED                                  
+                                              CHAR (9) INIT                     
+                                                      ('PINNTEKT ');            
+                                                                                
+       DCL 1  SSA1_RF0PERSN          UNALIGNED,                                 
+              2    HDEL                       CHAR (17)  INIT                   
+                   ('RF0PERSN(FNR     '),                                       
+              2    REL_OP                     CHAR (2)   INIT (' ='),           
+              2    PKEY               FIXED   DEC  (11),                        
+              2    HP                         CHAR (1)   INIT (')');            
+                                                                                
+                                                                                
+       DCL 1  SSA1_PINNTEKT          UNALIGNED,                                 
+              2    HDEL                       CHAR (17)  INIT                   
+                   ('PINNTEKT(INNTÅRTY'),                                       
+              2    REL_OP                     CHAR (2)   INIT (' ='),           
+              2    ÅR                 FIXED   DEC  (4),                         
+              2    TYPE                       CHAR (1),                         
+              2    HP                         CHAR (1)   INIT (')');            
+                                                                                
+                                                                                
+    /* ************************************************************** */        
+    /*   PCB-PEKER-OMR    OG    PCB-OMR                               */        
+    /* ************************************************************** */        
+                                                                                
+    %PAGE;                                                                      
+    %INCLUDE P0012002;                         /* PCB_UIB_PEKER_OMR   */        
+    %PAGE;                                                                      
+       DCL 1  B00              BASED (B00_PEKER),                               
+    %INCLUDE P0019921;                         /* B00_OMR (BASED)     */        
+                                                                                
+                                                                                
+       DCL 1  B01              BASED (B01_PEKER),                               
+    %INCLUDE P0019921;                         /* B01_OMR (BASED)     */        
+                                                                                
+                                                                                
+    %PAGE;                                                                      
+       DCL 1  B02              BASED (B02_PEKER),                               
+    %INCLUDE P0019921;                         /* B02_OMR (BASED)     */        
+                                                                                
+    %PAGE;                                                                      
+       DCL 1  RF1              BASED (RF1_PCB_PEKER),                           
+    %INCLUDE P0012003;                         /* PCB                 */        
+    %PAGE;                                                                      
+       DCL 1  RF4              BASED (RF4_PCB_PEKER),                           
+    %INCLUDE P0012003;                         /* PCB                 */        
+                                                                                
+                                                                                
+    %PAGE;                                                                      
+                                                                                
+    /* ************************************************************** */        
+    /*                                                                */        
+    /*      SLUTT PÅ DEKLARASJONENE , EKSEKVERINGEN STARTER .         */        
+    /*     ---------------------------------------------------        */        
+    /*                                                                */        
+    /*                                                                */        
+    /*      INITIERING AV PARAMETRE TIL DIV OMR.     .                */        
+    /*                                                                */        
+    /*                                                                */        
+    /* ************************************************************** */        
+                                                                                
+  PROGRAM_ID            = 'R001I601'                   ;                        
+  ALLOCATE B00,B01,B02                                 ;                        
+  ALLOCATE WORK_TRANS_LISTE                            ;                        
+  ALLOCATE FNRTAB                                      ;                        
+  B00                   = ''                           ;                        
+  B01                   = ''                           ;                        
+  B02                   = ''                           ;                        
+  FNRTAB                = ''                           ;                        
+  DB_STATUS_KODE        = '  '                         ;                        
+  FEIL_MELD_NR          = 0                            ;                        
+                                                                                
+  Y2K_DATO_X            = SUBSTR(DATETIME,1,8)         ;                        
+  Y2K_DATO_N            = Y2K_DATO_X                   ;                        
+  W02_DAGENS_DATO       = Y2K_DATO_N                   ;                        
+                                                                                
+  UIBPTR                = PCB_UIB_PEKER_OMR.UIB_PEKER  ;                        
+                                                                                
+  IF F_KJØNN(TRANS_OPPL_OMR.FØDSNUMMER) = 'K' THEN                              
+     DO;                                                                        
+        SØKER_IND = 1;                                                          
+        EKTEF_IND = 2;                                                          
+     END;                                                                       
+  ELSE                                                                          
+     DO;                                                                        
+        SØKER_IND = 2;                                                          
+        EKTEF_IND = 1;                                                          
+     END;                                                                       
+                                                                                
+  IF ØNSKET_STATUS = '6'     THEN                                               
+           TRANS_OPPL_OMR.TRANSTYPE      = 43;                                  
+        ELSE                                                                    
+           IF ØNSKET_STATUS = '9'  THEN                                         
+              TRANS_OPPL_OMR.TRANSTYPE   = 44;                                  
+           ELSE                                                                 
+              TRANS_OPPL_OMR.TRANSTYPE      = 22;                               
+                                                                                
+                                                                                
+                                                                                
+    /* LESER INN HOVEDPERSON I B01    */                                        
+                                                                                
+                                                                                
+  HJ_TILKN                        = ''        ;                                 
+  TRANS_OPPL_OMR.TRANSKODE        = 'AUTO'    ;                                 
+  TRANS_OPPL_OMR.NY_GML_TRANS_IND = ' '       ;                                 
+  DIV_PARAM_OMR.STATUS_TYPE       = ' ';      ;                                 
+  DIV_PARAM_OMR.ØNSKET_STATUS     = ' ';      ;                                 
+  DIV_PARAM_OMR.FEIL_MELD_NR      = 0         ;                                 
+  DIV_PARAM_OMR.STØNADSBREV_ØNSKET_IND = '1'B;                                  
+                                                                                
+  POS_I_B01                       = SØKER_IND ;                                 
+  SEARCH_FNR                      = TRANS_OPPL_OMR.FØDSNUMMER;                  
+  DØD                             = '1'B      ;                                 
+  B01                             = ''        ;                                 
+  DIV_PARAM_OMR.TRANS_VIRKDATO_ÅMD =  99999999 ;  /*ØNSKER SISTESTATUS*/        
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN SOM HAR ENDRET INNTEKT BLIR LEST INN I B01.              */        
+ /* ***************************************************************** */        
+                                                                                
+  EXEC CICS LINK PROGRAM('R0013110') COMMAREA (KOM_OMR);                        
+                                                                                
+  IF FEIL_MELD_NR > 0 THEN                                                      
+     DO;                                                                        
+        GOTO L999;                                                              
+     END;                                                                       
+  ELSE                                                                          
+     PROGRAM_ID = 'R001I601';                                                   
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* OPPHEVER SPERRE.                                                  */        
+ /* ***************************************************************** */        
+                                                                                
+  EXEC CICS LINK PROGRAM('R0015101') COMMAREA (KOM_OMR);                        
+                                                                                
+  IF FEIL_MELD_NR > 0 THEN                                                      
+     DO;                                                                        
+        GOTO L999;                                                              
+     END;                                                                       
+  ELSE                                                                          
+     PROGRAM_ID = 'R001I601';                                                   
+                                                                                
+  IF B01.STATUS.VIRK_DATO_ÅMD(SØKER_IND) = 0   THEN                             
+     GOTO L999;                                                                 
+                                                                                
+                                                                                
+  DO I = 1 TO 13;                                                               
+     HJ_TILKN(I) = B01.TILKN(SØKER_IND,I);                                      
+  END;                                                                          
+                                                                                
+  IF B01.STATUS.DØDSDATO_ÅMD(SØKER_IND) > 0   THEN                              
+                                                                                
+     DO WHILE(HJ_TILKN.FNR_TILKN(1) > 0);                                       
+                                                                                
+                                                                                
+        IF HJ_TILKN.TILKNYTNINGSKODE(1) = 'N'   THEN                            
+           GO TO FORTSETT;                                                      
+                                                                                
+        SEARCH_FNR = HJ_TILKN.FNR_TILKN (1);                                    
+        TRANS_OPPL_OMR.FØDSNUMMER = HJ_TILKN.FNR_TILKN (1);                     
+                                                                                
+        IF ^(HJ_TILKN.TILKNYTNINGSKODE(1) = 'B')  THEN                          
+           DO;                                                                  
+              IF F_KJØNN(TRANS_OPPL_OMR.FØDSNUMMER) = 'K' THEN                  
+                 DO;                                                            
+                    SØKER_IND = 1;                                              
+                    EKTEF_IND = 2;                                              
+                 END;                                                           
+              ELSE                                                              
+                 DO;                                                            
+                    SØKER_IND = 2;                                              
+                    EKTEF_IND = 1;                                              
+                 END;                                                           
+           END;                                                                 
+        ELSE                                                                    
+           SØKER_IND = 3;                                                       
+                                                                                
+                                                                                
+                                                                                
+        DIV_PARAM_OMR.FEIL_MELD_NR = 0;                                         
+        B01                        = '';                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* FAMILIEN BLIR LEST INN I B01.                                     */        
+ /* ***************************************************************** */        
+        POS_I_B01                       = SØKER_IND;                            
+                                                                                
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 99999999;     /*SISTESTATUS*/        
+                                                                                
+        EXEC CICS LINK PROGRAM('R0013101') COMMAREA (KOM_OMR);                  
+                                                                                
+        IF FEIL_MELD_NR > 0 THEN                                                
+           DO;                                                                  
+              GOTO L999;                                                        
+           END;                                                                 
+        ELSE                                                                    
+           PROGRAM_ID = 'R001I601';                                             
+                                                                                
+        IF B01.STATUS.VIRK_DATO_ÅMD(SØKER_IND) = 0   THEN                       
+           GOTO FORTSETT;                                                       
+                                                                                
+        B02 = B01;                                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* BEREGNING UTFØRES.                                                */        
+ /* ***************************************************************** */        
+        TRANS_OPPL_OMR.TRANSTYPE      = 23;                                     
+        DUMMY_DATO                    = 0 ;                                     
+                                                                                
+        CALL OMREGNING_PGA_INNTEKTSENDRING(DUMMY_DATO);                         
+                                                                                
+        IF FEIL_MELD_NR > 0 THEN                                                
+           DO;                                                                  
+              GOTO L999;                                                        
+           END;                                                                 
+                                                                                
+  FORTSETT:                                                                     
+        DO I =  1 TO 12;                                                        
+           HJ_TILKN(I) = HJ_TILKN(I + 1);                                       
+        END;                                                                    
+                                                                                
+                                                                                
+     END;                                                                       
+  ELSE                                                                          
+     DO;                                                                        
+                                                                                
+ /* ***************************************************************** */        
+ /* FAMILIEN BLIR LEST INN I B01.                                     */        
+ /* ***************************************************************** */        
+        POS_I_B01                       = SØKER_IND;                            
+                                                                                
+        TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD = 99999999;    /* SISTESTATUS*/        
+                                                                                
+        EXEC CICS LINK PROGRAM('R0013101') COMMAREA (KOM_OMR);                  
+                                                                                
+        IF FEIL_MELD_NR > 0 THEN                                                
+           DO;                                                                  
+              GOTO L999;                                                        
+           END;                                                                 
+        ELSE                                                                    
+           PROGRAM_ID = 'R001I601';                                             
+                                                                                
+                                                                                
+        IF B01.STATUS.PENSJONSTYPE1(SØKER_IND) = 'A' !                          
+           B01.STATUS.PENSJONSTYPE1(SØKER_IND) = 'U' !                          
+ /*AFP*/   B01.STATUS.PENSJONSTYPE1(SØKER_IND) = 'K' !                          
+           B01.STATUS.PENSJONSTYPE1(SØKER_IND) = 'Y' THEN                       
+           DO;                                                                  
+              B02 = B01;                                                        
+                                                                                
+              DUMMY_DATO = 0 ;                                                  
+                                                                                
+              CALL OMREGNING_PGA_INNTEKTSENDRING(DUMMY_DATO);                   
+                                                                                
+              IF FEIL_MELD_NR > 0 THEN                                          
+                 DO;                                                            
+                    GOTO L999;                                                  
+                 END;                                                           
+           END;                                                                 
+                                                                                
+                                                                                
+                                                                                
+     END;                                                                       
+                                                                                
+                                                                                
+                                                                                
+ L999:                                                                          
+                                                                                
+                                                                                
+  EXEC CICS RETURN;                                                             
+                                                                                
+                                                                                
+                                                                                
+  /**********    H O V E D S T Y R I N G   S L U T T   *************/           
+                                                                                
+                                                                                
+                                                                                
+  %INCLUDE R0019951;             /*  OMREGNING_PGA_INNTEKTSENDRING*/            
+  %PAGE;                                                                        
+  %INCLUDE R0019912;             /*  NUM-> CHAR                   */            
+  %PAGE;                                                                        
+  %INCLUDE R0019995;          /*     KONV_FNR11_FNR13    */                     
+  %PAGE;                                                                        
+  %INCLUDE R0019902;          /*     F_KJØNN             */                     
+  %PAGE;                                                                        
+  %INCLUDE R0019904;          /*     F_GYLDIG_FNR        */                     
+  %PAGE;                                                                        
+  %INCLUDE R0019905;          /*     F_ALDER             */                     
+  %PAGE;                                                                        
+  %INCLUDE R0019910;          /*     F_NUMERISK          */                     
+  %PAGE;                                                                        
+                                                                                
+                                                                                
+                                                                                
+ END R001I60;                                                                   

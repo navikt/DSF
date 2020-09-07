@@ -1,0 +1,319 @@
+ /*   SIST ENDRET PÅ PROD   2001.01.31 10.21.43 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.05.03 13.11.30 AV   JDA7339          */        
+ /*       SIST ENDRET 12/10-99 11.45.22 AV   JDA7339                  */        
+ /*       SIST ENDRET 12/10-99 11.42.40 AV   JDA7339                  */        
+ /*       SIST ENDRET 04/05-98 12.58.16 AV   JDA7339                  */        
+ /*                                                                   */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0014156 - SUBRUTINE I PLI                                     */        
+ /*    PROGRAMMERER: OLAV ØYSTEIN HANSEN, MAI 1983                    */        
+ /*HENSIKT:                                                           */        
+ /*    RUTINEN REGNER PÅ GRUNNLAG AV POENGREKKEN UT SPT, OPT OG PÅ    */        
+ /*    POENGREKKEN.                                                   */        
+ /*BRUK:                                                              */        
+ /*    CALL BEREGN_SPT_OPT_PÅ_ALT(IND,POENGREKKE,FNR)                 */        
+ /*                                                                   */        
+ /*ENDRING:                                                           */        
+ /*        B02.FRAVIK_FLYKTN(IND)  ^= 'J' &                           */        
+ /*        OVERNEVNTE SETNING ER LAGT INN I TESTEM OM IKKE            */        
+ /*        OVERKOMP TIL UTLENDING            26.1.84   OLAV           */        
+ /*                                                                   */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ BEREGN_SPT_OPT_PÅ_ALT:                                                         
+    PROC(IND,POREKKE,I4156_W_FNR13);                                            
+ %INCLUDE P0014001;                                                             
+    DCL                                                                         
+       I                  FIXED BIN(15),                                        
+       IND                FIXED BIN(15);                                        
+    DCL                                                                         
+       START_ÅR           FIXED DEC(5) INIT(1967),      /*2000*/                
+       SLUTT_ÅR           FIXED DEC(5) INIT(0);      /*2000*/                   
+    DCL                                                                         
+       TYVE_BESTE         FIXED DEC(3) INIT(0);                                 
+    DCL                                                                         
+       W_PÅ               FIXED DEC(3) INIT(0);                                 
+    DCL                                                                         
+       I4156_W_FNR13            PIC'(13)9';                /*2000*/             
+    DCL                                                                         
+       1 I4156_W_FNR_R13 DEF I4156_W_FNR13,                                     
+         2 DAG            PIC'99',                                              
+         2 MND            PIC'99',                                              
+         2 ÅR             PIC'9999',                 /*2000*/                   
+         2 REST           PIC'(5)9';                                            
+                                                                                
+    /* ============================================================== */        
+                                                                                
+    IF (I4156_W_FNR_R13.ÅR > 1897) THEN               /*2000*/                  
+       DO;  /* KAN HA POENGÅR - FØDT 1898 ELLER SENERE */                       
+          IF (I4156_W_FNR_R13.ÅR > 1951) THEN                                   
+             START_ÅR = I4156_W_FNR_R13.ÅR + 17;                                
+          SLUTT_ÅR = I4156_W_FNR_R13.ÅR + 69;                                   
+          TYVE_BESTE = SLUTT_ÅR - START_ÅR + 1;                                 
+          IF TYVE_BESTE > 20 THEN                                               
+             TYVE_BESTE = 20;                                                   
+          W_PÅ = 0;                                                             
+          DO I = START_ÅR TO SLUTT_ÅR;                                          
+             IF POREKKE.POENG(I) > 0 THEN                                       
+                W_PÅ = W_PÅ + 1;                                                
+          END;                                                                  
+          IF W_PÅ > 40 THEN                                                     
+             W_PÅ = 40;                                                         
+          POREKKE.PÅ = W_PÅ;                                                    
+          IF (W_PÅ > 0) THEN                                                    
+             /* ENDRET 1099 MH IKKE INN VED 0 PÅ */                             
+             CALL PLUKK_UT_BESTE_POENG                                          
+                     (START_ÅR,                                                 
+                      SLUTT_ÅR,                                                 
+                      TYVE_BESTE,                                               
+                      POREKKE,                                                  
+                      I4156_W_FNR_R13.ÅR                                        
+                     );                                                         
+                                                                                
+ /* ***************************************************************** */        
+ /* IKKE OVERKOMP TIL UTLENDNINGER HVIS DET IKKE ER SVAR JA.          */        
+ /* ***************************************************************** */        
+                                                                                
+    IF B02.FRAVIK_FLYKTN(IND) = 'J'    !          /*200012*/                    
+       B02.OVERKOMP_UTL (IND) = 'J'        THEN                                 
+       GO TO L500;                                                              
+    ELSE                                                                        
+       DO;                                                                      
+ /* ***************************************************************** */        
+ /* PENSJON UTLAND. VIRKNING AV STATSBOGERSKAP OG BOSTEDSLAND. TRUDE  */        
+ /* ***************************************************************** */        
+                                                                                
+          SELECT (B02.STATSBORGER(IND));                                        
+             WHEN(000) /* NORSKE STATSBORGERE */                                
+                DO;                                                             
+                   GO TO L500;                                                  
+                END;                                                            
+             WHEN(101,102,103,104,105,106) /* NORDISKE STATSBORGERE */          
+                DO;                                                             
+                   GO TO L500;                                                  
+                END;                                                            
+             WHEN(139)                 /* BRITISKE STATSBORGERE  */             
+                DO;                                                             
+                   IF B02.BOSATT(IND) ^= 0 THEN                                 
+                      POREKKE.OPT      = 0;                                     
+                   ELSE                                                         
+                      GO TO L500;                                               
+                END;                                                            
+          WHEN(684)             /* US BORGERE             */                    
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0 !                                      
+                   B02.BOSATT(IND)   = 684 THEN                                 
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                        GO TO L500;                                             
+                      ELSE                                                      
+                        POREKKE.OPT       = 0;                                  
+                    END;                                                        
+                ELSE                                                            
+                  POREKKE.OPT       = 0;                                        
+             END;                                                               
+          WHEN(610)                       /* CANADISKE BORGERE      */          
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0 !                                      
+                   B02.BOSATT(IND)   = 610 THEN                                 
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  POREKKE.OPT       = 0;                                        
+             END;                                                               
+          WHEN(611)                       /* QUEBEC BORGERE      */             
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0 !                                      
+                   B02.BOSATT(IND)   = 611 THEN                                 
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  POREKKE.OPT       = 0;                                        
+             END;                                                               
+          WHEN(153)                       /* ØSTERRIKE BORGERE      */          
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0 !                                      
+                   B02.BOSATT(IND)   = 153 THEN                                 
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  POREKKE.OPT       = 0;                                        
+             END;                                                               
+          WHEN(141)                       /* SVEITS    BORGERE      */          
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0  THEN                                  
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  DO;                                                           
+                   IF   (B02.BOSATT(IND)    = 141  &                            
+                         B01.ALDERSP.OPT(IND) > 0 &                             
+                         B01.ALDERSP.TP (IND) > 0 )   THEN                      
+                       GO TO L500;                                              
+                                                                                
+                    ELSE                                                        
+                       POREKKE.OPT       = 0;                                   
+                  END;                                                          
+             END;                                                               
+          WHEN(125)                       /* JUGOSLAVIA BORGERE     */          
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0  THEN                                  
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  DO;                                                           
+                     IF   (B02.BOSATT(IND)    = 125  &                          
+                          B01.ALDERSP.OPT(IND) > 0 &                            
+                          B01.ALDERSP.TP (IND) > 0 )   THEN                     
+                       GO TO L500;                                              
+                                                                                
+                    ELSE                                                        
+                       POREKKE.OPT       = 0;                                   
+                  END;                                                          
+             END;                                                               
+          WHEN(143)                       /* TYRKIA     BORGERE     */          
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0  THEN                                  
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  DO;                                                           
+                     IF   (B02.BOSATT(IND)    = 143  &                          
+                          B01.ALDERSP.OPT(IND) > 0 &                            
+                          B01.ALDERSP.TP (IND) > 0 )   THEN                     
+                       GO TO L500;                                              
+                                                                                
+                     ELSE                                                       
+                       POREKKE.OPT       = 0;                                   
+                  END;                                                          
+             END;                                                               
+          WHEN(119)                       /* HELLAS     BORGERE     */          
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0  THEN                                  
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  DO;                                                           
+                     IF   (B02.BOSATT(IND)    = 119  &                          
+                          B01.ALDERSP.OPT(IND) > 0 &                            
+                          B01.ALDERSP.TP (IND) > 0 )   THEN                     
+                       GO TO L500;                                              
+                     ELSE                                                       
+                       POREKKE.OPT       = 0;                                   
+                  END;                                                          
+             END;                                                               
+          WHEN(132)                       /* PORTUGISISKE BORGERE   */          
+             DO;                                                                
+                IF B02.BOSATT(IND)   = 0  THEN                                  
+                    DO;                                                         
+                      IF B02.TT_FØR_1967(IND) >= 10 !  /* 7-5 3.LEDD  */        
+                       ((B02.TT_ETTER_1966(IND) +      /* PARAGRAF 1  */        
+                                       11) / 12) > 20 THEN                      
+                         GO TO L500;                                            
+                      ELSE                                                      
+                         POREKKE.OPT       = 0;                                 
+                    END;                                                        
+                ELSE                                                            
+                  DO;                                                           
+                     IF   (B02.BOSATT(IND)    = 132  &                          
+                          B01.ALDERSP.OPT(IND) > 0 &                            
+                          B01.ALDERSP.TP (IND) > 0 )   THEN                     
+                       GO TO L500;                                              
+                     ELSE                                                       
+                       POREKKE.OPT       = 0;                                   
+                  END;                                                          
+             END;                                                               
+                                                                                
+        OTHERWISE                                                               
+           DO;                                                                  
+             IF B02.STATSBORGER (IND)   >   0  &                                
+                B02.FRAVIK_FLYKTN(IND)  ^= 'J' &                                
+                B02.OVERKOMP_UTL(IND)   ^= 'J'   THEN                           
+                POREKKE.OPT              = 0;                                   
+                                                                                
+           END;                                                                 
+                                                                                
+        END; /*SELECT*/                                                         
+     END;                                                                       
+ /* ***************************************************************** */        
+ /* PENSJON UTLAND. TIL HIT. TRUDE                                    */        
+ /* ***************************************************************** */        
+                                                                                
+ /* ***************************************************************** */        
+ /* IKKE OVERKOMP TIL PERSONER FØDT ETTER 1936.                       */        
+ /* ***************************************************************** */        
+                                                                                
+  L500:                                                                         
+        IF I4156_W_FNR_R13.ÅR > 1936   THEN       /*2000*/                      
+                                                                                
+           POREKKE.OPT              = 0;                                        
+                                                                                
+ /* FJERNET 12.3.00 HL :  ******                                                
+        IF POREKKE.PÅ < 3 & B02.KONVENSJON(IND) = 'J'  THEN                     
+          GO TO L600;                                                           
+                                                                                
+                                                                                
+        IF (POREKKE.PÅ < 3 & W_FNR_R13.ÅR > 1899 )    !                         
+           (POREKKE.PÅ < 2 & W_FNR_R13.ÅR = 1899 ) THEN                         
+           DO;                                                                  
+              POREKKE.SPT = 0;                                                  
+              POREKKE.OPT = 0;                                                  
+           END;                                                                 
+   ************************************************ */                          
+ L600:                                                                          
+                                                                                
+                                                                                
+     END;                                                                       
+                                                                                
+                                                                                
+  IF B02.VIRK_DATO_ÅMD(IND) > 19910000  /*2000*/                                
+        & B02.OVERKOMP_UTL(IND) = 'N' THEN                                      
+     POREKKE.OPT = 0;                                                           
+                                                                                
+ %INCLUDE R0014165;     /* PLUKK_UT_BESTE_POENG  */                             
+                                                                                
+  END BEREGN_SPT_OPT_PÅ_ALT;                                                    

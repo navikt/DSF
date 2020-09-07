@@ -1,0 +1,278 @@
+ /*   SIST ENDRET PÅ PROD   2004.12.17 15.36.12 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 13.16.51 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.07.12 14.32.10 AV   JDA7339          */        
+ /*       SIST ENDRET 21/01-99 09.17.38 AV   SPA7339                  */        
+ /*       SIST ENDRET 21/01-99 09.15.30 AV   SPA7339                  */        
+ /*       SIST ENDRET 09/06-98 08.40.02 AV   SPA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /* **********************                                            */        
+ /*  PROGRAM-IDENT : R0010412  MAP_FRA_TRANS_LISTE    HOVEDPROGRAM    */        
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */        
+ /*  PROGRAMMERER  : KRISTENSEN                                       */        
+ /*  PROGRAMMET BLE LAGET : DESEMBER 1982                             */        
+ /*  ENDRINGSDATO : 31.08.89                                          */        
+ /*  ENDRINGEN GJELDER: AFP - UNGE UFØRE FØR 1967                     */        
+ /*  ENDRINGEN BLE UTFØRT AV : TRUDE                                  */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*HENSIKT:                                                           */        
+ /* **********                                                        */        
+ /*    PROGRAMMET SKAL BYGGE OPP SIDER SOM BESTÅR AV BLANKETTMAPENE.  */        
+ /*    DETTE GJØRES UT FRA EN LISTE AV TRANSER SOM ER SORTERT På      */        
+ /*    FORHÅND.                                                       */        
+ /*    ALLE MAPS HØRER INN UNDER MAPSET 'S001F2'.                     */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*PROGRAMTILKNYTTING:                                                */        
+ /* ********************                                              */        
+ /*    PROGRAMMET BLIR GITT KONTROLL FRA R0010410 - FORESPØRSEL ELLER */        
+ /*                                  FRA R0010450 - ENDRINGER.        */        
+ /*    PROGRAMMETS TRANSKODE ER F41D.                                 */        
+ /*    BRUK :                                                         */        
+ /*    EXEC CICS XCTL PROGRAM ('R0010412') COMMAREA(KOM_OMR);         */        
+ /*    PROGRAMMET INCLUDER :                                          */        
+ /*               R0010506   FLYTT FRA ARB.OMRÅDE TIL MAP    AP       */        
+ /*               R0010507   FORTEKSTER OG ATTRIBUTTER       AP       */        
+ /*               R0010606   FLYTT FRA ARB.OMRÅDE TIL MAP    UP       */        
+ /*               R0010607   FORTEKSTER OG ATTRIBUTTER       UP       */        
+ /*               R0010706   FLYTT FRA ARB.OMRÅDE TIL MAP    ST       */        
+ /*               R0010806   FLYTT FRA ARB.OMRÅDE TIL MAP    EP       */        
+ /*               R0010807   FORTEKSTER OG ATTRIBUTTER       EP       */        
+ /*               R0010906   FLYTT FRA ARB.OMRÅDE TIL MAP    EF       */        
+ /*               R0010907   FORTEKSTER OG ATTRIBUTTER       EF       */        
+ /*               R0011006   FLYTT FRA ARB.OMRÅDE TIL MAP    FB       */        
+ /*               R0011106   FLYTT FRA ARB.OMRÅDE TIL MAP    BP       */        
+ /*               R001NB06   FLYTT FRA ARB.OMRÅDE TIL MAP    B6       */        
+ /*               R0011206   FLYTT FRA ARB.OMRÅDE TIL MAP    FT       */        
+ /*               R0011207   FORTEKSTER OG ATTRIBUTTER       FT       */        
+ /*               R0011406   FLYTT FRA ARB.OMRÅDE TIL MAP    E1       */        
+ /*               R001UE06   FLYTT FRA ARB.OMRÅDE TIL MAP    EN       */        
+ /*               R0011506   FLYTT FRA ARB.OMRÅDE TIL MAP    E2       */        
+ /*               R0011606   FLYTT FRA ARB.OMRÅDE TIL MAP    O1       */        
+ /*               R0011706   FLYTT FRA ARB.OMRÅDE TIL MAP    O2       */        
+ /*               R0011836   FLYTT FRA ARB.OMRÅDE TIL MAP    UF       */        
+ /*               R0019912   PIC TIL CHAR OG MOTSATT                  */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*DATASETTOPPLYSNINGER:                                              */        
+ /* ***********************                                           */        
+ /*  DET BLIR IKKE BRUKT NOEN DATASETT I DETTE PROGRAMMET             */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ /*FEILMELDINGER:                                                     */        
+ /* *******************                                               */        
+ /* PROGRAMMET GIR IKKE NOEN FEILMELDINGER.                           */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ R001041: PROC(LOKAL_KOM_PTR) OPTIONS (MAIN);                                   
+                                                                                
+ %PAGE;                                                                         
+ %INCLUDE S001F2;    /* MAPPER FOR BLANKETTENE    */                            
+ %PAGE;                                                                         
+                                                                                
+ %INCLUDE P0019906;  /* TRANS-OPPL-OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019908;  /* KOM-OMRÅDE (BASED)        */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019910;  /* STYRINGS - OMRÅDE (BASED) */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019912;  /* DIV-PARAM-OMRÅDE(BASED)   */                            
+ %PAGE;                                                                         
+ %INCLUDE P0019913;  /* LOKAL - KOM_OMR (BASED)   */                            
+ %PAGE;                                                                         
+ DCL  FORKASTES      BIT (1)  INIT ('0'B);                                      
+                                                                                
+ DCL                                                                            
+    QUENAME                CHAR(8),                                             
+       QTERMID             CHAR(4) DEF QUENAME POS(1),                          
+       REST                CHAR(4) DEF QUENAME POS(5);                          
+                                                                                
+ DCL                                                                            
+    1 ROUTELIST,                                                                
+      2 PRINTER,                                                                
+        3 TERMID           CHAR(4),                                             
+        3 REST             CHAR(12),                                            
+      2 SISTE,                                                                  
+        3 SLUTT            FIXED BIN(15),                                       
+        3 REST             CHAR(14);                                            
+                                                                                
+ DCL      (CSTG,ADDR )                   BUILTIN;                               
+                                                                                
+ DCL  COMMAREA_PEKER         PTR,                                               
+      LOKAL_KOM_PTR          PTR,                                               
+      SIDE_TELL              FIXED BIN(15) INIT (1),                            
+      LOW_CHAR_BASED        CHAR(1200)  BASED(BMSMAPBR),                        
+      I                      FIXED BIN(15) INIT (0),                            
+      LENGTH                 FIXED BIN(15);                                     
+                                                                                
+        /**   DUMMY DEKLARASJONER FOR OVERFØRINGSMODULENE  **/                  
+ DCL                                                                            
+    CURSOR_POS FIXED BIN(15) INIT(-1),                                          
+    DFHBMUNP             CHAR(1) INIT(' '),                                     
+    DFHBMBRY             CHAR(1) INIT('H'),                                     
+    DFHBMASK             CHAR(1) INIT('8'),   /* H.INT + ASKIP  */              
+    FEIL_FUNNET          BIT(1)  INIT('1'B),                                    
+    MELDING6O            CHAR(10),                                              
+    YMELDING6O           CHAR(10);                                              
+                                                                                
+                                                                                
+ QTERMID        = EIBTRMID;                                                     
+ REST           = 'COMA';                                                       
+ ROUTELIST      = '';                                                           
+ PRINTER.TERMID = 'R41J';                                                       
+ SISTE.SLUTT    = -1;                                                           
+                                                                                
+ COMMAREA_PEKER = HOVED_KOM_OMR_PTR;                                            
+                                                                                
+ KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);           
+ KOM_OMR.PEKER_LISTE.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);                
+ KOM_OMR.PEKER_LISTE.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);             
+ KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);            
+                                                                                
+   /*                                                                           
+ EXEC CICS LOAD PROGRAM('S001F23') SET(MAPSET_PTR);    TRANS - MAPSET */        
+ EXEC CICS LOAD PROGRAM('S001F23') SET(BMSMAPBR); /* TRANS - MAPSET */          
+ ALLOCATE  LOW_CHAR_BASED;                                                      
+                                                                                
+ EXEC CICS HANDLE CONDITION OVERFLOW(OVERFLOW);                                 
+                                                                                
+                                                                                
+                                                                                
+    IF FUNKSJONSKODE = 'E' & EIBAID = '8' THEN       /* PF8  */                 
+       EXEC CICS ROUTE LIST(ROUTELIST);                                         
+                                                                                
+    /* **    NY LOGIC DEL **************************** */                       
+      KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER =                                    
+                                 TRANS_OPPL_PTR(W01_TRANS_IND);                 
+      KOM_OMR.PEKER_LISTE.TRANS_PEKER = TRANS_PTR(W01_TRANS_IND);               
+       CALL LOW_VALUES_TIL_MAP;                                                 
+       CALL SELECT_BLANKETTYPE;                                                 
+                                                                                
+       IF W01_LOOP  = W01_SIDE_ANTALL THEN                                      
+          SISTE_SIDE  = '1'B;                                                   
+                                                                                
+                                                                                
+       /* DETTE BARE FOR Å FÅ SATT OVERFLOW-CONDITION */                        
+       EXEC CICS SEND MAP('ÅTTELI') MAPSET('S001F23') ACCUM PAGING              
+                                                        MAPONLY;                
+    /* **    NY LOGIC DEL *HIT TIL******************** */                       
+                                                                                
+                                                                                
+    SELECT_BLANKETTYPE:                                                         
+      PROC;                                                                     
+                                                                                
+        HOVED_KOM_OMR_PTR  =    COMMAREA_PEKER;                                 
+        SELECT(TRANS_OPPL_OMR.BLANKETTYPE);                                     
+                                                                                
+                                                                                
+           WHEN('A1')                                                           
+               DO;                                                              
+                EXEC CICS LINK PROGRAM('R00104A1')                              
+                                         COMMAREA (LOKAL_KOM_OMR);              
+                EXEC CICS SEND MAP('S001N51') MAPSET('S001F23') ACCUM           
+                                                  PAGING   ERASE;               
+               END;                                                             
+           WHEN('U2')                                                           
+               DO;                                                              
+                EXEC CICS LINK PROGRAM('R00104U2')                              
+                                         COMMAREA (LOKAL_KOM_OMR);              
+                IF W01_MAP = 'S001N61' THEN                                     
+                      EXEC CICS SEND MAP('S001N61') MAPSET('S001F23')           
+                                                 ACCUM  PAGING   ERASE;         
+                ELSE                                                            
+                IF W01_MAP = 'S001201' THEN                                     
+                      EXEC CICS SEND MAP('S001201') MAPSET('S001F23')           
+                                                 ACCUM  PAGING   ERASE;         
+               END;                                                             
+                                                                                
+                                                                                
+           WHEN('E3')                                                           
+               DO;                                                              
+                EXEC CICS LINK PROGRAM('R00104E3')                              
+                                         COMMAREA (LOKAL_KOM_OMR);              
+                IF W01_MAP = 'S001N81' THEN                                     
+                      EXEC CICS SEND MAP('S001N81') MAPSET('S001F23')           
+                                                 ACCUM  PAGING   ERASE;         
+                ELSE                                                            
+                IF W01_MAP = 'S001201' THEN                                     
+                      EXEC CICS SEND MAP('S001201') MAPSET('S001F23')           
+                                                 ACCUM  PAGING   ERASE;         
+               END;                                                             
+                                                                                
+           WHEN('E4')                                                           
+               DO;                                                              
+                EXEC CICS LINK PROGRAM('R00104E4')                              
+                                         COMMAREA (LOKAL_KOM_OMR);              
+                EXEC CICS SEND MAP('S001N91') MAPSET('S001F23')                 
+                                                 ACCUM  PAGING   ERASE;         
+              END;                                                              
+                                                                                
+           WHEN('B6')                                                           
+               DO;                                                              
+                EXEC CICS LINK PROGRAM('R00104B6')                              
+                                         COMMAREA (LOKAL_KOM_OMR);              
+                EXEC CICS SEND MAP('S001NB1') MAPSET('S001F23')                 
+                                                 ACCUM  PAGING   ERASE;         
+              END;                                                              
+           WHEN('F7')                                                           
+               DO;                                                              
+                EXEC CICS LINK PROGRAM('R00104F7')                              
+                                         COMMAREA (LOKAL_KOM_OMR);              
+                      EXEC CICS SEND MAP('S001NC1') MAPSET('S001F23')           
+                                                 ACCUM  PAGING   ERASE;         
+               END;                                                             
+                                                                                
+                                                                                
+           OTHERWISE;                                                           
+        END;                         /*   SELECT     */                         
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+    END SELECT_BLANKETTYPE;                                                     
+                                                                                
+                                                                                
+ OVERFLOW:                                                                      
+   CALL LOW_VALUES_TIL_MAP;                                                     
+   TRAILERO.SIDEO            = TRANS_ANT;                                       
+   TRAILERO.CICS_INFOO       = CICS_NAVN;                                       
+   TRAILERO.ROLLEO       = DIV_PARAM_OMR.ATK_ROLLE ;                            
+   /* TRAILERO.BLADN_TEKSTO     = 'BLADNINGSKOMMANDO'; */                       
+   IF FUNKSJONSKODE = 'E' THEN                                                  
+      TRAILERO.MELDINGO = 'DETTE ER FJERNET  !! '                               
+                        !!'VENNLIGST IKKE LA BILDET STå LENGE.';                
+   IF ^ SISTE_SIDE THEN                                                         
+     TRAILERO.BLADN_KOMMANDOO = 'P/N ';                                         
+   ELSE                                                                         
+     DO;                                                                        
+       TRAILERO.BLADN_KOMMANDOO = 'P/1 ';                                       
+       /*                                                                       
+       IF SIDE_TELL = 1 THEN                                                    
+         DO;                                                                    
+           TRAILERO.BLADN_TEKSTO    = (10)' ';                                  
+           TRAILERO.BLADN_KOMMANDOO = '    ';                                   
+           TRAILERO.BLADN_KOMMANDOA = '0';  **    ASKIP  **                     
+         END;                                                                   
+        */                                                                      
+     END;                                                                       
+                                                                                
+   EXEC CICS SEND MAP('TRAILER') MAPSET('S001F23') ACCUM PAGING;                
+                                                                                
+   /***** HIT KOMMER EN BARE DERSOM DET ER MER INFO IGJEN  *****/               
+                                                                                
+                                                                                
+   EXEC CICS RETURN;                                                            
+                                                                                
+                                                                                
+   /********      SLUTT PÅ OVERFLOW - RUTINE     ***********/                   
+                                                                                
+                                                                                
+ LOW_VALUES_TIL_MAP:                                                            
+   PROC;                                                                        
+      LOW_CHAR_BASED = (1200)' ';   /* X'00'    */                              
+ END LOW_VALUES_TIL_MAP;                                                        
+                                                                                
+                                                                                
+ END R001041;                                                                   

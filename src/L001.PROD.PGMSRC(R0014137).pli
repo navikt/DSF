@@ -1,0 +1,546 @@
+ /*   SIST ENDRET PÅ PROD   2004.06.18 12.23.35 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.05.03 12.31.54 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.07.14  8.30.17 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.03.14 10.36.33 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.04.17 12.07.09 AV   JDA7339          */        
+ /*       SIST ENDRET 20/09-99 09.34.04 AV   JDA7339                  */        
+ /*       SIST ENDRET 20/09-99 09.15.56 AV   JDA7339                  */        
+ /*       SIST ENDRET 17/03-99 15.22.38 AV   JDA7339                  */        
+ /*       SIST ENDRET 17/03-99 15.22.08 AV   JDA7339                  */        
+ /*       SIST ENDRET 04/05-98 12.41.02 AV   JDA7339                  */        
+ /*       SIST ENDRET 25/02-98 09.48.55 AV   RFA9991                  */        
+ /* ***************************************************************** */        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0014137 - JUSTER_MED_APD - INTERN PROC I PLI.                 */        
+ /*    PROGRAMMERER: KRISTENSEN, APRIL 1982.                          */        
+ /* HENSIKT:                                                          */        
+ /*    PROGRAMMET JUSTERER DIVERSE ALDERSP. ELEMENTER I B02 MED APD.  */        
+ /* PROGRAMTILKNYTNING:                                               */        
+ /*    PROGRAMMET BLIR INKLUDERT I 4126 OG 4222                  .    */        
+ /* BRUK:                                                             */        
+ /*    CALL JUSTER_MED_APD                                            */        
+ /* ENDRET  : 23.10.90 AV TRUDE. GARANTIEN FOR UNGE UFØRE FØR 1867    */        
+ /*          ENDRES FRA 1.6 TIL 2 FRA 0191.                           */        
+ /* ***************************************************************** */        
+ JUSTER_MED_APD: PROC;                                                          
+    DCL SUM_TP             FIXED DEC(5);                                        
+    DCL W_KOMPFAKTOR       FIXED DEC(3,1);                                      
+    DCL W_APD              FIXED DEC(3);                                        
+    DCL W_GP               FIXED DEC(11,4);        /*29.9.89 HL*/               
+    DCL W_BT               FIXED DEC(5) INIT(0);                                
+    DCL W_DATO_ÅMD         PIC'(8)9';          /*2000*/                         
+    DCL W_HH  DEF W_DATO_ÅMD POS(1)   PIC'99';                                  
+    DCL W_ÅR  DEF W_DATO_ÅMD POS(3)   PIC'99';                                  
+    DCL W_MN  DEF W_DATO_ÅMD POS(5)   PIC'99';                                  
+    DCL W_DD  DEF W_DATO_ÅMD POS(7)   PIC'99';                                  
+    DCL W_DATO_MÅ          PIC'9999';                                           
+                                                                                
+    DCL SPT_GARANTI        FIXED DEC(3,2) INIT (0);          /*UF*/             
+    DCL TP_GARANTI1        FIXED DEC(5) INIT (0);            /*UF*/             
+    DCL TP_GARANTI         FIXED DEC(11,4) INIT (0);         /*UF*/             
+    DCL UFGRAD             FIXED DEC(3) INIT(0);             /*UF*/             
+    DCL SEKSTI             FIXED DEC(5) INIT(0);       /*HL*/                   
+                                                                                
+    DCL YRKE_GP         FIXED DEC (7) INIT (0);                                 
+    DCL YRKE_TP         FIXED DEC (7) INIT (0);                                 
+    DCL ALDER_TP        FIXED DEC (7) INIT (0);                                 
+    DCL TP_YA_PT_55     FIXED DEC (7) INIT (0);                                 
+    DCL ALDER_TP_55     FIXED DEC (7) INIT (0);                                 
+    DCL REST_GRAD       FIXED DEC (3) INIT (0);                                 
+    DCL REST_APD        FIXED DEC (5,2) INIT (0);                               
+    DCL REST_HJELP      FIXED DEC (7,4) INIT (0);                               
+    DCL GP_FAKTOR       FIXED DEC (5,4) INIT (0);                               
+    DCL        TP_WORK           FIXED DEC (13,4);                              
+    DCL        FAKTOR1           FIXED DEC (13,4);                              
+    DCL        FAKTOR2           FIXED DEC (13,4);                              
+ /* DCL W_FNR_EK                 PIC '(11)9'  */                                
+    DCL SISTE_KODE      PIC '9';                                                
+    DCL J  FIXED BIN (15);                                                      
+                                                                                
+    /* ============================================================== */        
+                                                                                
+    W_DATO_ÅMD = B02.VIRK_DATO_ÅMD(BER_SØ_IND);    /*2000*/                     
+                                                                                
+    W_APD = B02.ALDERSP.APD(BER_SØ_IND);                                        
+    IF W_APD = 0    THEN                                                        
+       W_APD = 100;                                                             
+                                                                                
+ /* FLYTTA TIL HOVEDPROGRAMMET - MARTIN                                         
+    W_FNR_EK = B02.FNR(BER_EK_IND)  /* FLYTTET.TRUDE */                         
+                                                                                
+ /* FLYTTA TIL HOVEDPROGRAMMET - MARTIN                                         
+    W_FNREK13  = KONV_FNR11_FNR13(W_FNR_EK)   /*2000*/                          
+                                                                                
+                         /***  GP - ENDRET PGA AFP ***/                         
+                                                                                
+                                                                                
+    /* ************************************************************ */          
+    /* FØRST FINNER VI OM GP SKAL REDUSERES PGA AV EKTEFELLENS      */          
+    /* PENSJON VI SETTER EVT KODE FOR GAMMEL_SAMMENSTØTS_REGEL      */          
+    /* ************************************************************ */          
+                                                                                
+ IF B02.PENSJONSTYPE2(BER_SØ_IND)  = 'S'   !                                    
+    (B02.PENSJONSTYPE2(BER_SØ_IND) = 'N'   &                                    
+     B02.SIVILSTAND   (BER_SØ_IND) = 'G'   &                                    
+     B02.PENSJONSTYPE2(BER_EK_IND) = 'P')  THEN                                 
+                                                                                
+    DO;                                                                         
+                                                                                
+ /*TILLEGG 18.9.89 HL - LOVENDRING 7.2 NR 2 B - 2. SETNING UTGÅR */             
+                                                                                
+       IF B01.PENSJONSTYPE2(BER_SØ_IND)    = 'S'    &                           
+          B01.STATUS_KODE_HIST(BER_SØ_IND) = ' '    &                           
+          B01.UFØRPENS.UFG    (BER_EK_IND) < 100    &                           
+          B01.UFØRPENS.UFG    (BER_EK_IND) >   0    &                           
+          B01.VIRK_DATO_ÅMD   (BER_SØ_IND) < 19900100  THEN  /*2000*/           
+                                                                                
+          B02.GAMMEL_SAMMENSTØTS_REGEL(BER_SØ_IND) = 'J';                       
+                                                                                
+       IF  (B02.PENSJONSTYPE1(BER_EK_IND) = 'U' !                               
+            B02.PENSJONSTYPE1(BER_EK_IND) = 'Y'  )    THEN                      
+          DO;                                                                   
+                                                                                
+             IF (B02.VIRK_DATO_ÅMD   (BER_SØ_IND) < 19900100 ! /*2000*/         
+                B02.GAMMEL_SAMMENSTØTS_REGEL(BER_SØ_IND) = 'J') THEN            
+                                                                                
+  /*    GP_FAKTOR= 1 - 0.25*B02.UFØRPENS.UFG(BER_EK_IND)/100  */                
+                DO;                                                             
+                   GP_FAKTOR= 1 -                                               
+                     REST_PROSENT * B02.UFØRPENS.UFG(BER_EK_IND)/100;           
+                   IF GP_PROSENT > GP_FAKTOR THEN                               
+                      GP_FAKTOR = GP_PROSENT;                                   
+                END;                                                            
+             ELSE                                                               
+                DO;                                                             
+                   B02.GAMMEL_SAMMENSTØTS_REGEL(BER_SØ_IND) = 'N';              
+   /*              GP_FAKTOR = 0.75          */                                 
+                   GP_FAKTOR = GP_PROSENT;                                      
+                END;                                                            
+          END;                                                                  
+       ELSE                                                                     
+  /*      GP_FAKTOR = 0.75      */                                              
+          GP_FAKTOR = GP_PROSENT;                                               
+    END;                                                                        
+ ELSE                                                                           
+ /* GP_FAKTOR = 1  MARTIN 051102 ENDRET */                                      
+    /* SE REMEDY 142 */                                                         
+    IF (VERIFY(B02.GP_REDUKSJON_KODE(BER_SØ_IND),'IJXYZ') ^= 0) THEN            
+       GP_FAKTOR = 1;                                                           
+    ELSE                                                                        
+  /*   GP_FAKTOR = 0.75           */                                            
+       GP_FAKTOR = GP_PROSENT;                                                  
+                                                                                
+ /* *************************************************************** */          
+ /* SÅ FINNER VI OM HER SKAL BEREGNES MED YRKESSKADEFORDELER        */          
+ /*     BEREGNINGS_ALT_EGEN = '3' BETYR AT YP GIR FORDEL            */          
+ /*     BEREGNINGS_ALT_EGEN = '4' BETYR AT YP GIR FORDEL  -         */          
+ /*                     OG AT HER ER ETTERLATTE-FORDEL I BEREGNINGEN*/          
+ /* *************************************************************** */          
+                                                                                
+  IF DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '3' !                                  
+     DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '4'   THEN                             
+                                                                                
+     DO;                                                                        
+                                                                                
+        W_GP   = B02.YRKEPENS.YUG(BER_SØ_IND)/100;                              
+        W_GP   = W_GP * G;                                                      
+        W_GP   = W_GP * GP_FAKTOR;                                              
+        W_GP   = W_GP * W_APD;                                                  
+        W_GP   = W_GP / 100;                                                    
+        W_GP   = W_GP / 12;                                                     
+        YRKE_GP= W_GP + 0.5;                                                    
+                                                                                
+        REST_GRAD = 100 - B02.YRKEPENS.YUG(BER_SØ_IND);                         
+        IF REST_GRAD > 0      THEN                                              
+                                                                                
+              REST_APD   = (REST_GRAD / 100) * W_APD;                           
+        ELSE                                                                    
+              REST_APD   = 0;                                                   
+                                                                                
+        B02.ALDERSP.GP(BER_SØ_IND) =  G * GP_FAKTOR *                           
+                                            REST_APD * 0.01 *                   
+                                      B02.TT_ANV(BER_SØ_IND)/                   
+                                      (40 * 12) + 0.5;                          
+        B02.ALDERSP.GP(BER_SØ_IND) =                                            
+                           B02.ALDERSP.GP(BER_SØ_IND) + YRKE_GP;                
+     END;                                                                       
+  ELSE                                                                          
+                                                                                
+     B02.ALDERSP.GP(BER_SØ_IND) =  G * GP_FAKTOR *                              
+                                  W_APD / 100 *                                 
+                                  B02.TT_ANV(BER_SØ_IND)/                       
+                                  (40 * 12) + 0.5;                              
+                                                                                
+                                                                                
+                         /*** TP  ***/                                          
+                                                                                
+ IF B02.TP_BRUTTO(BER_SØ_IND) > 0 THEN   /* ETTERL_ALT ER STØRST */             
+                                                                                
+  DO;                                                                           
+                                                                                
+     IF DIV_PARAM_OMR.BEREGNINGS_ALT_AVD = '3'   THEN                           
+                                                                                
+ /* *************************************************************** */          
+ /*     ALT_AVD ='3' BETYR AT EKTEFELLEN HADDE EN YRKESSKADE, SOM   */          
+ /*     GIR DEN ETTERLATTE EN PENSJONSFORDEL. KODEN ER SATT I 4131  */          
+ /* *************************************************************** */          
+                                                                                
+        B02.TP_BRUTTO(BER_SØ_IND) = B02.TP_BRUTTO(BER_SØ_IND)                   
+                                    * W_APD / 100 + 0.5;                        
+     ELSE                                                                       
+         DO;                                                                    
+            B02.TP_BRUTTO(BER_SØ_IND) =                                         
+                       F_TP92(W_FNR_EK_R13.ÅR,  /*9903*/                        
+                              G,                                                
+                              (B02.SPT_AVD(BER_SØ_IND)),                        
+                              (B02.OPT_AVD(BER_SØ_IND)),                        
+                              (B02.PÅ_AVD (BER_SØ_IND)),                        
+                              (B02.ETTEPENS.PÅ_ETTER91(BER_SØ_IND)),            
+                              (W_APD),                                          
+                              55,                                               
+                              'J'                                               
+                              );                                                
+         END;                                                                   
+ /* *************************************************************** */          
+ /*   SÅ MÅ DET TESTES OM GJENLEVENDE HAR YRKESSKADEFORDELER -      */          
+ /*   ALT_EGEN = '4' = BÅDE FORDEL ETTER AVDØDE, OG AV EGEN YP      */          
+ /* *************************************************************** */          
+                                                                                
+     IF DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '4'   THEN                          
+                                                                                
+        DO;                                                                     
+                                                                                
+          TP_WORK  = G * B02.YRKEPENS.YPT(BER_SØ_IND) * 0.55;                   
+          TP_WORK  = TP_WORK * B02.YRKEPENS.YUG(BER_SØ_IND) /100;               
+          TP_WORK  = TP_WORK / 12;                                              
+                                                                                
+          IF B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) = 0    THEN                    
+                                                                                
+             TP_YA_PT_55 = TP_WORK * 0.45 * W_APD / 100 + 0.5;                  
+                                                                                
+          ELSE                                                                  
+             DO;                                                                
+                FAKTOR1 = (B02.YRKEPENS.PÅ(BER_SØ_IND)                          
+                           - B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) )              
+                         / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.45;                  
+                FAKTOR2 = B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND)                   
+                         / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.42;                  
+           TP_YA_PT_55 = TP_WORK * (FAKTOR1 + FAKTOR2 + 0.00005) + 0.5;         
+            END;                                                                
+                                                                                
+                                                                                
+           ALDER_TP_55 = F_TP92(W_FNR_R13.ÅR,G,  /*2000*/                       
+                         (POREKKE.SPT(BER_SØ_IND)),                             
+                         (POREKKE.OPT(BER_SØ_IND)),                             
+                         (POREKKE.PÅ (BER_SØ_IND)),                             
+                 (POREKKE.PÅ_ETTER91 (BER_SØ_IND)),                             
+                         (REST_APD),55,'J');                                    
+           B02.ALDERSP.TP(BER_SØ_IND) = TP_YA_PT_55 +                           
+                                        ALDER_TP_55;                            
+        END;                                                                    
+     ELSE                                                                       
+                                                                                
+        B02.ALDERSP.TP(BER_SØ_IND)= F_TP92(W_FNR_R13.ÅR,G,/*2000*/              
+                         (POREKKE.SPT(BER_SØ_IND)),                             
+                         (POREKKE.OPT(BER_SØ_IND)),                             
+                         (POREKKE.PÅ (BER_SØ_IND)),                             
+                 (POREKKE.PÅ_ETTER91 (BER_SØ_IND)),                             
+                         (W_APD),55,'J');                                       
+  END;                                                                          
+     ELSE   /*ETTERLATTE-ALTERNATIVET GIR IKKE FORDEL */                        
+                                                                                
+ /* *************************************************************** */          
+ /*   SÅ MÅ DET TESTES OM GJENLEVENDE HAR YRKESSKADEFORDELER -      */          
+ /*   ALT_EGEN = '3' = FORDEL AV EGEN YRKESSKADE                    */          
+ /* *************************************************************** */          
+                                                                                
+   IF DIV_PARAM_OMR.BEREGNINGS_ALT_EGEN = '3'   THEN                            
+      DO;                                                                       
+                                                                                
+          TP_WORK  = G * B02.YRKEPENS.YPT(BER_SØ_IND);                          
+          TP_WORK  = TP_WORK * B02.YRKEPENS.YUG(BER_SØ_IND) /100;               
+          TP_WORK  = TP_WORK / 12;                                              
+          IF B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) = 0    THEN                    
+          YRKE_TP  = TP_WORK * 0.45 * W_APD / 100 + 0.5;                        
+                                                                                
+          ELSE                                                                  
+             DO;                                                                
+                FAKTOR1 = (B02.YRKEPENS.PÅ(BER_SØ_IND)                          
+                           - B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) )              
+                         / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.45;                  
+                FAKTOR2 = B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND)                   
+                         / B02.YRKEPENS.PÅ(BER_SØ_IND) * 0.42;                  
+                YRKE_TP = TP_WORK * (FAKTOR1 + FAKTOR2 + 0.00005) + 0.5;        
+            END;                                                                
+                                                                                
+                                                                                
+         ALDER_TP = F_TP92(W_FNR_R13.ÅR,G, /*2000*/                             
+                         (POREKKE.SPT(BER_SØ_IND)),                             
+                         (POREKKE.OPT(BER_SØ_IND)),                             
+                         (POREKKE.PÅ (BER_SØ_IND)),                             
+                 (POREKKE.PÅ_ETTER91 (BER_SØ_IND)),                             
+                         (REST_APD),100,'J');                                   
+                                                                                
+         B02.ALDERSP.TP(BER_SØ_IND) = YRKE_TP + ALDER_TP;                       
+      END;                                                                      
+                                                                                
+   ELSE                                                                         
+                                                                                
+         DO;                                                                    
+            B02.ALDERSP.TP(BER_SØ_IND) =                                        
+                                   F_TP92(W_FNR_R13.ÅR,G,  /*2000*/             
+                                   (B02.ALDERSP.SPT(BER_SØ_IND)),               
+                                   (B02.ALDERSP.OPT(BER_SØ_IND)),               
+                                   (B02.ALDERSP.PÅ (BER_SØ_IND)),               
+                           (B02.ALDERSP.PÅ_ETTER91 (BER_SØ_IND)),               
+                                   (W_APD),100,'J');                            
+         END;                                                                   
+                         /***  ST - ENDRET PGA AFP ***/                         
+                                                                                
+                         /*UF GARANTI 1.6 NÅR STATUS.TP_GAR_KODE='E'*/          
+                         /*FRA HIT, TRUDE 8.1.90                   '*/          
+                                                                                
+   DO J = 7 TO 1 BY -1 UNTIL (B02.UFØRHIST.BUP_GAR_KODE(BER_SØ_IND,J)           
+                                 ^= 'D');                                       
+      SISTE_KODE  = J;                                                          
+   END;                                                                         
+                                                                                
+                                                                                
+  /*UNG UFØR BLE IKKE RIKTIG VED OVERGANG TIL ALDER  8.1.90. TRUDE */           
+                                                                                
+    IF B01.PENSJONSTYPE1     (BER_SØ_IND) = 'U'   THEN                          
+       IF B01.BUP_GAR_KODE (BER_SØ_IND,1) = 'E'   THEN   /*9708 HL*/            
+            DO;                                                                 
+              IF B02.VIRK_DATO_ÅMD(BER_SØ_IND) < 19910100 THEN /*2000*/         
+                                                /*NY FRA 0191    */             
+                                                /*GARANTIEN ØKER */             
+                 SPT_GARANTI  = 1.6;            /*FRA 1.6 TIL 2  */             
+              ELSE                              /*TRUDE,1090     */             
+                 SPT_GARANTI  = 2;                                              
+                                                                                
+  /*TS*/      IF B02.VIRK_DATO_ÅMD(BER_SØ_IND) < 19920100 &  /*2000*/           
+  /*TS*/         B02.VIRK_DATO_ÅMD(BER_SØ_IND) > 19910000 THEN  /*2000*/        
+                DO;                                                             
+                 IF W_FNR_R13.ÅR     > 1924 &   /*2000*/                        
+                    W_FNR_R13.ÅR     < 1945 THEN /*GARANTIEN ØKER */            
+                    SPT_GARANTI  = 2;            /* TIL 2.5 0192 */             
+                 ELSE                                                           
+                   IF W_FNR_R13.ÅR  =  1923 !          /*2000*/                 
+                      W_FNR_R13.ÅR  =  1924  THEN      /*2000*/                 
+                      SPT_GARANTI  = 1.6;                                       
+                END;                                                            
+                                                                                
+  /*TS*/      IF B02.VIRK_DATO_ÅMD(BER_SØ_IND) > 19920000 &  /*2000*/           
+  /*TS*/         B02.VIRK_DATO_ÅMD(BER_SØ_IND) < 19920500 THEN /*2000*/         
+                DO;                                                             
+                 IF W_FNR_R13.ÅR     > 1925 &          /*2000*/                 
+                    W_FNR_R13.ÅR     < 1945 THEN /*GARANTIEN ØKER */            
+                    SPT_GARANTI  = 2.5;            /* TIL 2.5 0192 */           
+                 ELSE                                                           
+                   IF W_FNR_R13.ÅR    =  1925 THEN    /*2000*/                  
+                      SPT_GARANTI  = 2;                                         
+                   ELSE                                                         
+                    IF  W_FNR_R13.ÅR     = 1923 !      /*2000*/                 
+                        W_FNR_R13.ÅR     = 1924 THEN           /*2000*/         
+                        SPT_GARANTI  = 1.6;                                     
+                END;     /*TS 1.92 TIL HIT */                                   
+                                                                                
+                                                                                
+  /*TS*/      IF B02.VIRK_DATO_ÅMD(BER_SØ_IND) > 19920400 & /*2000*/            
+  /*HL*/         B02.VIRK_DATO_ÅMD(BER_SØ_IND) < 19970500 & /*2000*/            
+                 B02.BUP_GAR_KODE(BER_SØ_IND,SISTE_KODE) ^= 'D' THEN            
+                DO;                                                             
+                 IF W_FNR_R13.ÅR     > 1925 &      /*2000*/                     
+                    W_FNR_R13.ÅR     < 1945 THEN /*GARANTIEN ØKER */            
+                    SPT_GARANTI  = 3.0;            /* TIL 3.0 0192 */           
+                 ELSE                                                           
+                   IF W_FNR_R13.ÅR    =  1925 THEN        /*2000*/              
+                      SPT_GARANTI  = 2;                                         
+                   ELSE                                                         
+                    IF  W_FNR_R13.ÅR     = 1923 !     /*2000*/                  
+                        W_FNR_R13.ÅR     = 1924 THEN    /*2000*/                
+                        SPT_GARANTI  = 1.6;                                     
+                END;     /*TS 1.92 TIL HIT */                                   
+                                                                                
+  /* GARANTIEN GÅR OPP TIL 3.3 FRA 9705 FOR FØDTE I 1931-42*/                   
+                                                                                
+              ELSE                                                              
+              IF B02.VIRK_DATO_ÅMD(BER_SØ_IND) > 19970400 &  /*2000*/           
+  /*OVERGANG FRA 'E' TIL 'B' 9707 (FØDT 41,42) FANGES OPP I 4901*/              
+                 B02.BUP_GAR_KODE(BER_SØ_IND,SISTE_KODE) ^= 'D' THEN            
+                DO;                                                             
+                 IF W_FNR_R13.ÅR     > 1925 &             /*2000*/              
+                    W_FNR_R13.ÅR     < 1945 THEN          /*2000*/              
+                    IF W_FNR_R13.ÅR  > 1930   THEN        /*2000*/              
+                       SPT_GARANTI  = 3.3;                                      
+                    ELSE                                                        
+                       SPT_GARANTI  = 3.0;                                      
+                 ELSE                                                           
+                   IF W_FNR_R13.ÅR    =  1925 THEN       /*2000*/               
+                      SPT_GARANTI  = 2;                                         
+                   ELSE                                                         
+                    IF  W_FNR_R13.ÅR     = 1923 !       /*2000*/                
+                        W_FNR_R13.ÅR     = 1924 THEN    /*2000*/                
+                        SPT_GARANTI  = 1.6;                                     
+                END;     /*TS 1.92 TIL HIT */                                   
+  /*UF*/         TP_GARANTI  = ( SPT_GARANTI * 0.45 * G );                      
+  /*UF*/         TP_GARANTI  = TP_GARANTI * B02.TT_ANV(BER_SØ_IND);             
+  /*UF*/         TP_GARANTI  = TP_GARANTI / ( 40 * 12) ;                        
+  /*UF*/         TP_GARANTI  = TP_GARANTI * W_APD / 100;                        
+  /*UF*/         TP_GARANTI1 = TP_GARANTI + 0.5;                                
+  /*UF*/                                                                        
+  /*UF*/         IF TP_GARANTI1 > B02.ALDERSP.TP(BER_SØ_IND)  THEN              
+  /*UF*/            DO;                                                         
+  /*UF*/               B02.ALDERSP.TP(BER_SØ_IND)   = TP_GARANTI1;              
+  /*UF*/               B02.STATUS.TP_GAR_KODE(BER_SØ_IND)  = 'E';               
+  /*UF*/            END;                                                        
+  /*UF*/    END;                                                                
+                                                                                
+                                            /*TIL HIT, TRUDE 8.1.90 */          
+                                                                                
+ SUM_TP = B02.ALDERSP.TP(BER_SØ_IND) + B02.TP_BRUTTO(BER_SØ_IND);               
+                                                                                
+ IF B02.PENSJONSTYPE2(BER_SØ_IND)  = 'S'   !                                    
+    (B02.PENSJONSTYPE2(BER_SØ_IND) = 'N'   &                                    
+     B02.SIVILSTAND   (BER_SØ_IND) = 'G'   &                                    
+     B02.PENSJONSTYPE2(BER_EK_IND) = 'P')  THEN                                 
+                                                                                
+    B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                           
+                                         SUM_TP,0,'J',                          
+                                         (ST_PROSENT_SAMST),                    
+                                         (B02.ALDERSP.APD(BER_SØ_IND)),         
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+ ELSE                                                                           
+                                                                                
+ IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'F' THEN                                    
+                                                                                
+       DO;                                                                      
+            IF G > 34100 THEN                                                   
+               DO;                                                              
+                  B02.ALDERSP.ET(BER_SØ_IND) = 0;                               
+                  IF B02.FT_SKAL_BEREGNES(BER_SØ_IND) ^= 'J'  THEN              
+                     B02.FT_SKAL_BEREGNES(BER_SØ_IND) = 'N';                    
+               END;                                                             
+            ELSE                                                                
+              B02.ALDERSP.ET(BER_SØ_IND) = 0.5 * G *                            
+                            B02.TT_ANV(BER_SØ_IND) *                            
+                   B02.ALDERSP.APD(BER_SØ_IND) / (100 * 12 * 40) + 0.5;         
+                                                                                
+                                                                                
+           IF W_DATO_ÅMD > 19910000  THEN    /*2000*/                           
+              SEKSTI = 6001;                                                    
+           ELSE                                                                 
+              SEKSTI = 6000;                                                    
+                                                                                
+                                                                                
+           IF F_ALDER(W_FNR_EK,W_DATO_ÅMD) >= SEKSTI   & /*2000*/               
+              W_DATO_ÅMD                  >  19890300   THEN /*2000*/           
+             DO;                                                                
+               IF W_DATO_ÅMD >  19940000    THEN  /*2000*/                      
+                  B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(             
+                                         SUM_TP,0,'J',                          
+                                        ((ST_PROSENT_ENSLIG * 2)),              
+                                         (B02.ALDERSP.APD(BER_SØ_IND)),         
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+                ELSE                                                            
+                  B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(             
+                                         SUM_TP,0,'J',                          
+                                        ((ST_PROSENT_SAMST * 2)),               
+                                         (B02.ALDERSP.APD(BER_SØ_IND)),         
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+             END;                                                               
+           ELSE                                                                 
+                                                                                
+              B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                 
+                                         SUM_TP,0,'J',                          
+                                         (ST_PROSENT_ENSLIG),                   
+                                         (B02.ALDERSP.APD(BER_SØ_IND)),         
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+       END;                                                                     
+                                                                                
+ ELSE                                                                           
+                                                                                
+    B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                           
+                                         SUM_TP,0,'J',                          
+                                         (ST_PROSENT_ENSLIG),                   
+                                         (B02.ALDERSP.APD(BER_SØ_IND)),         
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+                                                                                
+       /*----------------------------------------------------------*/           
+       /* SÆTILLEGG BOSATT UTLAND. MÅ KALL OPP R0014180 .----------*/           
+       /*--------------------------------------TRUDE 021090--------*/           
+       /*----------------------------------------------------------*/           
+                                                                                
+     IF B02.BOSATT(BER_SØ_IND) > 0 &                                            
+     B02.VIRK_DATO_ÅMD(BER_SØ_IND) < 19910100  THEN      /*2000*/               
+         CALL SÆRTILLEGG_UTLAND(SUM_TP);   /* R0014180 */                       
+                                                                                
+                         /***  BT  ***/                                         
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /*  B02.ALDERSP.BT(BER_SØ_IND) =                                     */        
+ /*     0.25 * G * B02.ANTALL_BARN(BER_SØ_IND) *                      */        
+ /*     B02.ALDERSP.APD(BER_SØ_IND) / (12 * 100) + 0.5                */        
+ /*                                                                   */        
+ /* FORMELEN OVER ER ERSTATTEN AV NEDEFORLIGGENE CALL PGA             */        
+ /* NY REGEL FOR BEREGNING AV BARNETILLEGG FRA 1.7.84     OLAV        */        
+ /* ***************************************************************** */        
+                                                                                
+ CALL BEREGN_BT(W_BT,                                                           
+                (B02.ALDERSP.APD(BER_SØ_IND)));                                 
+                                                                                
+ B02.ALDERSP.BT (BER_SØ_IND) = W_BT;                                            
+                                                                                
+                                                                                
+  /*  DET KAN VÆRE AT APD SKAL VÆRE LIK 0 .              */                     
+  /*  VI MÅ DA NULLSTILLE BELØPSFELTENE.                 */                     
+  /*  TRUDE, 1303092.                                    */                     
+                                                                                
+                         /*** KT  ***/                                          
+ IF B02.ALDERSP.APD(BER_SØ_IND) = 0 THEN                                        
+   DO;                                  /* DO-END NYTT,UTENOM      */           
+                                        /* KOMPFAKTOR ,TRUDE,130392*/           
+    W_KOMPFAKTOR = 0;                                                           
+    B02.ALDERSP.GP(BER_SØ_IND)   = 0;                                           
+    B02.ALDERSP.TP(BER_SØ_IND)   = 0;                                           
+    B02.ALDERSP.ST(BER_SØ_IND)   = 0;                                           
+    B02.ALDERSP.BT(BER_SØ_IND)   = 0;                                           
+    B02.ALDERSP.ET(BER_SØ_IND)   = 0;                                           
+    B02.TP_NETTO(BER_SØ_IND)     = 0;        /*200392 TS*/                      
+    B02.TP_BRUTTO(BER_SØ_IND)    = 0;        /*200392 TS*/                      
+    B02.GT_LOV92 (BER_SØ_IND)    = 0;        /*200392 TS*/                      
+    B02.GT_TILLEGG_LOV92(BER_SØ_IND) = 0;    /*200392 TS*/                      
+                                                                                
+    IF B02.PENSJONSTYPE2(BER_SØ_IND)  = 'E' THEN                                
+       B02.GT_LOV92 (BER_EK_IND)      = 0;        /*200392 TS*/                 
+  END;                                                                          
+ ELSE                                                                           
+    IF B02.ALDERSP.APD(BER_SØ_IND) = 25 THEN                                    
+ /*NYE REGLER FOR KOMP FRA 1.5.91 : */                                          
+                                                                                
+       IF G > 34100 THEN                                                        
+          W_KOMPFAKTOR = 1;                                                     
+       ELSE                                                                     
+          W_KOMPFAKTOR = 0.5;                                                   
+    ELSE                                                                        
+       W_KOMPFAKTOR = 1;                                                        
+                                                                                
+ IF (B02.PENSJONSTYPE2(BER_SØ_IND) = 'N'   &                                    
+     B02.SIVILSTAND   (BER_SØ_IND) = 'G'   &                                    
+     B02.PENSJONSTYPE2(BER_EK_IND) = 'P')  THEN                                 
+                                                                                
+    B02.ALDERSP.KT(BER_SØ_IND) = F_BEREGN_KOMPENSASJONSTILLEGG                  
+                         (B02.PENSJONSTYPE1(BER_SØ_IND),'S',                    
+                          B02.TT_ANV(BER_SØ_IND),1,W_KOMPFAKTOR,'J');           
+                                                                                
+ ELSE                                                                           
+    B02.ALDERSP.KT(BER_SØ_IND) = F_BEREGN_KOMPENSASJONSTILLEGG                  
+                         (B02.PENSJONSTYPE1(BER_SØ_IND),                        
+                          B02.PENSJONSTYPE2(BER_SØ_IND),                        
+                          B02.TT_ANV(BER_SØ_IND),1,W_KOMPFAKTOR,'J');           
+                                                                                
+ IF B02.SPESOPPL.BOSATT(BER_SØ_IND) > 0 THEN                                    
+    B02.ALDERSP.KT(BER_SØ_IND) = 0 ;                                            
+                                                                                
+                                                                                
+ END JUSTER_MED_APD;                                                            

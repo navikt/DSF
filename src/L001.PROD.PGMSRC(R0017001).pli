@@ -1,0 +1,862 @@
+ /*   SIST ENDRET PÅ PROD   2005.04.18 13.47.28 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.07.16 12.53.23 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.04.10  8.58.58 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.01.18 10.35.16 AV   JDA2970          */        
+ /*   SIST ENDRET 2000.12.18                    AV   ABD7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.18 13.15.38 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.01.14 12.42.05 AV   JDA7339          */        
+ /*       SIST ENDRET 16/09-99 09.39.36 AV   JDA7339                  */        
+ /*       SIST ENDRET 12/04-99 08.41.10 AV   JDA7339                  */        
+ /*       SIST ENDRET 12/04-99 08.39.08 AV   JDA7339                  */        
+ /*       SIST ENDRET 29/12-98 11.45.34 AV   JDA7339                  */        
+ /*       SIST ENDRET 29/12-98 11.43.43 AV   JDA7339                  */        
+ /*       SIST ENDRET 10/12-98 10.53.34 AV   JDA7339                  */        
+ /*       SIST ENDRET 10/12-98 10.51.43 AV   JDA7339                  */        
+ /*       SIST ENDRET 22/07-98 09.17.48 AV   JDA7339                  */        
+ /*       SIST ENDRET 04/05-98 14.41.17 AV   JDA7339                  */        
+ /*       SIST ENDRET 11/03-98 12.14.03 AV   JDA7339                  */        
+ /* *************************************************************** */          
+ /* IDENTIFIKASJON:  R0017001                                       */          
+ /* PROGRAMMERER:    HELEN  JULI, 1982.                             */          
+ /* HENSIKT:                                                        */          
+ /*        SENDER DATA TIL STØNADSBREV BASEN. FOR HVER TRANSAKSJON  */          
+ /*        HVOR ET STØNADSBREV ØNSKES, LAGES ET ROT_SEGMENT OG ET   */          
+ /*        HENDELSE_SEGMENT I STØNADSBREV BASEN. ROT_SEGMENTET      */          
+ /*        OPPDATERES   NÅR ALLE TRANSAKSJONER ER FERDIG BEHANDLET. */          
+ /*        ET NYTT HENDELSE_SEGMENT SKRIVES FOR HVER TRANSAKSJON.   */          
+ /*        FNR TIL ALLE SOM SKAL FÅ STØNADSBREV BLIR OPPBEVART I    */          
+ /*        FNR_TABELL FOR Å SIKRE AT ALLE FÅR OPPDATERT      ROTEN  */          
+ /*        TIL SLUTT.                                               */          
+ /*        LEGGER INN BREV DATO I RF DATABASE                       */          
+ /* PROGRAM_TILKNYTNING:  KALLES OPP I BEHANDLE_TRANS.              */          
+ /* *************************************************************** */          
+ /* PROGRAM SOM BRUKES I R0017001                                   */          
+ /* *************************************************************** */          
+ /*     R0017021      OPPRETT_SB_ROT_SEGMENT                        */          
+ /*     R0017025      LAG_FNR_TAB                                   */          
+ /*     R0017022      LAG_BARNEP_EN_HEND                            */          
+ /*         R0017041      PLASSER_TEKSTTYPE_A_KODE                  */          
+ /*         R0017042      PLASSER_TEKSTTYPE_M_KODE                  */          
+ /*         R0017043      PLASSER_TEKSTTYPE_O_KODE                  */          
+ /*         R0017044      PLASSER_TEKSTTYPE_U_KODE                  */          
+ /*         R0017045      PLASSER_TEKSTTYPE_V_KODE                  */          
+ /*     R0017023      LAG_BARNEP_BEGGE_HEND                         */          
+ /*         R0017048      BYGG_OPP_BERGRUNL_DØD                     */          
+ /*     R0017031      LAG_ALDERSP_HEND                              */          
+ /*         R0017047      BYGG_OPP_BERGRUNL_SEGMENT                 */          
+ /*     R0017032      LAG_UFØRPENS_HEND                             */          
+ /*     R0017033      LAG_ETTERL_HEND                               */          
+ /*     R0017034      LAG_ETTERL_FAM_HEND                           */          
+ /*     R0017035      LAG_ETTERL_ALDERSP_HEND                       */          
+ /*     R0017036      LAG_ETTERL_UFØRPENS_HEND                      */          
+ /* YS  R0017037      LAG_YRKEPENS_HEND                             */          
+ /* *************************************************************** */          
+ /* DIVERSE FELLES PROGRAM                                          */          
+ /* *************************************************************** */          
+ /* R0019905  F_ALDER   (REGNER UT ALDER VED VIRKNINGSDATO)         */          
+ /* R0019913  F_SNU_DATO(SNUR DATO FRA  MÅNED-ÅR TIL ÅR-MÅNED)      */          
+ /* *************************************************************** */          
+ LAGXSB:                                                                        
+    PROC(COMMAREA_PEKER)   OPTIONS (MAIN);                                      
+  /*PROGRAM_ID = 'R0017001'*/                                                   
+    DCL 1 B01 BASED(B01_PEKER),  %INCLUDE P0019921;                             
+    DCL 1 B02 BASED(B02_PEKER),  %INCLUDE P0019921;                             
+    DCL   COMMAREA_PEKER         POINTER;                                       
+                                                                                
+    /* ************************************************************** */        
+    /*     DLI CALL-PARAMETRE                                         */        
+    /* ************************************************************** */        
+    DCL 1 W001_DLI            UNALIGNED,                                        
+          2 GU                CHAR     (4)  INIT('GU  '),                       
+          2 GN                CHAR     (4)  INIT('GN  '),                       
+          2 ISRT              CHAR     (4)  INIT('ISRT'),                       
+          2 PARM_CT_3         FIXED BIN(31) INIT(3),                            
+          2 PARM_CT_4         FIXED BIN(31) INIT(4),                            
+          2 PARM_CT_5         FIXED BIN(31) INIT(5);                            
+                                                                                
+    /* ************************************************************** */        
+    /*     DL1 SSA-OMRÅDER FOR  ROT OG STATUS-SEGMENTER.              */        
+    /* ************************************************************** */        
+    DCL 1 SSA1_SB0PERSN      UNALIGNED,                                         
+          2 HDEL             CHAR (17)     INIT ('SB0PERSN(FNR     '),          
+          2 REL_OP           CHAR (2)      INIT (' ='),                         
+          2 PKEY             FIXED DEC(11) INIT ( 0 ),                          
+          2 HP               CHAR (1)      INIT (')');                          
+                                                                                
+    /* ************************************************************** */        
+    /*     PCB-OMRÅDET FOR FOLKETRYGD-DB.                             */        
+    /* ************************************************************** */        
+                                                                                
+    %INCLUDE  DLIUIB;                                                           
+                                                                                
+    /* ************************************************************** */        
+    /* HER INCLUDERES DIVERSR COPY-OMRÅDER                            */        
+    /* ************************************************************** */        
+                                                                                
+    %INCLUDE  P0012002; /* DCL AV PCB PEKERE           */                       
+                                                                                
+     DCL 1 PCB_SB1 BASED (SB1_PCB_PEKER),                                       
+  %INCLUDE  P0012003;                  /* DCL AV SSA                  */        
+                                                                                
+     DCL    SSA_UQUAL                             CHAR  (9);                    
+                                                                                
+ %INCLUDE P0019906; /* DCL AV TRANS_OPPL_OMR                       */           
+ %INCLUDE P0019908; /* DCL AV KOM_OMR                              */           
+ %INCLUDE P0019910; /* DCL AV STYRINGS_OMR                         */           
+ %INCLUDE P0019912; /* DIV_PARAM_OMR                               */           
+ %INCLUDE P0019924; /* GRUNNBELØP VEIET GJENNOMSNITT               */           
+ %INCLUDE P0019925; /* GRUNNBELØPSTABELL                           */           
+ %INCLUDE P0019014; /* FNRTAB FOR R0017001/R0017101                */           
+ %INCLUDE P0019001; /* DCL AV W_ROT,W_HENDELSE OG W_BERGR          */           
+ %INCLUDE P0014003; /* DCL AV POENGREKKER                          */           
+ %INCLUDE P0014009; /* DCL AV POENGREKKER                          */           
+                                                                                
+ DCL  1  TRANS_LISTE_OMR   UNAL  BASED (TRANS_LISTE_PEKER),                     
+         3 TRANS_LISTE_LINJE(5),                                                
+                                                                                
+ %INCLUDE P0019911; /* DCL AV FAST DEL OG VARIABEL DEL             */           
+                                                                                
+ DCL  SBROT_FNR              FIXED DEC (11);                                    
+ DCL  FORSØRG_FNR            FIXED DEC (11);                                    
+ DCL  SB_IND                 FIXED BIN (15);                                    
+ DCL  EKT_IND                FIXED BIN (15);                                    
+ DCL  AVDIND                 FIXED BIN (15);                                    
+ DCL (I,                                                                        
+      J,                                                                        
+      K,                                                                        
+      L,                                                                        
+      M)                     FIXED BIN (15);                                    
+ DCL  PLITDLI                ENTRY;                                             
+ DCL  ADDR                   BUILTIN,                                           
+      DATETIME               BUILTIN,                                           
+      ONCODE                 BUILTIN,                                           
+      SUBSTR                 BUILTIN,                                           
+      SYSPRINT               EXTERNAL FILE,                                     
+      ROUND                  BUILTIN,                                           
+      VERIFY                 BUILTIN;                                           
+ DCL  UIB_RC_OK              BIT(8)  INIT('00000000'B);                         
+                                                                                
+ DCL 1 W_FNR13 PIC '(13)9';                                                     
+                                                                                
+ DCL                                                                            
+     1 FNR13_R DEF W_FNR13,                                                     
+       2 DAG      PIC '99',                                                     
+       2 MND      PIC '99',                                                     
+       2 ÅR       PIC '9999',                                                   
+       2 ÅRHUNDRE PIC '9',                                                      
+       2 FILLER   PIC '9999';                                                   
+                                                                                
+ DCL                                                                            
+     1 FNR_R DEF W_FNR13,                                                       
+       2 DAG      PIC '99',                                                     
+       2 MND      PIC '99',                                                     
+       2 ÅR       PIC '9999',                                                   
+       2 ÅRHUNDRE PIC '9',                                                      
+       2 FILLER   PIC '9999';                                                   
+ DCL                                                                            
+     1 W_FNR_R13 DEF W_FNR13,                                                   
+       2 DAG      PIC '99',                                                     
+       2 MND      PIC '99',                                                     
+       2 ÅR       PIC '9999',                                                   
+       2 ÅRHUNDRE PIC '9',                                                      
+       2 FILLER   PIC '9999';                                                   
+                                                                                
+  DCL W_FNR_ÅMD  PIC '(8)9';                                                    
+  DCL W_FNR      PIC '(11)9';                                                   
+  DCL W_EK_FNR   PIC '(11)9';                                                   
+ /* *************************************************************** */          
+ /* REDEFINERER OG OMPLASSERER HENDDATO OG FRAMLEGGSDATO FRA B02    */          
+ /* *************************************************************** */          
+ DCL                                                                            
+     1 R_HENDDATO,                                                              
+       2 AAR         PIC '(4)9',                                                
+       2 MND         PIC '(2)9',                                                
+       2 DD          PIC '(2)9';                                                
+ DCL R_HENDDATO_D DEF R_HENDDATO PIC '(8)9';                                    
+                                                                                
+ DCL                                                                            
+     1 R_FRAMDATO,                                                              
+       2 AAR         PIC '(4)9',                                                
+       2 MND         PIC '(2)9',                                                
+       2 DD          PIC '(2)9';                                                
+ DCL R_FRAMDATO_D DEF R_FRAMDATO PIC '(8)9';                                    
+                                                                                
+                                                                                
+ DCL VIRK_LOV92_ÅM   PIC '(4)9';                                                
+ DCL OMR_DATO        PIC '(8)9';                                                
+                                                                                
+ %PAGE;                                                                         
+                                                                                
+ /* *************************************************************** */          
+ /*                                                                 */          
+ /*   HER BEGYNNER PROGRAMMET.                                      */          
+ /*                                                                 */          
+ /*                                                                 */          
+ /* *************************************************************** */          
+                                                                                
+   /* =============================================================             
+   THIS I A AN ONLINE CICS PROGRAM. * PUT SKIP LIST * IS NOT CICS               
+   COMMAND. CICS SEND PAGE........ MAY BE USED                                  
+   ON CONVERSION                                                                
+      BEGIN;                                                                    
+         PUT SKIP LIST('ONCODE FOR CONVERSION ',ONCODE);                        
+         PUT SKIP LIST('B01.FNR(SB_IND)       ',B01.FNR(SB_IND));               
+         PUT SKIP LIST('SB_IND                ',SB_IND);                        
+      END;                                                                      
+   ON OVERFLOW                                                                  
+      BEGIN;                                                                    
+         PUT SKIP LIST('ONCODE FOR OWERFLOW   ',ONCODE);                        
+         PUT SKIP LIST('B01.FNR(SB_IND)       ',B01.FNR(SB_IND));               
+         PUT SKIP LIST('SB_IND                ',SB_IND);                        
+      END;                                                                      
+     ==========================================================  */             
+                                                                                
+   UIBPTR       =       UIB_PEKER;                                              
+    IF FEIL_MELD_NR    =   0  THEN /*AB 10.09.01 */                             
+       PROGRAM_ID = 'R0017001';                                                 
+    /*CALL KONV_AV_BRUKER_ID  */                                                
+ /* *************************************************************** */          
+ /* VI FINNER HVEM SOM SKAL FÅ ST_BREV.(SB_IND)                     */          
+ /* *************************************************************** */          
+   SELECT (TRANS_OPPL_OMR.TRANSTYPE);                                           
+      WHEN (17)                                                                 
+         /* SØKEREN ER FORSØRGET EKTEFELLE.                      */             
+         /* PENSJONISTEN FÅR ST-BREV.                            */             
+         SB_IND = EKTEF_IND;                                                    
+      WHEN (19)                                                                 
+         /* SØKEREN ER ET FORSØRGET BARN .  */                                  
+         /* FORSØRGEREN FÅR ST-BREV.        */                                  
+         DO;                                                                    
+            FORSØRG_FNR = B01.TILKN.FNR_TILKN(SØKER_IND,1);                     
+            IF B02.RF0PERSN.FNR(1) = FORSØRG_FNR  THEN                          
+               SB_IND = 1;                                                      
+            ELSE                                                                
+               SB_IND = 2;                                                      
+         END;                                                                   
+      WHEN (35,37)                                                              
+         /*  SØKEREN ER BARNEPENSJONIST MED SØSKEN. */                          
+         DO;                                                                    
+            DO I = 3 TO 14;                                                     
+               IF B02.PENSJONSTYPE2(I) = 'P'    THEN                            
+                  DO;                                                           
+                     SB_IND = I;                                                
+                     I = 14;                                                    
+                  END;                                                          
+            END;                                                                
+         END;                                                                   
+      OTHERWISE                                                                 
+         SB_IND = SØKER_IND;                                                    
+   END; /* SELECT TRANSTYPE*/                                                   
+                                                                                
+   IF SB_IND < 3  THEN                                                          
+      /* PERSONEN ER IKKE BARNEPENSJONIST */                                    
+      EKT_IND = 3 - SB_IND;                                                     
+                                                                                
+   SSA1_SB0PERSN.PKEY       = B02.RF0PERSN.FNR(SB_IND);                         
+   CALL FINN_NR;                                                                
+                                                                                
+   IF (TRANS_OPPL_OMR.TRANSTYPE = 18 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 54 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 36 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 55) THEN                                      
+      IF W_ROT.NESTE_SB_VERSJON_NR = 1    THEN                                  
+         IF (TRANS_OPPL_OMR.TRANSTYPE = 18 !                                    
+             TRANS_OPPL_OMR.TRANSTYPE = 36) THEN                                
+            CALL LAG_EKTEF_SB;                                                  
+         ELSE                                                                   
+            GO TO L999;                                                         
+      ELSE                                                                      
+      IF (B02.STATUS_KODE_HIST(SB_IND) ='O' !                                   
+          B02.STATUS_KODE_HIST(SB_IND) ='X' !                                   
+          B02.PENSJONSTYPE1(SB_IND) ='G' ) THEN                                 
+         DO;                                                                    
+             SBROT_FNR  =  B02.RF0PERSN.FNR(SB_IND);                            
+             CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,SB_IND);                     
+             IF FEIL_MELD_NR > 0 THEN                                           
+                GO TO L999;                                                     
+             CALL LAG_FNR_TAB(SB_IND);                                          
+             W_HENDELSE          = '';                                          
+             IF (TRANS_OPPL_OMR.TRANSTYPE = 18 !                                
+                 TRANS_OPPL_OMR.TRANSTYPE = 54) THEN                            
+                R_HENDDATO_D = B02.STATUS.DØDSDATO_ÅMD(SB_IND);                 
+             ELSE                                                               
+                R_HENDDATO_D = B02.STATUS.VIRK_DATO_ÅMD(SB_IND);                
+             HENDDATO = R_HENDDATO.AAR * 100 + R_HENDDATO.MND ;                 
+             W_HENDELSE.VERSJON  =  W_ROT.NESTE_SB_VERSJON_NR;                  
+             W_HENDELSE.TERMINAL      = DIV_PARAM_OMR.BRUKER_ID;                
+             W_HENDELSE.PENSJONSTYPE1 = B01.PENSJONSTYPE1(SB_IND);              
+             W_HENDELSE.PENSJONSTYPE2 = B01.PENSJONSTYPE2(SB_IND);              
+             W_HENDELSE.PENSJONSTYPE3 = B01.PENSJONSTYPE3(SB_IND);              
+             W_HENDELSE.FNR_EKTEF     = B01.FNR       (EKTEF_IND);              
+             W_HENDELSE.NAVN_EKTEF    = B01.NAVN      (EKTEF_IND);              
+ /* ***************************************************************** */        
+ /* OPPHØRSKODE OG OPPHØRSDATO ER LAGT INN 21.1 85                    */        
+ /* ***************************************************************** */        
+                                                                                
+          IF (TRANS_OPPL_OMR.TRANSTYPE = 18 !                                   
+              TRANS_OPPL_OMR.TRANSTYPE = 54) THEN                               
+               W_HENDELSE.OPPHØRS_KODE = B02.PENSJONSTYPE1(SB_IND);             
+          ELSE                                                                  
+             IF B02.PENSJONSTYPE1(SB_IND) ='G' THEN                             
+                W_HENDELSE.OPPHØRS_KODE = 'O';                                  
+             ELSE                                                               
+                W_HENDELSE.OPPHØRS_KODE = B02.STATUS_KODE_HIST(SB_IND);         
+          W_HENDELSE.OPPHØRS_DATO =                                             
+               R_HENDDATO.AAR * 10000 + R_HENDDATO.MND * 100 + '00';            
+          /* R_HENDATO.AAR * 10000 (IKKE 1000) JD 0499*/                        
+          CALL INSERT_HENDELSE;                                                 
+          IF (TRANS_OPPL_OMR.TRANSTYPE = 18 !                                   
+              TRANS_OPPL_OMR.TRANSTYPE = 36) THEN                               
+             CALL LAG_EKTEF_SB;                                                 
+          GO TO L999;                                                           
+       END;                                                                     
+     ELSE                                                                       
+          GO TO L999;                                                           
+                                                                                
+ IF SB_IND < 3  THEN                                                            
+    DO;                                                                         
+ IF  TRANS_OPPL_OMR.TRANSTYPE = 26  &                                           
+    (B02.SUM_YTELSE(SB_IND)   =                                                 
+     B01.SUM_YTELSE(SB_IND)) &                                                  
+                                                                                
+                                                                                
+    (B02.SUM_YTELSE(SB_IND) ^= 0) &                                             
+                                                                                
+    (B02.ALDERSP.AP_TP_NETTO(SB_IND)   =                                        
+     B01.ALDERSP.AP_TP_NETTO(SB_IND))      &                                    
+    (B02.GT_TILLEGG_LOV92(SB_IND)  =                                            
+     B01.GT_TILLEGG_LOV92(SB_IND))       &                                      
+                                                                                
+                                                                                
+    (B02.ETTEPENS.TP_NETTO(SB_IND)   =                                          
+     B01.ETTEPENS.TP_NETTO(SB_IND))      THEN                                   
+                                                                                
+                                                                                
+       DO;                                                                      
+          IF B02.PENSJONSTYPE2(EKT_IND) = 'P'        !                          
+             B02.PENSJONSTYPE2(EKT_IND) = 'N'        !                          
+             B02.PENSJONSTYPE2(EKT_IND) = 'S'        THEN                       
+             CALL LAG_EKTEF_SB;                                                 
+          GO TO L999;                                                           
+       END;                                                                     
+                                                                                
+  END;                                                                          
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ IF (TRANS_OPPL_OMR.TRANSTYPE = 43 !                                            
+     TRANS_OPPL_OMR.TRANSTYPE = 44) &                                           
+    (B01.ALDERSP.TP(SB_IND)   = 0)  &                                           
+    (B02.ALDERSP.TP(SB_IND)   = 0)   THEN                                       
+     GO TO L999;                                                                
+                                                                                
+       SBROT_FNR  =  B02.RF0PERSN.FNR(SB_IND);                                  
+       CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,SB_IND);                           
+       IF FEIL_MELD_NR > 0 THEN                                                 
+          GO TO L999;                                                           
+       CALL LAG_FNR_TAB(SB_IND);                                                
+                                                                                
+ SELECT (B02.STATUS.PENSJONSTYPE1(SB_IND));                                     
+    WHEN   ('N')                                                                
+     DO;                                                                        
+                                                                                
+                                                                                
+       IF TRANS_OPPL_OMR.TRANSTYPE = 2 THEN                                     
+          DO;                                                                   
+             SBROT_FNR  =  B02.RF0PERSN.FNR(SB_IND);                            
+             CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,SB_IND);                     
+             IF FEIL_MELD_NR > 0 THEN                                           
+                GO TO L999;                                                     
+             CALL LAG_FNR_TAB(SB_IND);                                          
+             CALL LAG_BARNEP_EN_HEND(SB_IND);                                   
+          END;                                                                  
+       ELSE                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN ER BARNEPENSJONIST. ALLE BARNA FÅR ST_BREV.              */        
+ /* ***************************************************************** */        
+                                                                                
+          DO SB_IND = 3 TO 14 ;                                                 
+             IF B02.STATUS.PENSJONSTYPE1   (SB_IND) = 'N' &                     
+                B02.STATUS.STATUS_KODE_HIST(SB_IND) = ' '    THEN               
+                DO;                                                             
+                   SBROT_FNR  =  B02.RF0PERSN.FNR(SB_IND);                      
+                   CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,SB_IND);               
+                   IF FEIL_MELD_NR > 0 THEN                                     
+                      GO TO L999;                                               
+                   CALL LAG_FNR_TAB(SB_IND);                                    
+                   CALL LAG_BARNEP_EN_HEND(SB_IND);                             
+                END;                                                            
+         END;                                                                   
+     END;                                                                       
+    WHEN   ('B')                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN ER ET FORELDRELØST BARN. ALLE BARNA FÅR ST_BREV.         */        
+ /* ***************************************************************** */        
+                                                                                
+       DO SB_IND = 3 TO 14 ;                                                    
+          IF B02.STATUS.PENSJONSTYPE1   (SB_IND) = 'B'  &                       
+             B02.STATUS.STATUS_KODE_HIST(SB_IND) = ' '    THEN                  
+             DO;                                                                
+                SBROT_FNR  =  B02.RF0PERSN.FNR(SB_IND);                         
+                CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,SB_IND);                  
+                IF FEIL_MELD_NR > 0 THEN                                        
+                   GO TO L999;                                                  
+                CALL LAG_FNR_TAB(SB_IND);                                       
+                CALL LAG_BARNEP_BEGGE_HEND(SB_IND);                             
+             END;                                                               
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN ER ALDERSPENSJONIST.                                     */        
+ /* ***************************************************************** */        
+                                                                                
+    WHEN   ('A')                                                                
+       DO;                                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN HAR ETTERLATTE RETTIGHETER.                              */        
+ /* ***************************************************************** */        
+                                                                                
+          IF B02.PENSJONSTYPE2(SB_IND) = 'E' &                                  
+            (DIV_PERIODE.BEREGNINGS_ALT_EGEN = '5'  !    /*9812*/               
+             B02.ETTEPENS.TP_BRUTTO(SB_IND) > 0   ) THEN                        
+             DO;                                                                
+                CALL LAG_ETTERL_ALDERSP_HEND(SB_IND);                           
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+                CALL LAG_ALDERSP_HEND(SB_IND,EKT_IND);                          
+                                                                                
+                IF B02.RF0PERSN.FNR         (EKT_IND)  >  0   &                 
+                   (B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'P'  !                 
+                    B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'N'  !                 
+                    B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'S')   THEN            
+                                                                                
+ /* *************************************************************** */          
+ /*  SØKERENS EKTEFELLE SKAL OGSÅ FÅ STØNADSBREV.                   */          
+ /* *************************************************************** */          
+                                                                                
+                    CALL LAG_EKTEF_SB;                                          
+             END;                                                               
+                                                                                
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* AFP                         .                                     */        
+ /* ***************************************************************** */        
+                                                                                
+    WHEN   ('K')                                                                
+       DO;                                                                      
+                                                                                
+           CALL LAG_ALDERSP_HEND(SB_IND,EKT_IND);                               
+                                                                                
+           IF B02.RF0PERSN.FNR         (EKT_IND)  >  0   &                      
+             (B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'P'  !                       
+              B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'N'  !                       
+              B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'S')   THEN                  
+                                                                                
+ /* *************************************************************** */          
+ /*  SØKERENS EKTEFELLE SKAL OGSÅ FÅ STØNADSBREV.                   */          
+ /* *************************************************************** */          
+                                                                                
+               CALL LAG_EKTEF_SB;                                               
+                                                                                
+       END;                                                                     
+ /* ***************************************************************** */        
+ /* PERSONEN ER UFØREPENSJONIST.                                      */        
+ /* ***************************************************************** */        
+                                                                                
+    WHEN   ('U')                                                                
+       DO;                                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN HAR ETTERLATTE RETTIGHETER.                              */        
+ /* ***************************************************************** */        
+                                                                                
+           IF B02.PENSJONSTYPE2(SB_IND) = 'E' &                                 
+             (B02.ETTEPENS.TP_BRUTTO(SB_IND) +                                  
+              B02.ETTEPENS.GP_BRUTTO(SB_IND) > 0)  THEN                         
+              DO;                                                               
+                 CALL LAG_ETTERL_UFØRPENS_HEND(SB_IND);                         
+              END;                                                              
+           ELSE                                                                 
+              DO;                                                               
+                                                                                
+ /* *************************************************************** */          
+ /* KONVERTERT FRA BP/UP TIL UP                                     */          
+ /* *************************************************************** */          
+                                                                                
+                 IF SB_IND > 2 THEN                                             
+                    DO;                                                         
+                       EKT_IND    =  EKTEF_IND;                                 
+                       SBROT_FNR  =  B02.RF0PERSN.FNR(SB_IND);                  
+                       CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,SB_IND);           
+                       IF FEIL_MELD_NR > 0 THEN                                 
+                          GO TO L999;                                           
+                       CALL LAG_FNR_TAB(SB_IND);                                
+                       CALL LAG_UFØRPENS_HEND(SB_IND,EKT_IND);                  
+                    END;                                                        
+                 ELSE                                                           
+                    DO;                                                         
+                       CALL LAG_UFØRPENS_HEND(SB_IND,EKT_IND);                  
+                    END;                                                        
+              END;                                                              
+                                                                                
+ /* *************************************************************** */          
+ /*  SØKERENS EKTEFELLE SKAL OGSÅ FÅ STØNADSBREV.                   */          
+ /* *************************************************************** */          
+                                                                                
+              IF  EKT_IND > 0 & SB_IND > 0  THEN                                
+                 DO;                                                            
+                    IF B02.RF0PERSN.FNR         (EKT_IND)  >  0   &             
+                       (B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'P'  !             
+                        B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'N'  !             
+                        B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'S') THEN          
+                       DO;                                                      
+                          CALL LAG_EKTEF_SB;                                    
+                       END;                                                     
+                  END;                                                          
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN ER ETTERLATT EKTEFELLE.                                  */        
+ /* ***************************************************************** */        
+                                                                                
+    WHEN   ('E')                                                                
+       DO;                                                                      
+          CALL LAG_ETTERLATT_HEND(SB_IND);                                      
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN ER YRKESSKADEPENSJONIST                                  */        
+ /* ***************************************************************** */        
+                                                                                
+    WHEN   ('Y')                                                                
+       DO;                                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN HAR ETTERLATTE RETTIGHETER.                              */        
+ /* ***************************************************************** */        
+                                                                                
+           IF B02.PENSJONSTYPE2(SB_IND) = 'E' &                                 
+             (B02.ETTEPENS.TP_BRUTTO(SB_IND) +                                  
+              B02.ETTEPENS.GP_BRUTTO(SB_IND) > 0)  THEN                         
+              DO;                                                               
+                 CALL LAG_ETTERL_UFØRPENS_HEND(SB_IND);                         
+              END;                                                              
+          ELSE                                                                  
+              DO;                                                               
+                                                                                
+ /* *************************************************************** */          
+ /* KONVERTERT FRA BP/UP TIL YP                                     */          
+ /* *************************************************************** */          
+                                                                                
+                 IF SB_IND > 2 THEN                                             
+                    DO;                                                         
+                       EKT_IND    =  EKTEF_IND;                                 
+                       SBROT_FNR  =  B02.RF0PERSN.FNR(SB_IND);                  
+                       CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,SB_IND);           
+                       IF FEIL_MELD_NR > 0 THEN                                 
+                          GO TO L999;                                           
+                       CALL LAG_FNR_TAB(SB_IND);                                
+                       CALL LAG_YRKEPENS_HEND(SB_IND,EKT_IND);                  
+                    END;                                                        
+                 ELSE                                                           
+                    DO;                                                         
+                      CALL LAG_YRKEPENS_HEND(SB_IND,EKT_IND);                   
+                    END;                                                        
+             END;                                                               
+          IF B02.RF0PERSN.FNR         (EKT_IND)  >  0   &                       
+             (B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'P'  !                       
+ /*16.3.90 HL*/  B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'N'  !                    
+              B02.STATUS.PENSJONSTYPE2(EKT_IND)  = 'S')   THEN                  
+                                                                                
+ /* *************************************************************** */          
+ /*  SØKERENS EKTEFELLE SKAL OGSÅ FÅ STØNADSBREV.                   */          
+ /* *************************************************************** */          
+                                                                                
+                    CALL LAG_EKTEF_SB;                                          
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN ER ETTERLATT FAMILIE PERSON.(PENSJONSTYPE1 = 'J')        */        
+ /* ***************************************************************** */        
+                                                                                
+    WHEN   ('J')                                                                
+       DO;                                                                      
+          CALL LAG_ETTERL_FAM_HEND(SB_IND);                                     
+       END;                                                                     
+    OTHERWISE;                                                                  
+    END;                                                                        
+                                                                                
+ %PAGE;                                                                         
+                                                                                
+                                                                                
+ LAG_EKTEF_SB:                                                                  
+    PROC;                                                                       
+       IF B01.SUM_YTELSE( EKT_IND) ^=                                           
+          B02.SUM_YTELSE( EKT_IND)    !                                         
+                                                                                
+          (B01.ALDERSP.AP_TP_NETTO( EKT_IND)                                    
+                     + B01.UFØRPENS.TP(EKT_IND)) ^=                             
+          (B02.ALDERSP.AP_TP_NETTO( EKT_IND)                                    
+                            + B02.UFØRPENS.TP(EKT_IND))   !                     
+                                                                                
+           TRANS_OPPL_OMR.TRANSTYPE = 92  ! /*200308 */                         
+           TRANS_OPPL_OMR.TRANSTYPE = 27           THEN   /*9812*/              
+          DO;                                                                   
+             SBROT_FNR  =  B02.RF0PERSN.FNR(EKT_IND);                           
+             CALL OPPRETT_SB_ROT_SEGMENT(SBROT_FNR,EKT_IND);                    
+             IF FEIL_MELD_NR > 0 THEN                                           
+                GO TO L999;                                                     
+             CALL LAG_FNR_TAB(EKT_IND);                                         
+             IF B02.STATUS.PENSJONSTYPE1(EKT_IND) = 'A' THEN                    
+                DO;                                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN HAR ETTERLATTE RETTIGHETER.TEST ETTERL AP 15.2 85 J.D    */        
+ /* ***************************************************************** */        
+                                                                                
+                  IF B02.PENSJONSTYPE2(EKT_IND) = 'E' &                         
+                     B02.ETTEPENS.TP_BRUTTO(EKT_IND) > 0     THEN               
+                     DO;                                                        
+                        CALL LAG_ETTERL_ALDERSP_HEND(EKT_IND);                  
+                     END;                                                       
+                  ELSE                                                          
+                     DO;                                                        
+                        CALL LAG_ALDERSP_HEND(EKT_IND,SB_IND);                  
+                     END;                                                       
+                END;                                                            
+                                                                                
+             IF B02.STATUS.PENSJONSTYPE1(EKT_IND) = 'K' THEN                    
+                        CALL LAG_ALDERSP_HEND(EKT_IND,SB_IND);                  
+                                                                                
+             IF B02.STATUS.PENSJONSTYPE1(EKT_IND) = 'U' THEN                    
+                DO;                                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN HAR ETTERLATTE RETTIGHETER.TEST ETTERL UP 15.2 85 J.D.   */        
+ /* ***************************************************************** */        
+                                                                                
+                   IF B02.PENSJONSTYPE2(EKT_IND) = 'E' &                        
+                     (B02.ETTEPENS.TP_BRUTTO(EKT_IND) +                         
+                      B02.ETTEPENS.GP_BRUTTO(EKT_IND) > 0)  THEN                
+                      DO;                                                       
+                         CALL LAG_ETTERL_UFØRPENS_HEND(EKT_IND);                
+                      END;                                                      
+                   ELSE                                                         
+                      DO;                                                       
+                         CALL LAG_UFØRPENS_HEND(EKT_IND,SB_IND);                
+                      END;                                                      
+                END;                                                            
+             IF B02.STATUS.PENSJONSTYPE1(EKT_IND) = 'Y' THEN                    
+                DO;                                                             
+                                                                                
+ /* ***************************************************************** */        
+ /* PERSONEN HAR YRKESSKADEPENSJON                                .   */        
+ /* ***************************************************************** */        
+                                                                                
+                         CALL LAG_YRKEPENS_HEND(EKT_IND,SB_IND);                
+                END;                                                            
+          END;                                                                  
+  END LAG_EKTEF_SB;                                                             
+                                                                                
+ %PAGE;                                                                         
+                                                                                
+ INSERT_HENDELSE:    PROC;                                                      
+                                                                                
+   /* *************************************************************** */        
+   /*       RUTINEN SKAL INSERTE HENDELSESSEGMENT                     */        
+   /* *************************************************************** */        
+                                                                                
+     SSA_UQUAL   =    'HENDELSE ';                                              
+     CALL              PLITDLI (PARM_CT_5,                                      
+                                ISRT,                                           
+                                PCB_SB1,                                        
+                                W_HENDELSE,                                     
+                                SSA1_SB0PERSN,                                  
+                                SSA_UQUAL);                                     
+                                                                                
+                                                                                
+                                                                                
+     IF PCB_SB1.STATUS_KODE  ^=  '  '  !                                        
+        DLIUIB.UIBFCTR ^= UIB_RC_OK   THEN                                      
+           DO;                                                                  
+ L130:                                                                          
+             FEIL_MELD_NR = 500;                                                
+             FEIL_VED_LABEL = 'L130';                                           
+             DB_STATUS_KODE  = PCB_SB1.STATUS_KODE;                             
+             GO TO L999;                                                        
+           END;                                                                 
+                                                                                
+     END INSERT_HENDELSE;                                                       
+                                                                                
+ INSERT_BERGR:    PROC;                                                         
+                                                                                
+   /* *************************************************************** */        
+   /*       RUTINEN SKAL INSERTE BEREGNINGSGRUNNLAGSEGMENT            */        
+   /* *************************************************************** */        
+                                                                                
+     SSA_UQUAL   =    'BERGR    ';                                              
+     CALL              PLITDLI (PARM_CT_5,                                      
+                                ISRT,                                           
+                                PCB_SB1,                                        
+                                W_BERGRUNL,                                     
+                                SSA1_SB0PERSN,                                  
+                                SSA_UQUAL);                                     
+     IF PCB_SB1.STATUS_KODE  ^=  '  '  !                                        
+        DLIUIB.UIBFCTR ^= UIB_RC_OK   THEN                                      
+           DO;                                                                  
+ L150:                                                                          
+             FEIL_MELD_NR   = 500;                                              
+             FEIL_VED_LABEL = 'L150';                                           
+             GO TO L999;                                                        
+           END;                                                                 
+                                                                                
+     END INSERT_BERGR;                                                          
+                                                                                
+ INSERT_BERGRAVD:  PROC;                                                        
+                                                                                
+   /* *************************************************************** */        
+   /*       RUTINEN SKAL INSERTE BEREGNINGSGRUNNLAGSEGMENT_AVDØD      */        
+   /* *************************************************************** */        
+                                                                                
+     SSA_UQUAL   =    'BERGRAVD ';                                              
+     CALL              PLITDLI (PARM_CT_5,                                      
+                                ISRT,                                           
+                                PCB_SB1,                                        
+                                W_BERGRUNL_AVDØD,                               
+                                SSA1_SB0PERSN,                                  
+                                SSA_UQUAL);                                     
+     IF PCB_SB1.STATUS_KODE  ^=  '  '  !                                        
+        DLIUIB.UIBFCTR ^= UIB_RC_OK   THEN                                      
+           DO;                                                                  
+ L160:                                                                          
+             FEIL_MELD_NR   = 500;                                              
+             FEIL_VED_LABEL = 'L160';                                           
+             GO TO L999;                                                        
+           END;                                                                 
+                                                                                
+     END INSERT_BERGRAVD;                                                       
+                                                                                
+   /* ************************************************************** */         
+   /*                                                                */         
+   /* HER LESES ROT-SEGMENTET FOR Å FINNE SISTE VERSJON-NR.          */         
+   /* DETTE OPPDATOES     MED 1 FOR Å GI NESTE NR. TIL HENDELSENE .  */         
+   /*                                                                */         
+   /* ************************************************************** */         
+                                                                                
+   FINN_NR:                                                                     
+    PROC;                                                                       
+                                                                                
+        DCL 1 SB0PERSN,                                                         
+            2 FNR       FIXED DEC      (11)      INIT (   0 )       ,           
+            2 VERS_NR   PIC            'ZZ9'     INIT ('000')       ,           
+            2 REST      CHAR           (136)     INIT (   '')       ;           
+                                                                                
+        CALL            PLITDLI        (PARM_CT_4,                              
+                                       GU,                                      
+                                       PCB_SB1,                                 
+                                       SB0PERSN,                                
+                                       SSA1_SB0PERSN);                          
+                                                                                
+        IF PCB_SB1.STATUS_KODE     =  'GE'  THEN                                
+                 W_ROT.NESTE_SB_VERSJON_NR = 1;                                 
+       ELSE                                                                     
+                                                                                
+                                                                                
+            IF PCB_SB1.STATUS_KODE    ^=  '  '            !                     
+               DLIUIB.UIBFCTR         ^=   UIB_RC_OK          THEN              
+                 DO;                                                            
+ L165:                                                                          
+                    FEIL_MELD_NR      =   500;                                  
+                    FEIL_VED_LABEL    =  'L165';                                
+                    DB_STATUS_KODE    =   PCB_SB1.STATUS_KODE;                  
+                 END;                                                           
+            ELSE                                                                
+               W_ROT.NESTE_SB_VERSJON_NR = SB0PERSN.VERS_NR  ;                  
+                                                                                
+   END FINN_NR;                                                                 
+                                                                                
+ PLASSER_TEKST:   PROC(TEXT_IND,TEXT_EK_IND);                                   
+                                                                                
+   DCL TEXT_IND                FIXED BIN(15),                                   
+       TEXT_EK_IND             FIXED BIN(15);                                   
+                                                                                
+                                                                                
+                                                                                
+   /* *************************************************************** */        
+   /*       RUTINEN SKAL PLASSERE TEKSTTYPE KODER.                    */        
+   /* *************************************************************** */        
+                                                                                
+    CALL  PLASSER_TEKSTTYPE_A_KODE(TEXT_IND,TEXT_EK_IND);                       
+                                                                                
+    /*AFP_BREV TIL STAT OG KLP SKAL IKKE HA M-TEXT J.D 10.96 */                 
+    IF (B02.PENSJONSTYPE2(TEXT_IND) ^= 'N' &                                    
+        B02.DØDSDATO_ÅMD(TEXT_IND) = 0     ) THEN                               
+       CALL  PLASSER_M_KODE_TABELL(TEXT_IND,TEXT_EK_IND);                       
+                                                                                
+    CALL  PLASSER_TEKSTTYPE_O_KODE(TEXT_IND);                                   
+                                                                                
+    CALL  PLASSER_TEKSTTYPE_U_KODE(TEXT_IND,TEXT_EK_IND);                       
+                                                                                
+        /* TEST På TRANSTYPE 26 LAGT INN 18.8.86 J.D */                         
+                                                                                
+    IF TRANS_OPPL_OMR.TRANSTYPE          = 27 !                                 
+      (TRANS_OPPL_OMR.TRANSTYPE          = 26 &                                 
+      (B02.STATUS.VIRK_DATO_ÅMD(TEXT_IND) =                                     
+       B02.STATUS.G_DATO_ÅMD  (TEXT_IND))     &                                 
+      (B02.ALDERSP.PÅ         (TEXT_IND) =                                      
+       B02.ALDERSP.VT_PÅ      (TEXT_IND)))    THEN                              
+                                                                                
+          CALL PLASSER_TEKSTTYPE_V_KODE(TEXT_IND);                              
+    ELSE                                                                        
+         CALL YRKE_TEKSTTYPE_V_KODE(TEXT_IND);                                  
+                                                                                
+ END PLASSER_TEKST;                                                             
+                                                                                
+ L999:                                                                          
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+   /*ALL KONV_AV_BRUKER_ID */                                                   
+                                                                                
+   RETURN;                                                                      
+                                                                                
+ %INCLUDE R0017021;  /* OPPRETT_SB_ROT_I_STØNADSBREV_BASEN  */                  
+ %INCLUDE R0017022;  /* LAG_BARNEP_EN_HEND                    */                
+ %INCLUDE R0017023;  /* LAG_BARNEP_BEGGE_HEND                 */                
+ %INCLUDE R0017031;  /* LAG_ALDERSP_HEND                      */                
+ %INCLUDE R0017032;  /* LAG_UFØRPENS_HEND                     */                
+ %INCLUDE R0017033;  /* LAG_ETTERL_HEND                       */                
+ %INCLUDE R0017034;  /* LAG_ETTERL_FAM_HEND                   */                
+ %INCLUDE R0017035;  /* LAG_ETTERL_ALDERSP_HEND               */                
+ %INCLUDE R0017036;  /* LAG_ETTERL_UFØRPENS_HEND              */                
+ %INCLUDE R0017037;  /* LAG_YRKEPENS_HEND    YS               */                
+ %INCLUDE R0017025;  /* LAG_FNR_TAB                           */                
+ %INCLUDE R0017041;  /* PLASSER_TEKSTTYPE_A_KODE              */                
+ /*NCLUDE R0017042   /* PLASSER_TEKSTTYPE_M_KODE              */                
+ %INCLUDE R0017043;  /* PLASSER_TEKSTTYPE_O_KODE              */                
+ %INCLUDE R0017044;  /* PLASSER_TEKSTTYPE_U_KODE              */                
+ %INCLUDE R0017045;  /* PLASSER_TEKSTTYPE_V_KODE              */                
+ %INCLUDE R0017049;  /* YRKE_TEKSTTYPE_V_KODE          YS     */                
+ %INCLUDE R0017047;  /* BYGG_OPP_BERGRUNL_SEGMENT             */                
+ %INCLUDE R0017048;  /* BYGG_OPP_BERGRUNL_DØD                 */                
+ %INCLUDE R0018038;  /* OPPDATE_DR_BASE    (R0017065 )        */                
+ %INCLUDE R0014135;  /* TIDLIGERE_ARBEIDSINNTEKT              */                
+ %INCLUDE R0014146;  /* FAI_GRENSER                           */                
+ %INCLUDE R0014151;  /* KLAGJØR_TAB            NY92           */                
+ %INCLUDE R0014161;      /* LEGG_UFØREHIST_I_TAB    NY92  */                    
+ %INCLUDE R0014155;  /* FAI_GRENSER_FRAVIK                    */                
+ /*%INCLUDE R0014427   /* LOVLIG INNTEKT - LIGGER I B02 NÅ   */                 
+ %INCLUDE R0019905;  /* F_ALDER                               */                
+ %INCLUDE R0019954;  /* RULL_FORVENTET                        */                
+  /*  %INCLUDE R0019970   KONV_AV_BRUKER_ID             */                      
+ %INCLUDE R0019995;  /* KONV_FNR11_FNR13                      */                
+ %INCLUDE R0017050;  /* PLASSER_M_KODE_TABELL                 */                
+                                                                                
+  END  LAGXSB;                                                                  

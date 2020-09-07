@@ -1,0 +1,592 @@
+ /*   SIST ENDRET PÅ PROD   2006.07.18 11.35.58 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.04.24  9.41.51 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ QASS   2006.04.19 12.10.27 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2006.03.24  8.43.37 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ PROD   2005.06.24 12.43.40 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.04.26 12.54.02 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2001.09.13 11.56.16 AV   HLA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.01.06 11.57.39 AV   JDA7339          */        
+ /*       SIST ENDRET 10/06-98 09.48.32 AV   TSB7339                  */        
+ /*       SIST ENDRET 09/06-98 08.39.22 AV   SPA7339                  */        
+ /*       SIST ENDRET 26/05-98 09.41.56 AV   RFA9991                  */        
+ /*       SIST ENDRET 03/01-85 09.50.13 AV   KARIN                   */         
+  /* *************************************************************** */         
+  /*IDENTIFIKASJON:                                                  */         
+  /*    R0010621 - PROSEDYRE I PLI                                   */         
+  /*    PROGRAMMERER: JAN, OKTOBER 1981                              */         
+  /*HENSIKT:                                                         */         
+  /*    OPPRETTE PENSJONSSTATUS FOR SØKER FRA TRANSEN                */         
+  /* *************************************************************** */         
+  /*SIST ENDRET 5/6-84 AV KARIN                                      */         
+  /*    ENDRINGEN GJELDER REDUSERT BARNETILLEGG INNFØRT 1/7-84       */         
+  /*    DET INNFØRES OPPLYSNINGER OM EKTEFELLENS INNTEKT I           */         
+  /*    EKTEFELLENS PENSJONSTYPE2. (GJELDER BARE PT2 = G)            */         
+  /*    B02.PENSJONSTYPE2(EKTEF_IND) = 'M' NÅR INNT >= 4G            */         
+  /*    B02.PENSJONSTYPE2(EKTEF_IND) = 'U' NÅR INNT <  4G            */         
+  /* *************************************************************** */         
+  /*SIST ENDRET 17/10-84 AV KARIN                                    */         
+  /*    ENDRINGEN GJELDER FELTET FØRSTE-GANG-REG I B02               */         
+  /*    SOM TIDLIGERE ALLTID BLE SATT LIK J I DETTE PROGRAMMET.      */         
+  /*    NÅ BLIR DET SATT TIL N NÅR VEDKOMMENDE FRA FØR HAR HISTORISK */         
+  /*    STATUS (STATUS-TYPE = I) , DVS OPPHØRT UFØRETILFELLE.        */         
+  /*    VI TESTER På STATUS-TYPE = I OG UTFYLT UFØREHISTORIKK.       */         
+  /* *************************************************************** */         
+  /*SIST ENDRET 22/10-84 AV KARIN                                    */         
+  /*    ENDRINGEN GJELDER FELTET FØRSTE-GANG-REG FOR EKTEFELLEN.     */         
+  /*    DET BLIR NÅ SATT LIK SØKERS FØRSTE GANG REG.                 */         
+  /* *************************************************************** */         
+  /*SIST ENDRET 07/12-84 AV KARIN                                    */         
+  /*    ENDRINGEN NY STATUS_TYPE K SOM BEHANDLES PÅ SAMME MÅTE SOM   */         
+  /*    STATUS_TYPE = I.                                             */         
+  /*    NYTT ER DET OGSÅ AT STATUS_TYPE = A KAN HA STATUS I B01 MED  */         
+  /*    STATUS_KODE_HIST = O (OPPHØRT). VI MÅ DERFOR BLANKE          */         
+  /*    SEGMENTENE I B02.STATUS.                                     */         
+  /* *************************************************************** */         
+  /*PROGRAMTILKNYTNING:                                              */         
+  /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLINGA AV UFØREPENSJON  */         
+  /*    INCLUDES I R0010620 NÅR STATUS_TYPE = A, C, I, K             */         
+  /*BRUK:                                                            */         
+  /*    CALL OPPRETT_B02_PENSJONSSTATUS_UP_SØKER                     */         
+  /* *************************************************************** */         
+  %SKIP(2);                                                                     
+                                                                                
+  OPPRETT_STATUS_UP_SØKER:                                                      
+    PROC;                                                                       
+    DCL                                                                         
+       UF_IND           PIC '9',                                                
+       ÅR_FØR_UFØRHET   PIC '9999';                                             
+    DCL                                                                         
+       HJ_UFT_MÅ                     PIC '999999',       /*Y2K*/                
+       HJ_UFT_M DEF HJ_UFT_ÅMD POS(5) PIC '99',          /*Y2K*/                
+       HJ_UFT_Å DEF HJ_UFT_ÅMD POS(1) PIC '9999';         /*Y2K*/               
+                                                                                
+       DCL  YRK_IND  FIXED BIN(15);                                             
+                                                                                
+       DCL  VILKÅR_DEF CHAR(2);                                                 
+       DCL  1 W_VILKÅR_1_2_2AB DEFINED VILKÅR_DEF,                              
+              3 W_VILKÅR_1_2_2A CHAR(1),                                        
+              3 W_VILKÅR_1_2_2B CHAR(1);                                        
+                                                                                
+      IF STATUS_TYPE_SØKER                = 'A' &                               
+         B01.STATUS_KODE_HIST (SØKER_IND) = 'O' THEN                            
+         DO;                                                                    
+            B02.STATUS   (SØKER_IND)   = '';                                    
+            B02.UFØRPENS (SØKER_IND)   = '';                                    
+            B02.UFØRHIST (SØKER_IND,1) = '';                                    
+            B02.UFØRHIST (SØKER_IND,2) = '';                                    
+            B02.UFØRHIST (SØKER_IND,3) = '';                                    
+            B02.UFØRHIST (SØKER_IND,4) = '';                                    
+            B02.UFØRHIST (SØKER_IND,5) = '';                                    
+            B02.UFØRHIST (SØKER_IND,6) = '';        /*0697 HL*/                 
+            B02.UFØRHIST (SØKER_IND,7) = '';        /*0697 HL*/                 
+            B02.YRKEPENS (SØKER_IND)   = '';                                    
+            DO I = LBOUND(B02.YRKEHIST,2) TO HBOUND(B02.YRKEHIST,2);            
+                                                                                
+              B02.YRKEHIST (SØKER_IND,I) = '';                                  
+            END;                                                                
+            B02.ETTEPENS (SØKER_IND)   = '';                                    
+            B02.ETTEBARN (SØKER_IND)   = '';                                    
+            B02.SPESOPPL (SØKER_IND)   = '';                                    
+         END;                                                                   
+                                                                                
+ /* ***************************************************************** */        
+ /* STATUS_SEGMENTET                                                  */        
+ /* ***************************************************************** */        
+                                                                                
+        IF UPS.VIRK_DATO_ÅMD < 19980200             THEN                        
+           B02.PENSJON_FØR_9802(SØKER_IND) = 'J'; /* 2000-3 */                  
+                                                                                
+        IF UPS.TILL_EK = 'J' & UPS.VIRK_DATO_ÅMD > 19910400 THEN                
+           UPS.TILL_EK = ' ';    /*JD 07.91*/                                   
+                                                                                
+        IF UPS.BT_ANT > 0    & UPS.VIRK_DATO_ÅMD > 19910400 THEN                
+           UPS.BT_ANT = 0;       /*JD 07.91*/                                   
+                                                                                
+ /*HL*/ IF UPS.UFT_ÅMD < 19910000          THEN  /* 2000-3 */                   
+           B02.PENSJONSRETT_FØR_91(SØKER_IND) = 'J';                            
+                                                                                
+        IF UPS.YSKADE_TILLEGG = 'J' THEN                                        
+           B02.PENSJONSTYPE1(SØKER_IND) = 'Y';                                  
+        ELSE                                                                    
+                                                                                
+           B02.PENSJONSTYPE1(SØKER_IND) = 'U';                                  
+                                                                                
+       IF UPS.TILL_EK = 'J' THEN                                                
+          B02.PENSJONSTYPE2(SØKER_IND) = 'F';                                   
+       ELSE                                                                     
+          B02.PENSJONSTYPE2(SØKER_IND) = 'P';                                   
+                                                                                
+ /* **************************************************************** */         
+ /* TIDLIGERE FORSØRGET EKTEFELLE STOD IGJEN MED PENSJONSTYPE1 = 'F' */         
+ /* OGSÅ ETTER AT TOTALGRADEN BLE UNDER 50 PROSENT.  DET SOM ER      */         
+ /* RIKTIG, ER AT EKTEFELLEN SKAL HA PENSJONSTYPE1 = 'G'.            */         
+ /* PENSJONISTEN SELV SKAL HA PENSJONSTYPE2 = 'P'.                   */         
+ /* ERIK, 11.1.1990.                                                 */         
+ /* **************************************************************** */         
+                                                                                
+       IF UPS.TILL_EK = ' ' &                                                   
+          B01.PENSJONSTYPE2(SØKER_IND) = 'F' &                                  
+          UPS.UFG < 50   THEN                                                   
+          DO;                                                                   
+             B02.PENSJONSTYPE2(SØKER_IND) = 'P';                                
+             B02.PENSJONSTYPE1(EKTEF_IND) = 'G';                                
+             B02.PENSJONSTYPE2(EKTEF_IND) = ' ';                                
+          END;                                                                  
+                                                                                
+                                                                                
+                                                                                
+       HJ_UFT_ÅMD     = UPS.UFT_ÅMD;                                            
+       ÅR_FØR_UFØRHET = HJ_UFT_Å - 1;                                           
+                                                                                
+       IF HJ_UFT_Å > 1972 THEN                                                  
+          B02.STATUS.TT_FRAMT(SØKER_IND)      =                                 
+                                  (ALDER_67.ÅR * 12 + ALDER_67.MND) -           
+                                     ((HJ_UFT_Å * 12)+ HJ_UFT_M);               
+       ELSE                                                                     
+          B02.STATUS.TT_FRAMT(SØKER_IND)      =                                 
+                                  (ALDER_70.ÅR * 12 + ALDER_70.MND) -           
+                                     ((HJ_UFT_Å * 12) + HJ_UFT_M);              
+                                                                                
+       B02.SIVILSTAND(SØKER_IND)           = UPS.SIVILSTAND;                    
+       B02.NAVN      (SØKER_IND)           = UPS.NAVN;                          
+       B02.SPRÅK     (SØKER_IND)           = UPS.SPRÅK;                         
+       B02.TKNR      (SØKER_IND)           = UPS.TKNR;                          
+                                                                                
+       IF UPS.YRKE                   > 0   THEN      /* TS 171094*/             
+          B02.YRKES_KODE(SØKER_IND)  = UPS.YRKE;                                
+                                                                                
+       /*LEGGE VERDIER INN I INNTEKT_INFO PGA AV ABENDER DERSOM*/               
+       /*VI BRUKER NYE SAKER MED GAMLE BLANKETTER . TRUDE   030295  */          
+                                                                                
+       B02.INNT_DATO_ÅMD (SØKER_IND)  =  UPS.UFT_ÅMD;                           
+                                                                                
+     /*  ENDERT AV SATISH 21.02.96         */                                   
+       IF UPS.INNTEKT_FØR_UP        > 0  THEN                                   
+          B02.INNTEKT_FØR_UP(SØKER_IND)  =   UPS.INNTEKT_FØR_UP /100;           
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* VERNEPLIKTSOPPLYSNINGER                                           */        
+ /* ***************************************************************** */        
+                                                                                
+       DO I = 1 TO 4 WHILE (UPS.VP_ÅR(I) > 0);                                  
+          B02.VERNEPLIKTÅR(SØKER_IND,I) = UPS.VP_ÅR(I);                         
+       END;                                                                     
+                                                                                
+       B02.VILKÅR_8_1B           (SØKER_IND) = UPS.VILKÅR_8_1;                  
+       B02.UFØRPENS.VILKÅR_8_4_3A(SØKER_IND) = UPS.VILKÅR_8_4;                  
+       B02.UFØRPENS.UFG          (SØKER_IND) = UPS.UFG;                         
+       B02.VIRK_DATO_ÅMD         (SØKER_IND) = UPS.VIRK_DATO_ÅMD;               
+       /* ENDRET 17/10-84 AV KARIN  */                                          
+       /* ENDRET 07/12-84 AV KARIN  */                                          
+  IF STATUS_TYPE_SØKER = 'I' ! STATUS_TYPE_SØKER = 'K' THEN                     
+                /* SØKER HAR UFØREHISTORIKK SOM ALLTID MÅ OVERFØRES */          
+                                                                                
+     DO;                                                                        
+                                                                                
+ /*YS---------------------------------------------------------------*/          
+ /*YS  OPPHØRSDATO OG KODE SETTES I UFØRHIST-SEGMENTET              */          
+ /*YS  DETTE ER BARE AKTUELT FOR TIDLIGER ENGANGSUTLØSNING . TRUDE  */          
+ /*YS---------------------------------------------------------------*/          
+                                                                                
+                                                                                
+          DO I = 1 TO 7;             /*0697 HL*/                                
+             IF B01.UFØRHIST.UFT_ÅMD(SØKER_IND,I)   > 0 & /* 2000-3 */          
+                B01.UFØRHIST.OPPHØRSDATO_ÅMD(SØKER_IND,I)  = 0 THEN             
+                DO;                                                             
+                                                                                
+                   IF B01.UFØRHIST.UFT_ÅMD(SØKER_IND,I)  =                      
+                      UPS.UFT_ÅMD             THEN       /* 2000 */             
+        L261:            DO;                                                    
+                             FEIL_VED_LABEL = '261';                            
+                             FEIL_MELD_NR   =  1609;                            
+                             GO TO RETUR;                                       
+                         END;                                                   
+                                                                                
+                   ELSE                                                         
+                   DO;                                                          
+                      B02.UFØRHIST.OPPHØRSDATO_ÅMD(SØKER_IND,I) =               
+                                        UPS.UFT_ÅMD;/* 2000-3 */                
+                      B02.UFØRHIST.OPPHØRSKODE(SØKER_IND,I)    =  'J';          
+                      I             =   7 ;  /*0697 HL*/                        
+                   END;                                                         
+                END;                                                            
+          END;                                                                  
+                                                                                
+ /*YS---------------------------------------------------------------*/          
+ /*YS  OPPHØRSDATO OG KODE SETTES I YRKEHIST-SEGMENTET              */          
+ /*YS  DETTE ER BARE AKTUELT FOR TIDLIGER ENGANGSUTLØSNING . TRUDE  */          
+ /*YS---------------------------------------------------------------*/          
+                                                                                
+                                                                                
+          DO I = LBOUND(B01.YRKEHIST,2) TO HBOUND(B01.YRKEHIST,2);              
+                                                                                
+             IF B01.YRKEHIST.YUFT_ÅMD(SØKER_IND,I) > 0 & /* 2000-3 */           
+                B01.YRKEHIST.OPPH_DATO_ÅMD(SØKER_IND,I)   = 0 THEN              
+                DO;                                                             
+                   B02.YRKEHIST.OPPH_DATO_ÅMD(SØKER_IND,I) =                    
+                                             UPS.UFT_ÅMD; /* 2000-3 */          
+                   B02.YRKEHIST.OPPH_KODE(SØKER_IND,I)    =  'J';               
+                   I = HBOUND(B01.YRKEHIST,2);                                  
+                                                                                
+                END;                                                            
+          END;                                                                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+          B02.FØRSTE_GANG_REG    (SØKER_IND) = 'N';                             
+     END;                                                                       
+  ELSE                                                                          
+  IF B02.STATUS_KODE_HIST(SØKER_IND) ^= 'X'     THEN /*0296 HL*/                
+     B02.FØRSTE_GANG_REG    (SØKER_IND) = 'J';                                  
+  ELSE                                                                          
+     B02.FØRSTE_GANG_REG    (SØKER_IND) = 'N';                                  
+                                                                                
+       B02.STATUS.TT_FØR_1967    (SØKER_IND) = UPSP.TT_F67;                     
+       B02.STATUS.TT_ETTER_1966  (SØKER_IND) = UPSP.TT_E66_Å * 12 +             
+                                                  UPSP.TT_E66_M;                
+                                                                                
+ /* **************************************************************** */         
+ /* ENDRET 14/1-84 AV KARIN                                          */         
+ /* STATUS_KODE_HIST SETTES LIK BLANK                                */         
+ /* FEIL NÅR TIDLIGERE AVSLUTTET UFØRETILFELLE BLIR UFØR IGJEN       */         
+ /* **************************************************************** */         
+                                                                                
+       B02.STATUS_KODE_HIST (SØKER_IND) = ' ';                                  
+                                                                                
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* SPESIELLE OPPLYSNINGER                                            */        
+ /* ***************************************************************** */        
+  %SKIP;                                                                        
+       IF UPS.NORSK_BOSATT = 'N' ! UPS.VILKÅR_8_1 = 'N' THEN                    
+         DO;                                                                    
+            B02.SPESOPPL.STATSBORGER(SØKER_IND) = UPSP.STATSBORGER;             
+            B02.SPESOPPL.BOSATT(SØKER_IND)      = UPSP.BOSATT;                  
+            B02.FRAVIK_BOSATT(SØKER_IND)        = UPSP.FRAVIK_BOSATT;           
+            B02.SPESOPPL.FRAVIK_TRYGDET_3ÅR(SØKER_IND) =                        
+            UPSP.FRA_TRY_3ÅR;                                                   
+            B02.FRAVIK_8_1(SØKER_IND)           = UPSP.FRAVIK_8_1;              
+            B02.KONVENSJON(SØKER_IND)           = UPSP.KONVENSJON;              
+            B02.SPESOPPL.FRAVIK_19_3(SØKER_IND) = UPSP.FRAVIK_19_3;             
+            B02.SPESOPPL.FRAVIK_FLYKTN(SØKER_IND) = UPSP.                       
+            FRAVIK_FLYKT;                                                       
+            B02.SPESOPPL.OVERKOMP_UTL(SØKER_IND)= UPSP.                         
+            OVERKOMP_UTL;                                                       
+            B02.UFØR_UNDER_BOTID(SØKER_IND)     = UPSP.UFØR_U_BOTID;            
+            IF UPSP.TT_ETTER_UFT > 0 THEN                                       
+               DO;                                                              
+                  B02.SPESOPPL.TT_FRAMT_UFT(SØKER_IND) = UPSP.                  
+                                                          TT_ETTER_UFT;         
+                  B02.STATUS.TT_FRAMT(SØKER_IND) = UPSP.TT_ETTER_UFT;           
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  IF UPSP.TT_FRAMT_8_1_Å > 0 THEN                               
+                     DO;                                                        
+                        B02.SPESOPPL.TT_FRAMT_UFT(SØKER_IND) =                  
+                                        UPSP.TT_FRAMT_8_1_Å * 12;               
+                                                                                
+                        B02.STATUS.TT_FRAMT    (SØKER_IND) =                    
+                                        UPSP.TT_FRAMT_8_1_Å * 12;               
+                     END;                                                       
+               END;                                                             
+            B02.IKKE_GP(SØKER_IND)              = UPSP.IKKE_GP;                 
+         END;                                                                   
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /*                                                                   */        
+ /* YRKESSKADEOPPLYSNINGER.  ERIK 2.7.87                              */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+  %SKIP;                                                                        
+                                                                                
+        IF UPS.YSKADE_TILLEGG = 'J' THEN                                        
+           DO;                                                                  
+              DO I = LBOUND(B01.YRKEHIST,2) TO HBOUND(B01.YRKEHIST,2);          
+                IF B01.YRKEHIST.YUFT_ÅMD(SØKER_IND,I) = 0 THEN                  
+                   DO;                                                          
+                      IF (I > 1)  & (B01.YRKEHIST.OPPH_DATO_ÅMD                 
+                                    (SØKER_IND,(I-1)) >                         
+                                     UPS.UFT_ÅMD) THEN   /* 2000-3*/            
+                         DO;                                                    
+                                                                                
+         /*  ********************************************* */                   
+         /*  Y-UFØRETIDSPUNKT LIGGER FØR OPPHØRSTIDSPUNKT  */                   
+         /*  ********************************************* */                   
+                                                                                
+                                                                                
+        L264:                                                                   
+                             FEIL_VED_LABEL = '264';                            
+                             FEIL_MELD_NR   =  1719;                            
+                             GO TO RETUR;                                       
+                         END;                                                   
+                      ELSE                                                      
+                       DO;                                                      
+                          YRK_IND = I;                                          
+                          W_VILKÅR_1_2_2A =                                     
+                                          UPY.VILKÅR_1_2_2A;                    
+                          W_VILKÅR_1_2_2B =                                     
+                                          UPY.VILKÅR_1_2_2B;                    
+                          B02.VILKÅR_1_2_2(SØKER_IND,YRK_IND) =                 
+                                                  VILKÅR_DEF;                   
+                                    /*    W_VILKÅR_1_2_2AB  */                  
+                                                                                
+        /* ******************************************************* */           
+        /* HUSK:                                                   */           
+        /* TESTE PÅ OM B02.VILKÅR_1_2_2 = '  '. HVIS JA, SÅ VANLIG */           
+        /* ALDERSKONV.  HVIS NEI, SÅ SPESIELL ALDERSKONV.BEHANDLING*/           
+        /* ERIK .                                                  */           
+        /* ******************************************************* */           
+                                                                                
+                          B02.YRKEHIST.YUFT_ÅMD(SØKER_IND,I) =                  
+                                          UPS.UFT_ÅMD;                          
+                          B02.YST_ÅMD(SØKER_IND,YRK_IND) =                      
+                                          UPY.YST_ÅMD;                          
+                          B02.YSYKDOM(SØKER_IND) = UPY.YSYKDOM;                 
+                          DIV_PARAM_OMR.YSYKDOM  =                              
+                                          UPY.YSYKDOM;                          
+                                                                                
+                          B02.YRKEPENS.YUG(SØKER_IND) = UPY.YUG;                
+                          B02.YRKEHIST.YUG(SØKER_IND,YRK_IND) =                 
+                                          UPY.YUG;                              
+                          B02.KAP_11_7_UTLØST(SØKER_IND,YRK_IND) =              
+                                          UPY.KAP_11_7_UTLØST;                  
+                          B02.YRKE11(SØKER_IND,YRK_IND) = UPY.YRKE11;           
+                          B02.YRKEHIST.AÅI(SØKER_IND,YRK_IND)                   
+                                                    = UPY.AÅI;                  
+                       END;                                                     
+                     I = HBOUND(B02.YRKEHIST,2);                                
+                                                                                
+                                                                                
+                  END;                                                          
+              ELSE                                                              
+                                                                                
+                    IF I = HBOUND(B02.YRKEHIST,2) THEN                          
+                                                                                
+                       DO;                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* FEIL, ALLE YRKEPERIODENE ER UTFYLT, IKKE PLASS TIL EN TIL         */        
+ /* ***************************************************************** */        
+                                                                                
+         L267:                                                                  
+                          FEIL_VED_LABEL = '267';                               
+                          FEIL_MELD_NR   = 1715;                                
+                          GO TO RETUR;                                          
+                       END;                                                     
+                  END;                                                          
+            END;                                                                
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* PENSJONSGIVENDE INNTEKT                                           */        
+ /* HER MÅ VI TESTE PÅ EN PI-KODE FOR Å SE OM VI HAR FÅTT RAPPORTERT  */        
+ /* INNTEKT = 0                                                       */        
+ /* ***************************************************************** */        
+  /* ENDRET 200103 HL : */                                                      
+                                                                                
+          IF (ÅR_FØR_UFØRHET            > 1966)     &                           
+             (UPS.PI > 0                      )       THEN                      
+            DO;                                                                 
+               IF B01.PI_KODE( SØKER_IND,ÅR_FØR_UFØRHET) = ' ' !                
+                  B01.PI_KODE( SØKER_IND,ÅR_FØR_UFØRHET) = 'F' THEN             
+                  DO;                                                           
+                     B02.PI_KODE(SØKER_IND,ÅR_FØR_UFØRHET) = 'F';               
+                     B02.PI(SØKER_IND,ÅR_FØR_UFØRHET) = UPS.PI;                 
+                  END;                    /* JFA FJERNET /100 OVER*/            
+               ELSE   /*        KODE M BETYR OMSORG + FORELØPIG*/               
+               IF B01.PI_KODE(SØKER_IND,ÅR_FØR_UFØRHET) = 'M'  THEN             
+                     DO;                                                        
+                        B02.PI_KODE(SØKER_IND,ÅR_FØR_UFØRHET) = 'M';            
+                        B02.PI(SØKER_IND,ÅR_FØR_UFØRHET) =                      
+                                            UPS.PI; /* / 100;JFA*/              
+                     END;                                                       
+               ELSE                                                             
+               IF  (B01.PI_KODE(SØKER_IND,ÅR_FØR_UFØRHET) = 'J' !               
+                    B01.PI_KODE(SØKER_IND,ÅR_FØR_UFØRHET) = 'K' !               
+                    B01.PI_KODE(SØKER_IND,ÅR_FØR_UFØRHET) = 'L' ) &             
+                        B01.PI(SØKER_IND,ÅR_FØR_UFØRHET) = 0     THEN           
+                     DO;                                                        
+                        B02.PI_KODE(SØKER_IND,ÅR_FØR_UFØRHET) = 'M';            
+                        B02.PI(SØKER_IND,ÅR_FØR_UFØRHET) =                      
+                                               UPS.PI; /* / 100;JFA*/           
+                     END;                                                       
+            END;                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* UFØREHISTORIKK                                                    */        
+ /* ***************************************************************** */        
+                                                                                
+ DO I = 1 TO 7;                 /*0697 HL*/                                     
+    IF B01.UFØRHIST.UFT_ÅMD(SØKER_IND,I) = 0 THEN                               
+       DO;                                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* D.V.S. FINNER FØRSTE LEDIGE PLASS.                                */        
+ /* ***************************************************************** */        
+                                                                                
+          UF_IND = I;                                                           
+       B02.UFØRHIST.UFT_ÅMD(SØKER_IND,I) = UPS.UFT_ÅMD;                         
+       B02.UFØRHIST.UFG(SØKER_IND,I) = UPS.UFG;                                 
+                                                                                
+ /*HL : UFKRIT FOR YRKESSKADDE BLE ALLTID SATT - RETTET 2.4.91 */               
+                                                                                
+          IF UPS.VILKÅR_8_4 = 'J' THEN                                          
+             IF UPS.YSKADE_TILLEGG = 'J' THEN                                   
+                IF UPY.KAP_11_7_UTLØST = 'J'    THEN                            
+                   B02.UFKRITERIER(SØKER_IND,I) = 5;                            
+                ELSE                                                            
+                   B02.UFKRITERIER(SØKER_IND,I) = 4;                            
+             ELSE                                                               
+                B02.UFKRITERIER(SØKER_IND,I) = 2;                               
+          ELSE;                                                                 
+                                                                                
+ /* ***************************************************************** */        
+ /* DET FINNES EN FORRIGE PERIODE                                     */        
+ /* ***************************************************************** */        
+                                                                                
+            IF (UF_IND = 1                                    !                 
+                B01.UFØRHIST.BUP_GAR_KODE(SØKER_IND,1) ^= ' ' ) THEN            
+               /* --------------------------------------------------- */        
+               /* ENDRET 040100: UNGE UFØRE SOM LÅ PÅ "VENT" NÅR DEI  */        
+               /*                OPPHØRTE FIKK ALDRI BUP_GARANTI      */        
+               /* --------------------------------------------------- */        
+             CALL UNGE_UFØRE;                                                   
+          IF UF_IND > 1 THEN                                                    
+             DO;                                                                
+               IF B02.UFØRHIST.OPPHØRSDATO_ÅMD(SØKER_IND,UF_IND - 1) >          
+                                       UPS.UFT_ÅMD THEN   /* 2000-3 */          
+                   DO;                                                          
+                                                                                
+ /* ***************************************************************** */        
+ /* FEIL, UFØRETIDSPUNKTET LIGGER FØR OPPHØRSTIDSPUNKTET.             */        
+ /* ***************************************************************** */        
+                                                                                
+  L265:                                                                         
+                        FEIL_VED_LABEL = '265';                                 
+                        FEIL_MELD_NR   = 1719;                                  
+                        GO TO RETUR;                                            
+                   END;                                                         
+                                                                                
+ /* ***************************************************************** */        
+ /* HER OVERFØRES BUP-GARANTI OG KODE FRA FORRIGE PERIODE             */        
+ /* ***************************************************************** */        
+                                                                                
+                B02.BUP_GARANTI(SØKER_IND,I) =                                  
+                                    B02.BUP_GARANTI(SØKER_IND,(I-1));           
+                B02.BUP_GAR_KODE(SØKER_IND,I) =                                 
+                                   B02.BUP_GAR_KODE(SØKER_IND,(I-1));           
+             END;                                                               
+                                                                                
+                                                                                
+           I = 7;              /*0697 HL*/                                      
+       END;                                                                     
+            ELSE                                                                
+               DO;                                                              
+                                                                                
+ /* ***************************************************************** */        
+ /* ALLE UFØREPERIODENE ER UTFYLT                                     */        
+ /* ***************************************************************** */        
+                                                                                
+                    IF I = 7 THEN        /*0697 HL*/                            
+                       DO;                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* FEIL, ALLE UFØREPERIODENE ER UTFYLT, IKKE PLASS TIL EN TIL        */        
+ /* ***************************************************************** */        
+                                                                                
+  L270:                                                                         
+                       FEIL_VED_LABEL = '270';                                  
+                       FEIL_MELD_NR   = 1715;                                   
+                       GO TO RETUR;                                             
+                    END;                                                        
+               END;                                                             
+ END;                                                                           
+                                                                                
+ /* ***************************************************************** */        
+ /* EKTEFELLES STATUS                                                 */        
+ /* ***************************************************************** */        
+                                                                                
+    IF B02.FNR(EKTEF_IND) > 0 THEN                                              
+       DO;                                                                      
+          B02.SIVILSTAND(EKTEF_IND)   = B02.SIVILSTAND(SØKER_IND);              
+          B02.NAVN      (EKTEF_IND)   = B02.NAVN(EKTEF_IND);                    
+          B02.SPRÅK     (EKTEF_IND)   = B02.SPRÅK(SØKER_IND);                   
+          B02.VIRK_DATO_ÅMD(EKTEF_IND) = UPS.VIRK_DATO_ÅMD;                     
+          /* KS 5/6-84 */                                                       
+          IF UPS.EK_INNT = 'J' THEN                                             
+             B02.PENSJONSTYPE2  (EKTEF_IND) = 'M';                              
+          ELSE                                                                  
+             B02.PENSJONSTYPE2  (EKTEF_IND) = 'U';                              
+          B02.PENSJONSTYPE3  (EKTEF_IND) = ' ';                                 
+          B02.SUM_YTELSE     (EKTEF_IND) = 0;                                   
+          /* ENDRET 22/10-84 AV KARIN */                                        
+          B02.FØRSTE_GANG_REG(EKTEF_IND) =                                      
+          B02.FØRSTE_GANG_REG(SØKER_IND);                                       
+  /*0296 HL :*/                                                                 
+          IF B01.STATUS_KODE_HIST(EKTEF_IND) = 'X'  THEN                        
+             B02.FØRSTE_GANG_REG(EKTEF_IND) = 'N';                              
+          IF UPS.TILL_EK = 'J' THEN                                             
+             DO;                                                                
+                B02.STATUS.PENSJONSTYPE1(EKTEF_IND) = 'F';                      
+                B02.STATUS.PENSJONSTYPE2(EKTEF_IND) = ' ';                      
+                IF UPSP.TT_E66_Å_EK > 0 THEN                                    
+                   DO;                                                          
+                      B02.STATUS.TT_FØR_1967(EKTEF_IND) =                       
+                                               UPSP.TT_F67_EK;                  
+                      B02.TT_ETTER_1966(EKTEF_IND) = UPSP.                      
+                             TT_E66_M_EK + UPSP.TT_E66_Å_EK * 12;               
+                   END;                                                         
+              END;                                                              
+          ELSE                                                                  
+             B02.STATUS.PENSJONSTYPE1(EKTEF_IND) = 'G';                         
+        END;                                                                    
+                                                                                
+    IF UPS.ATT_UF = 'A' THEN                                                    
+       IF (B01.PENSJONSTYPE1(SØKER_IND)    = 'U' !                              
+           B01.PENSJONSTYPE1(SØKER_IND)    = 'Y')  &                            
+          B01.PENSJONSTYPE3(SØKER_IND)   ^= 'A'    &                            
+          B01.VIRK_DATO_ÅMD(SØKER_IND)    ^=                                    
+          UPS.VIRK_DATO_ÅMD          &                                          
+          B01.STATUS_KODE_HIST(SØKER_IND) = ' ' THEN                            
+          DO;                                                                   
+                                                                                
+ /* ***************************************************************** */        
+ /* FEIL,SØKEREN HAR UFØRPENSJON FRA FØR.                             */        
+ /* ***************************************************************** */        
+                                                                                
+  L275:                                                                         
+             FEIL_VED_LABEL = '275';                                            
+             FEIL_MELD_NR   = 1717;                                             
+             GO TO RETUR;                                                       
+          END;                                                                  
+       ELSE                                                                     
+  /* DENNE TESTEN ER BEGRENSET I FORB. MED FRAPP. 274. ERIK 16.1.86 */          
+          IF B01.PENSJONSTYPE3(SØKER_IND) = 'A'     &                           
+             (B01.PENSJONSTYPE1(SØKER_IND)   ^= 'U' &                           
+              B01.PENSJONSTYPE1(SØKER_IND)   ^= 'Y') &                          
+        /*   B01.VIRK_DATO_ÅM(SØKER_IND)    ^=                                  
+             F_SNU_DATO(UPS.VIRK_DATO_MÅ)          THEN */                      
+             B01.STATUS_KODE_HIST(SØKER_IND) = ' ' THEN                         
+             DO;                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* FEIL,SØKEREN HAR ATTFØRING FRA FØR.                               */        
+ /* ***************************************************************** */        
+                                                                                
+ L277:                                                                          
+                FEIL_VED_LABEL = '277';                                         
+                FEIL_MELD_NR   = 1718;                                          
+                GO TO RETUR;                                                    
+             END;                                                               
+          ELSE                                                                  
+             B02.PENSJONSTYPE3(SØKER_IND) = 'A';                                
+                                                                                
+  RETUR:                                                                        
+    END OPPRETT_STATUS_UP_SØKER;                                                

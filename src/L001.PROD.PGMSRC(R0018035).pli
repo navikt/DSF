@@ -1,0 +1,253 @@
+ /*   SIST ENDRET PÅ PROD   2004.07.16 12.37.17 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.12 13.30.32 AV   JDA2970          */        
+ /*********************************************************************/        
+ /*                                                                   */        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0018065   ET PROGR. :                                         */        
+ /*    SPORBARHET               --------------------------            */        
+ /*    PROGRAMMER :  SATISH PATHAK                                    */        
+ /*    SKRIVET    :  26.11.2003                                       */        
+ /*    PROGRAM SKRIVE SBDATE SEGMENT  TIL D001DR0 DBD  MED Z_RUTIN   */         
+ /*    INFORMASJON                                                    */        
+ /*    Z_KODE = ZR   ROT ER FJERNET MED Z RUTIN                       */        
+ /*    Z_KODE = ZS   STAUS OF BLANKET ER FJERNET MED Z RUTIN          */        
+ /*********************************************************************/        
+                                                                                
+ OPPDATE_DR_ZKODE: PROC(Z_FNR,Z_KODE) ;                                         
+                                                                                
+ DCL Z_FNR                    FIXED DEC(11);                                    
+ DCL Z_KODE                  CHAR (2)       ;                                   
+                                                                                
+ DCL 1 PERSN             BASED(IO_PEKER),                                       
+      %INCLUDE P0018011;                                                        
+    /* -------------------------------------------------------------- */        
+    /*   PENSJONSBREV INFORMASJON                                     */        
+    /* -------------------------------------------------------------- */        
+  DCL  1 SBINFO         BASED(IO_PEKER),                                        
+      %INCLUDE P0018013;                                                        
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*     SSA                                                           */        
+ /*-------------------------------------------------------------------*/        
+  DCL 1 SSA1_ROOT               STATIC,                                         
+        2    HDEL                   CHAR (17)    INIT                           
+                               ('DR0PERSN(FNR     '),                           
+        2    REL_OP                CHAR (2)     INIT (' =')     ,               
+        2    PKEY              FIXED     DEC  (11)    INIT ( 0  ),              
+        2    HP                    CHAR (1)     INIT (')' )     ;               
+                                                                                
+                                                                                
+       DCL 1  SSA1_SB          ,                                                
+              2    HDEL                          CHAR (17)  INIT                
+                               ('SBDATE  (REGSDATE'),                           
+              2    REL_OP                CHAR (2)     INIT (' =')     ,         
+              2    SBP_KEY            FIXED        DEC (9)  INIT ( 0 ),         
+              2    HP                            CHAR (1)   INIT (')' );        
+                                                                                
+ DCL 1  DLI_PARAM,                                                              
+        2   GET                 CHAR (4)   INIT ('    '),                       
+        2   GU                  CHAR (4)   INIT ('GU  '),                       
+        2   GHU                 CHAR (4)   INIT ('GHU '),                       
+        2   GHNP                CHAR (4)   INIT ('GHNP'),                       
+        2   ISRT                CHAR (4)   INIT ('ISRT'),                       
+        2   REPL                CHAR (4)   INIT ('REPL'),                       
+        2   DELT                CHAR (4)   INIT ('DLET'),                       
+        2   PARM_CT_1     FIXED BIN  (31)  INIT (1),                            
+        2   PARM_CT_3     FIXED BIN  (31)  INIT (3),                            
+        2   PARM_CT_4     FIXED BIN  (31)  INIT (4),                            
+        2   PARM_CT_5     FIXED BIN  (31)  INIT (5),                            
+        2   PARM_CT_6     FIXED BIN  (31)  INIT (6);                            
+                                                                                
+                                                                                
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /* PCB-OMRÅDER                                                       */        
+ /*-------------------------------------------------------------------*/        
+    DCL 1  DR1     BASED    (DR1_PCB_PEKER),                                    
+    %INCLUDE P0012003;                                 /* PCB-OMRÅDE  */        
+                                                                                
+    DCL IO_PEKER             POINTER;                                           
+                                                                                
+    DCL IO_AREA              CHAR        (100) INIT (''  )             ;        
+                                                                                
+    DCL  DATE_TID              PIC '(15)9';                                     
+    DCL  DATO                  PIC '(08)9';                                     
+    DCL  DATO_REV              PIC '(08)9';                                     
+    DCL  01 DATE_CH               CHAR(15);                                     
+                                                                                
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /*      S T A R T   P R O G R A M   R0019X30                         */        
+ /*                                                                   */        
+ /*-------------------------------------------------------------------*/        
+       IO_PEKER = ADDR(IO_AREA);                                                
+                                                                                
+       DATE_CH = DATETIME;                                                      
+       DATO      = SUBSTR(DATE_CH,1,8 );                                        
+       DATO_REV  = 99999999 - DATO    ;                                         
+                                                                                
+       CALL KONTROLL_ROT;                                                       
+       IF FEIL_MELD_NR  = 0 THEN                                                
+          CALL KONTROLL_SB ;                                                    
+ /* ************************************************************ */             
+ /* FINNES ROT ELLER SKRIVE NY ROT                              */              
+ /* ************************************************************ */             
+                                                                                
+ KONTROLL_ROT: PROC;                                                            
+                                                                                
+  SSA1_ROOT.PKEY  = Z_FNR  ;                                                    
+  CALL LES_ROT;                                                                 
+  IF DR1.STATUS_KODE = '  '  THEN; /* ROT         FUNNET */                     
+  ELSE                                                                          
+  IF DR1.STATUS_KODE = 'GE'  THEN   /* ROT         IKKE FUNNET  */              
+     DO;                                                                        
+        PERSN.FNR        = RF0PERSN.FNR ;                                       
+        PERSN.NAVN       = RF0PERSN.NAVN;                                       
+        PERSN.TKNR       = RF0PERSN.TKNR;                                       
+        PERSN.PERSN_KODE =  RF0PERSN.PERSN_KODE ;                               
+                                                                                
+        SSA_UQUAL     =  'DR0PERSN';                                            
+        CALL ISRT_ROT;                                                          
+     END;                                                                       
+  ELSE                                                                          
+      DO;                                                                       
+ L065:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L065';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+       MAP_MELDING (6)  = 'FEIL MED REVISJON DATA BASE L065 ';                  
+                                                                                
+     END;                                                                       
+ END KONTROLL_ROT;                                                              
+ /* ********************************************************** */               
+ KONTROLL_SB: PROC;                                                             
+                                                                                
+  SSA1_ROOT.PKEY  = Z_FNR  ;                                                    
+  SBP_KEY  = DATO_REV;                                                          
+  CALL LES_SB ;                                                                 
+  IF DR1.STATUS_KODE = '  '  THEN  /* ROT         FUNNET */                     
+     DO;                                                                        
+        SBINFO.BRUKER_ID  =    DIV_PARAM_OMR.BRUKER_ID;                         
+        SBINFO.Z_INFO     =    Z_KODE;                                          
+                                                                                
+         SSA_UQUAL     =  'SBDATE  ';                                           
+                                                                                
+         CALL REPL_BARN_AV_ROOT;                                                
+     END;                                                                       
+  ELSE                                                                          
+  IF DR1.STATUS_KODE = 'GE'  THEN   /* ROT         IKKE FUNNET  */              
+     DO;                                                                        
+        SBINFO.SB_DATO    =    DATO_REV;                                        
+        SBINFO.REG_DATO   =    DATO;                                            
+        SBINFO.BRUKER_ID  =    DIV_PARAM_OMR.BRUKER_ID;                         
+        SBINFO.Z_INFO     = Z_KODE;                                             
+                                                                                
+         SSA_UQUAL     =  'SBDATE  ';                                           
+                                                                                
+         CALL ISRT_BARN_AV_ROOT;                                                
+     END;                                                                       
+  ELSE                                                                          
+      DO;                                                                       
+ L066:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L066';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+       MAP_MELDING (6)  = 'FEIL MED REVISJON DATA BASE L066 ';                  
+     END;                                                                       
+                                                                                
+ END KONTROLL_SB;                                                               
+ /* ********************************************************** */               
+ /* ********************************************************** */               
+ LES_ROT: PROC;                                                                 
+                                                                                
+    CALL PLITDLI                                (PARM_CT_4    ,                 
+                                                 GU           ,                 
+                                                 DR1          ,                 
+                                                 IO_AREA      ,                 
+                                                 SSA1_ROOT);                    
+                                                                                
+                                                                                
+                                                                                
+ END LES_ROT;                                                                   
+ /*----------------------------------------------------------------*/           
+ LES_SB : PROC;                                                                 
+                                                                                
+    CALL PLITDLI                                (PARM_CT_5    ,                 
+                                                 GHU          ,                 
+                                                 DR1          ,                 
+                                                 IO_AREA      ,                 
+                                                 SSA1_ROOT    ,                 
+                                                 SSA1_SB);                      
+                                                                                
+                                                                                
+ END LES_SB ;                                                                   
+ /*----------------------------------------------------------------*/           
+    /*----------------------------------------------------------------*/        
+    /* SKRIVE ROT                                                     */        
+    /*----------------------------------------------------------------*/        
+ ISRT_ROT: PROC;                                                                
+    CALL PLITDLI                                (PARM_CT_4    ,                 
+                                                 ISRT         ,                 
+                                                 DR1          ,                 
+                                                 IO_AREA      ,                 
+                                                 SSA_UQUAL    );                
+                                                                                
+                                                                                
+                                                                                
+    IF DR1.STATUS_KODE        ^=         '  '    THEN                           
+      DO;                                                                       
+ L067:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L067';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+       MAP_MELDING (6)  = 'FEIL MED REVISJON DATA BASE ISRT-ROT ';              
+     END;                                                                       
+                                                                                
+ END ISRT_ROT;                                                                  
+                                                                                
+ /*----------------------------------------------------------------*/           
+ /* SKRIVE BARN AV ROT                                             */           
+ /*----------------------------------------------------------------*/           
+ ISRT_BARN_AV_ROOT:  PROC;                                                      
+                                                                                
+    CALL PLITDLI                                (PARM_CT_5    ,                 
+                                                 ISRT         ,                 
+                                                 DR1          ,                 
+                                                 IO_AREA      ,                 
+                                                 SSA1_ROOT,                     
+                                                 SSA_UQUAL);                    
+                                                                                
+                                                                                
+    IF DR1.STATUS_KODE        ^=         '  '    THEN                           
+      DO;                                                                       
+ L068:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L068';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+                                                                                
+       MAP_MELDING (6) = 'FEIL MED REVISJON DATA BASE ISRT-BARN_AV_ROT';        
+     END;                                                                       
+                                                                                
+ END ISRT_BARN_AV_ROOT;                                                         
+                                                                                
+ REPL_BARN_AV_ROOT:  PROC;                                                      
+                                                                                
+    CALL PLITDLI                                (PARM_CT_3    ,                 
+                                                 REPL         ,                 
+                                                 DR1          ,                 
+                                                 IO_AREA  );                    
+                                                                                
+                                                                                
+    IF DR1.STATUS_KODE        ^=         '  '    THEN                           
+      DO;                                                                       
+ L068:                                                                          
+       FEIL_MELD_NR = 500;                                                      
+       FEIL_VED_LABEL = 'L068';                                                 
+       DB_STATUS_KODE  = DR1.STATUS_KODE;                                       
+       MAP_MELDING (6) = 'FEIL MED REVISJON DATA BASE REPL-BARN_AV_ROT';        
+                                                                                
+     END;                                                                       
+                                                                                
+ END REPL_BARN_AV_ROOT;                                                         
+                                                                                
+  END OPPDATE_DR_ZKODE;  /*END  OF PROGRAM  */                                  

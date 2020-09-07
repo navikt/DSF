@@ -1,0 +1,298 @@
+ /*   SIST ENDRET PÅ PROD   2003.12.05  8.37.53 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.12.05  8.26.13 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.06.29 11.49.42 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.02.21 10.33.20 AV   JDA7339          */        
+ /*       SIST ENDRET 04/05-98 14.30.47 AV   JDA7339                  */        
+ /*       SIST ENDRET 12/03-98 10.36.08 AV   SLA9300                  */        
+ /*       SIST ENDRET 13/12-91 13.11.46 AV   DYBVIK                   */        
+ /*       SIST ENDRET 14/04-89 15.00.15 AV   DYBVIK                   */        
+ /*       SIST ENDRET 14/12-88 14.32.45 AV   DYBVIK                   */        
+ /*       SIST ENDRET 08/10-86 09.17.57 AV   LUNDEBY                  */        
+ /*       SIST ENDRET 06/12-84 17.10.30 AV   BREIVIK                  */        
+ /*       SIST ENDRET 24/10-84 14.50.17 AV   FARVIK                   */        
+ /*       SIST ENDRET 23/11-82 13.45.48 AV   BREIVIK                  */        
+ /*-------------------------------------------------------------------*/        
+ /* IDENTIFIKASJON:                                                   */        
+ /*    R0016301                                                       */        
+ /*                                                                   */        
+ /*    PROGRAMMERER: P. BREIVIK, JULI 1982.                           */        
+ /*                                                                   */        
+ /* HENSIKT:                                                          */        
+ /*    HER GENERERES ET ROT- OG ET REGTPKT-SEGMENT TIL                */        
+ /*    STAT-TRANS-BASEN SOM FORTELLER AT OPPLYSNINGENE UNDER ET       */        
+ /*    VIRKNINGSTIDSPUNKT I DSR SKAL FJERNES (SETTES PASSIVE).        */        
+ /*       PARAMETERNE OVERFØRES VIA TRANS_OPPL_OMR.                   */        
+ /*                                                                   */        
+ /* PROGRAMTILKNYTNING:                                               */        
+ /*                                                                   */        
+ /* BRUK:                                                             */        
+ /*                                                                   */        
+ /* ENDRET : UKE 05 2000 AV  SVERRE LUNDEBY, DATA-UTVIKLING AS       */         
+ /*          SAK 0013-2000 DAG I VIRKDATO > 00                        */        
+ /*-------------------------------------------------------------------*/        
+                                                                                
+ R001630: PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                 
+                                                                                
+ DCL COMMAREA_PEKER          POINTER;                                           
+                                                                                
+ %INCLUDE P0019906; /* TRANS_OPPL_OMR */                                        
+                                                                                
+ %INCLUDE P0019908; /* KOM_OMR */                                               
+                                                                                
+ %INCLUDE P0019912; /* DIV_PARAM_OMR */                                         
+                                                                                
+ %PAGE;                                                                         
+ DCL 1 TR0ROT,                                                                  
+ %INCLUDE P0016201; /* ARBEIDSOMRÅDE TR0ROT               */                    
+ DCL 1 REGTPKT,                                                                 
+ %INCLUDE P0016202; /* ARBEIDSOMRÅDE REGTPKT              */                    
+ /*-------------------------------------------------------------------*/        
+ /*   DL/1 PARAMETRE                                                  */        
+ /*-------------------------------------------------------------------*/        
+ DCL PLITDLI ENTRY;                                                             
+ %INCLUDE DLIUIB;                                                               
+                                                                                
+ DCL UIB_RC_OK               BIT (8) INIT (0);     /* KONSTANT */               
+                                                                                
+ DCL 1 TR0_PCB_PEKER         BASED (UIBPCBAL),                                  
+       2 TR0_PCB_PTR         POINTER;                                           
+                                                                                
+ DCL GU                      CHAR (4) INIT('GU  ');                             
+ DCL GHU                     CHAR (4) INIT('GHU ');                             
+ DCL GHNP                    CHAR (4) INIT('GHNP');                             
+ DCL DELETE                  CHAR (4) INIT('DLET');                             
+ DCL ISRT                    CHAR (4) INIT('ISRT');                             
+                                                                                
+ DCL TRE                     FIXED BIN (31) INIT(3);                            
+ DCL FIRE                    FIXED BIN (31) INIT(4);                            
+ DCL FEM                     FIXED BIN (31) INIT(5);                            
+ /*-------------------------------------------------------------------*/        
+ /*   DEKLARASJON AV SSA                                              */        
+ /*-------------------------------------------------------------------*/        
+ DCL SSA_UNQUAL              CHAR (9);                                          
+                                                                                
+ DCL 1 SSA_TR0ROT UNALIGNED,                                                    
+       2 HOVEDDEL            CHAR (17) INIT('TR0ROT  (FNR     '),               
+       2 REL_OP              CHAR (2)  INIT(' ='),                              
+       2 FNR_KEY             FIXED DEC (11),                                    
+       2 END_MRK             CHAR (1)  INIT(')');                               
+                                                                                
+ DCL 1 SSA_REGTPKT1 UNALIGNED,                                                  
+       2 HOVEDDEL            CHAR (17) INIT('REGTPKT (VIRKDATS'),               
+       2 REL_OP              CHAR (2)  INIT(' ='),                              
+       2 VIRKDATO            CHAR (8),                                          
+       2 END_MRK             CHAR (1)  INIT(')');                               
+                                                                                
+ DCL 1 SSA_REGTPKT2 UNALIGNED,                                                  
+       2 HOVEDDEL            CHAR (17) INIT('REGTPKT (VIRKDATS'),               
+       2 REL_OP              CHAR (2)  INIT('>='),                              
+       2 VIRKDATO            CHAR (8),                                          
+       2 END_MRK             CHAR (1)  INIT(')');                               
+ /*-------------------------------------------------------------------*/        
+ /*   PCB-OMRÅDE                                                      */        
+ /*-------------------------------------------------------------------*/        
+ %INCLUDE P0012002;                                                             
+                                                                                
+ DCL 1 TR0_PCB               BASED (TR1_PCB_PEKER),                             
+                                                                                
+ %INCLUDE P0012003;                                                             
+ /*-------------------------------------------------------------------*/        
+ /*   HJELPEVARIABLE                                                  */        
+ /*-------------------------------------------------------------------*/        
+ /* 2000                                                                        
+ DCL DATO_KLOKKE             PIC '(17)9',                                       
+     DATO_ÅMD                PIC '(8)9' DEF DATO_KLOKKE,                        
+     DATO                    PIC '(8)9' DEF DATO_KLOKKE,                        
+     KLOKKE                  PIC '(9)9' DEF DATO_KLOKKE POS(9);                 
+  */                                                                            
+ DCL DATO                    PIC '(8)9',                       /*2000*/         
+     KLOKKE_CH               CHAR (9)  ,                       /*2000*/         
+     KLOKKE                  PIC '(9)9' DEF KLOKKE_CH POS(1);  /*2000*/         
+ DCL IO_PEK                  POINTER;                                           
+ DCL IO_AREA                 CHAR (150);                                        
+ DCL IO_HELP_AREA            CHAR (150) BASED (IO_PEK);                         
+ DCL PBR_TEXT                CHAR (50);                                         
+ DCL (TIME,CSTG,                                                                
+      ADDR,CHAR, FLOOR )             BUILTIN;                                   
+                                                                                
+ %PAGE;                                                                         
+ /*-------------------------------------------------------------------*/        
+ /*                                                                   */        
+ /* START PÅ PROGRAM FJERN ALT UNDER ET VIRKNINGSTIDSPUNKT,           */        
+ /*    OG ETTERFØLGENDE VIRKNINGSTIDSPUNKTER,                         */        
+ /*    HVIS VIRKNINGSTIDSPUNKETET FINNES.                             */        
+ /*    PROGRAMMET KALLES OPP MED TO PARAMETRE:                        */        
+ /*                                                                   */        
+ /*    1. FØDSELSNUMMER TIL PERSONEN DET GJELDER                      */        
+ /*    2. VIRKNINGSTIDSPUNKT DET SKAL SLETTES PÅ                      */        
+ /*-------------------------------------------------------------------*/        
+    DIV_PARAM_OMR.PROGRAM_ID = 'R0016301';                                      
+    UIBPTR =UIB_PEKER;                                                          
+ /*-------------------------------------------------------------------*/        
+ /* START PÅ PROGRAM FJERN SEGMENTER I STAT-TRANS-BASEN.              */        
+ /*-------------------------------------------------------------------*/        
+    TR0ROT               = '';                                                  
+    REGTPKT              = '';                                                  
+    SSA_TR0ROT.FNR_KEY   = TRANS_OPPL_OMR.FØDSNUMMER;                           
+    CALL PLITDLI (FIRE,                                                         
+                  GU,                                                           
+                  TR0_PCB,                                                      
+                  IO_AREA,                                                      
+                  SSA_TR0ROT);                                                  
+                                                                                
+                                                                                
+     SSA_REGTPKT1.VIRKDATO =   TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD ;               
+     SSA_REGTPKT2.VIRKDATO =   TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD ;               
+    /*----------------------------------------------------------*/              
+    /*SIKRER AT DAG=00 I VIRKDATO                 SL UKE 5 2000 */              
+    /*----------------------------------------------------------*/              
+    SSA_REGTPKT1.VIRKDATO = FLOOR (SSA_REGTPKT1.VIRKDATO / 100) * 100;          
+    SSA_REGTPKT2.VIRKDATO = FLOOR (SSA_REGTPKT2.VIRKDATO / 100) * 100;          
+                                                                                
+     SELECT(TR0_PCB.STATUS_KODE);                                               
+         WHEN ('GE');                                                           
+         WHEN ('  ')                                                            
+           DO;                                                                  
+             CALL PLITDLI (FIRE,                                                
+                           GHNP,                                                
+                           TR0_PCB,                                             
+                           IO_AREA,                                             
+                           SSA_REGTPKT1);                                       
+                                                                                
+              IF TR0_PCB.STATUS_KODE ^= '  ' &                                  
+                 TR0_PCB.STATUS_KODE ^= 'GE' THEN                               
+                  DO;                                                           
+   L090:                                                                        
+                  /*--------------------------------------*/                    
+                  /* FEIL VED GHU-KALLET    TIL TR0-BASEN */                    
+                  /* SEGMENT LOT SEG IKKE LESE.           */                    
+                  /*--------------------------------------*/                    
+                     DIV_PARAM_OMR.FEIL_VED_LABEL = 'L090'    ;                 
+                     DIV_PARAM_OMR.FEIL_MELD_NR   = 500       ;                 
+                     DIV_PARAM_OMR.DB_STATUS_KODE =                             
+                                                TR0_PCB.STATUS_KODE;            
+                     GO TO UTGANG;                                              
+                  END;                                                          
+                                                                                
+           DO WHILE (TR0_PCB.STATUS_KODE = ' ');                                
+              CALL PLITDLI (TRE,                                                
+                            DELETE,                                             
+                            TR0_PCB,                                            
+                            IO_AREA);                                           
+                                                                                
+              IF TR0_PCB.STATUS_KODE ^= '  ' THEN                               
+                  DO;                                                           
+   L100:                                                                        
+                  /*--------------------------------------*/                    
+                  /* FEIL VED DELETE-KALLET TIL TR0-BASEN */                    
+                  /* SEGMENT LOT SEG IKKE SLETTE          */                    
+                  /*--------------------------------------*/                    
+                                                                                
+                     DIV_PARAM_OMR.FEIL_VED_LABEL = 'L100'    ;                 
+                     DIV_PARAM_OMR.FEIL_MELD_NR   = 500       ;                 
+                     DIV_PARAM_OMR.DB_STATUS_KODE =                             
+                                                TR0_PCB.STATUS_KODE;            
+                     GO TO UTGANG;                                              
+                  END;                                                          
+                                                                                
+             CALL PLITDLI (FIRE,                                                
+                           GHNP,                                                
+                           TR0_PCB,                                             
+                           IO_AREA,                                             
+                           SSA_REGTPKT2);                                       
+                                                                                
+             IF TR0_PCB.STATUS_KODE ^= '  ' &                                   
+                TR0_PCB.STATUS_KODE ^= 'GE' THEN                                
+   L110:                                                                        
+               DO;                                                              
+             /*------------------------------------*/                           
+             /* FEIL VED GHNP-KALLET.              */                           
+             /*------------------------------------*/                           
+                  DIV_PARAM_OMR.FEIL_VED_LABEL = 'L110';                        
+                  DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                           
+                  DIV_PARAM_OMR.DB_STATUS_KODE =                                
+                                               TR0_PCB.STATUS_KODE;             
+                  GO TO UTGANG;                                                 
+               END;                                                             
+           END;   /*DO WHILE  */                                                
+                                                                                
+        END;   /*DO  */                                                         
+                                                                                
+         OTHERWISE                                                              
+            DO;                                                                 
+   L120:                                                                        
+             /*------------------------------------*/                           
+             /* FEIL VED GU-KALLET.                */                           
+             /*------------------------------------*/                           
+               DIV_PARAM_OMR.FEIL_VED_LABEL = 'L120';                           
+               DIV_PARAM_OMR.FEIL_MELD_NR   = 500;                              
+               DIV_PARAM_OMR.DB_STATUS_KODE =                                   
+                                             TR0_PCB.STATUS_KODE;               
+               GO TO UTGANG;                                                    
+            END;                                                                
+      END; /* OF SELECT */                                                      
+ /*-------------------------------------------------------------------*/        
+ /*    INSERTER DE-AKTIV-SEGMENTER PÅ TR-BASE.                        */        
+ /*-------------------------------------------------------------------*/        
+    TR0ROT.FNR = TRANS_OPPL_OMR.FØDSNUMMER;                                     
+    SSA_UNQUAL = 'TR0ROT   ';                                                   
+    CALL PLITDLI (FIRE,                                                         
+                  ISRT,                                                         
+                  TR0_PCB,                                                      
+                  TR0ROT,                                                       
+                  SSA_UNQUAL);                                                  
+                                                                                
+    IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                                   
+       ^(TR0_PCB.STATUS_KODE = '  ' ! TR0_PCB.STATUS_KODE = 'II') THEN          
+    DO;                                                                         
+ L130:                                                                          
+     /*--------------------------------------*/                                 
+     /* FEIL VED INSERT-KALLET TIL TR0-BASEN */                                 
+     /* SEGMENT FANTES IKKE FRA FØR OG       */                                 
+     /* LOT SEG HELLER IKKE LEGGE INN        */                                 
+     /*--------------------------------------*/                                 
+       FEIL_VED_LABEL = 'L130';                                                 
+       FEIL_MELD_NR = 500;                                                      
+       GO TO UTGANG;                                                            
+    END;                                                                        
+                                                           /*2000*/             
+    DATO               = DATO_2000;                        /*2000*/             
+    KLOKKE_CH          = TIME;                             /*2000*/             
+    REGTPKT.DATO       = DATO_2000  ;                      /*2000*/             
+    REGTPKT.KLOKKE     = KLOKKE     ;                      /*2000*/             
+    REGTPKT.VIRKDATO   = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD; /*2000*/             
+    /*----------------------------------------------------------*/              
+    /*SIKRER AT DAG=00 I VIRKDATO                 SL UKE 5 2000 */              
+    /*----------------------------------------------------------*/              
+    REGTPKT.VIRKDATO   =  FLOOR (REGTPKT.VIRKDATO / 100) * 100;                 
+    REGTPKT.DELMRK_VTP = 'F';   /* FJERNES */                                   
+    SSA_TR0ROT.FNR_KEY =  TR0ROT.FNR;                                           
+                                                                                
+    IO_PEK     = ADDR(REGTPKT);                                                 
+    IO_AREA    = IO_HELP_AREA;                                                  
+    SSA_UNQUAL = 'REGTPKT ';                                                    
+                                                                                
+    CALL PLITDLI (FEM,                                                          
+                  ISRT,                                                         
+                  TR0_PCB,                                                      
+                  IO_AREA,                                                      
+                  SSA_TR0ROT,                                                   
+                  SSA_UNQUAL);                                                  
+                                                                                
+    IF DLIUIB.UIBRCODE.UIBFCTR ^= UIB_RC_OK !                                   
+       TR0_PCB.STATUS_KODE     ^= '  ' THEN                                     
+       DO;                                                                      
+ L140:                                                                          
+     /*--------------------------------------*/                                 
+     /* FEIL VED INSERT-KALLET TIL TR0-BASEN */                                 
+     /* UNIKT SEGMENT LOT SEG IKKE LEGGE INN */                                 
+     /*--------------------------------------*/                                 
+          FEIL_VED_LABEL = 'L140';                                              
+          FEIL_MELD_NR = 500;                                                   
+       END;                                                                     
+                                                                                
+ UTGANG:                                                                        
+                                                                                
+    EXEC CICS RETURN;                                                           
+                                                                                
+ END R001630;                                                                   

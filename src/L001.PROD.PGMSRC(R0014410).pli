@@ -1,0 +1,229 @@
+ /*   SIST ENDRET PÅ PROD   2004.12.17 13.59.07 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 12.56.32 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ QASS   2004.03.10  9.11.09 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.03.10  9.10.16 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.04.24 14.46.44 AV   JDA2970          */        
+ /*IDENTIFIKASJON:                                                  */          
+ /*    R0014410 - SUBPROGRAM I PLI                                  */          
+ /*    PROGRAMMERER: HERMAN 2002                                    */          
+ /*HENSIKT:                                                         */          
+ /*    LØNNSOMHETSBEREGNING ETTER INNTEKTSOPPDATERING               */          
+ /*PROGRAMTILKNYTNING:                                              */          
+ /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLINGA AV UFØREPENSJON- */          
+ /*    SBEREGNINGEN.                                                */          
+ /*    INCLUDES I R0014401 OG 4501                                  */          
+ /*BRUK:                                                            */          
+ /*    CALL FINN_BESTE_UFT                                          */          
+ /* *************************************************************** */          
+ /*   */                                                                        
+ FINN_BESTE_UFT:                                                                
+   PROC(TP_UP);                                                                 
+ DCL JA           BIT(1)  INIT ('1'B);                                          
+ DCL SKAL_TESTES  BIT(1)  INIT ('0'B);                                          
+ DCL NEI          BIT(1)  INIT ('0'B);                                          
+ DCL  MAX_BUP                     FIXED DEC (3);                                
+ DCL  TESTGRAD                    FIXED DEC (3);                                
+ DCL  TESTDATO                    FIXED DEC (9);                                
+ DCL  T1                          FIXED BIN (15) INIT (0);                      
+ DCL  T2                          FIXED BIN (15) INIT (0);                      
+ DCL  TEST_TP                     FIXED DEC (5);                                
+ DCL  TIL_ÅR                      FIXED DEC (5);                                
+ DCL  TP_UP                       FIXED DEC (5);                                
+ DCL  1 W_SAVE_POREKKE LIKE W_POREKKE;                                          
+                                                                                
+ /* KOMMER HIT NÅR :                                                            
+   IF (TRANSTYPE = 22 )      INNTEKTSOPPDATERING                                
+      & DIV_PARAM_OMR.INTENDR_ÅR        > 0                                     
+      & DIV_PARAM_OMR.SISTE_UFTIDSPUNKT = ' '                                   
+      & DIV_PARAM_OMR.REGN_1291 ^= '3'                                          
+      & B02.PENSJONSTYPE3(BER_SØ_IND) ^= 'A'      */                            
+                                                                                
+ /* VI MÅ SJEKKE OM DETTE PÅVIRKER VALG AV BESTE UFØRETIDSPUNKT.      */        
+   DO I = 7 TO 1 BY -1  UNTIL                                                   
+          (B02.UFØRHIST.UFG(BER_SØ_IND,I) > 0);                                 
+   END; /*DENNE PERIODEN SKAL TESTES MOT FORRIGE PERIODE, MEN FØRST*/           
+        /*MOT EVT. UNDERLIGGENDE GRADSENDRINGER   **************** */           
+   TESTGRAD   = B02.UFØRHIST.UFG(BER_SØ_IND,I);                                 
+   TESTDATO   = B02.UFT_ÅMD(BER_SØ_IND,I);                                      
+   T1         = I;                                                              
+   T2         = 0;                                                              
+   W_B02      = B02   ; /*SPARES*/                                              
+   W_SAVE_POREKKE    = POREKKE(BER_SØ_IND);                                     
+   IF I = 0       THEN                                                          
+      SKAL_TESTES = NEI;                                                        
+   ELSE        /* FRA 7 TIL 12 0404 JFA */                                      
+   DO J = 1 TO 12 WHILE(B02.UFG_DATO_ÅMD(BER_SØ_IND,I,J) > 0);                  
+      IF B02.UFG_ØVRIGE(BER_SØ_IND,I,J) > TESTGRAD  THEN                        
+         DO;                                                                    
+            TESTDATO  = B02.UFG_DATO_ÅMD(BER_SØ_IND,I,J);                       
+            T2        = J;                                                      
+            SKAL_TESTES = JA;                                                   
+         END;                                                                   
+      TESTGRAD = B02.UFG_ØVRIGE(BER_SØ_IND,I,J);                                
+   END;                                                                         
+   IF SKAL_TESTES = JA  THEN                                                    
+      IF DIV_PARAM_OMR.INTENDR_ÅR   < (TESTDATO / 10000) THEN                   
+         DO; /*NÅ SKAL VI ETABLERE ET NYTT UFØRETIDSPUNKT*/                     
+             /*GRADS-SEGMENTET ENDRES TIL UFØREHIST-SEGM */                     
+            T1 = I + 1;                                                         
+            B02.UFT_ÅMD(BER_SØ_IND,T1)        = TESTDATO;                       
+            B02.UFØRHIST.UFG(BER_SØ_IND,T1)        = TESTGRAD;                  
+            B02.UFØRHIST.UFKRITERIER(BER_SØ_IND,T1) =                           
+                      B02.UFØRHIST.UFKRITERIER(BER_SØ_IND,I);                   
+            B02.UFØRHIST.BUP(BER_SØ_IND,T1) =                                   
+                      B02.UFØRHIST.BUP(BER_SØ_IND,I);                           
+            B02.UFØRHIST.BUP_GARANTI(BER_SØ_IND,T1) =                           
+                      B02.UFØRHIST.BUP_GARANTI(BER_SØ_IND,I);                   
+            B02.UFØRHIST.BUP_GAR_KODE(BER_SØ_IND,T1) =                          
+                      B02.UFØRHIST.BUP_GAR_KODE(BER_SØ_IND,I);                  
+            B02.VIRK_UFØRHIST_ÅMD(BER_SØ_IND,T1) =                              
+                      B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,I,J);                    
+            B02.YNGSTE_BARN_FÅR_HIST(BER_SØ_IND,T1) =                           
+                      B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,I,J);                 
+            B02.FRIINNTEKT_FRA_HIST_ÅMD(BER_SØ_IND,T1) =                        
+                      B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,I,J);              
+            B02.OPPHØRSDATO_ÅMD(BER_SØ_IND,I) = TESTDATO;                       
+            B02.OPPHØRSKODE(BER_SØ_IND,I)     = 'J';                            
+            IF B02.REDUSERT_ANT_BUP_ÅR(BER_SØ_IND,I) > 0   THEN                 
+               DO;                                                              
+                  MAX_BUP = (B02.TT_FRAMT(BER_SØ_IND) + 6) / 12;                
+                  TIL_ÅR = MAX_BUP + (TESTDATO / 10000);                        
+                  IF TIL_ÅR > (FNR_R13.ÅR + 65)      THEN                       
+                     B02.REDUSERT_ANT_BUP_ÅR(BER_SØ_IND,T1) = 0;                
+                  ELSE                                                          
+                     B02.REDUSERT_ANT_BUP_ÅR(BER_SØ_IND,T1) = MAX_BUP;          
+               END;                                                             
+            ELSE                                                                
+               B02.REDUSERT_ANT_BUP_ÅR(BER_SØ_IND,T1) = 0;                      
+            B02.UFG_ØVRIGE(BER_SØ_IND,I,T2)          = 0;                       
+            B02.UFG_DATO_ÅMD(BER_SØ_IND,I,T2)        = 0;                       
+            B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,I,T2)   = 0; /*JFA*/               
+            B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,I,T2)   = 0; /*JFA*/            
+            B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,I,T2)   = 0; /*JFA*/         
+            J = T2 + 1;                                                         
+            K = 1;                                                              
+                                                                                
+            /*EVT ETTERFØLGENDE GRADS-SEGMENTER FLYTTES : */                    
+                    /* JFA 7 TIL 12 */                                          
+            DO J = J TO 12 WHILE(B02.UFG_DATO_ÅMD(BER_SØ_IND,I,J) > 0);         
+               B02.UFG_ØVRIGE(BER_SØ_IND,T1,K)          =                       
+                   B02.UFG_ØVRIGE(BER_SØ_IND,I,J);                              
+               B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,T1,K)   =                       
+                   B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,I,J);                       
+               B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,T1,K)   =                    
+                   B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,I,J);                    
+               B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,T1,K)   =                 
+                   B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,I,J);                 
+               B02.UFG_DATO_ÅMD(BER_SØ_IND,T1,K)        =                       
+                   B02.UFG_DATO_ÅMD(BER_SØ_IND,I,J);                            
+               B02.UFG_ØVRIGE(BER_SØ_IND,I,J)           = 0;                    
+               B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,I,J)    = 0;                    
+               B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,I,J)    = 0;                 
+               B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,I,J)    = 0;              
+               B02.UFG_DATO_ÅMD(BER_SØ_IND,I,J)         = 0;                    
+               K = K + 1;                                                       
+            END;                                                                
+         END;                                                                   
+      ELSE                                                                      
+         SKAL_TESTES = NEI;                                                     
+                                                                                
+   ELSE        /*DET VAR INGEN GRADSENDRING SOM */                              
+               /*KUNNE GI NYTT UFØRETIDSPUNKT * */                              
+   IF I > 1            THEN                                                     
+      /*ER SISTE UFØRHIST AKTUEL Å REVURDERES SOM GRADSENDRING ? */             
+      IF B02.UFØRHIST.OPPHØRSDATO_ÅMD(BER_SØ_IND,(I-1))  =                      
+                   B02.UFT_ÅMD(BER_SØ_IND,I)                &                   
+         DIV_PARAM_OMR.INTENDR_ÅR   <                                           
+            (B02.UFT_ÅMD(BER_SØ_IND,I) / 10000)         THEN                    
+         DO; /*HER SKAL VI ETABLERE EN GRADSENDRING*/                           
+            SKAL_TESTES = JA;                                                   
+            T1 = I - 1;                                                         
+            /*FINNE FØRSTE LEDIGE GRADS-SEGMENT :*/                             
+            DO J = 1 TO 12 UNTIL  /* 7 TIL 12 JFA*/                             
+                    (B02.UFG_DATO_ÅMD(BER_SØ_IND,T1,J) = 0);                    
+            END;                                                                
+            /*FLYTTE FRA UFØRHIST TIL GRAD I FORANLIGGENDE SEGM :*/             
+               B02.UFG_DATO_ÅMD(BER_SØ_IND,T1,J) =                              
+                   B02.UFT_ÅMD(BER_SØ_IND,I);                                   
+               B02.UFG_ØVRIGE  (BER_SØ_IND,T1,J) =                              
+                   B02.UFØRHIST.UFG(BER_SØ_IND,I);                              
+               B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,T1,J) =                         
+                   B02.VIRK_UFØRHIST_ÅMD(BER_SØ_IND,I);                         
+               B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,T1,J) =                      
+                   B02.YNGSTE_BARN_FÅR_HIST(BER_SØ_IND,I);                      
+               B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,T1,J) =                   
+                   B02.FRIINNTEKT_FRA_HIST_ÅMD(BER_SØ_IND,I);                   
+            /*PÅFØLGENDE GRADSENDRINGER FLYTTES OGSÅ */                         
+            J = J + 1;                                                          
+            K = 1;                                                              
+            DO WHILE (B02.UFG_DATO_ÅMD(BER_SØ_IND,I,K) > 0);                    
+               B02.UFG_DATO_ÅMD(BER_SØ_IND,T1,J) =                              
+                   B02.UFG_DATO_ÅMD(BER_SØ_IND,I,K);                            
+               B02.UFG_ØVRIGE  (BER_SØ_IND,T1,J) =                              
+                   B02.UFG_ØVRIGE  (BER_SØ_IND,I,K);                            
+               B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,T1,J) =                         
+                   B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,I,K);                       
+               B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,T1,J) =                      
+                   B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,I,K);                    
+               B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,T1,J) =                   
+                   B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,I,K);                 
+               J = J + 1;                                                       
+               K = K + 1;                                                       
+            END;                                                                
+            /*OPPHØRSDATO OG KODE MÅ FLYTTES : */                               
+            B02.UFØRHIST.OPPHØRSDATO_ÅMD(BER_SØ_IND,T1)        =                
+                B02.UFØRHIST.OPPHØRSDATO_ÅMD(BER_SØ_IND,I);                     
+            B02.UFØRHIST.OPPHØRSKODE    (BER_SØ_IND,T1)        =                
+                B02.UFØRHIST.OPPHØRSKODE    (BER_SØ_IND,I);                     
+            /*SÅ KAN SISTE UFØRHIST SLETTES: */                                 
+            B02.UFØRHIST(BER_SØ_IND,I) = '';                                    
+         END;                                                                   
+   IF SKAL_TESTES = JA                  THEN                                    
+      DO;                                                                       
+         B01_B02_IND = 2;                                                       
+         POTALL_OPPL.IND  = BER_SØ_IND;                                         
+         EXEC CICS LINK PROGRAM ('R0014141') COMMAREA (KOM_OMR);                
+         IF B02.UFT_ÅMD(BER_SØ_IND,T1) < 19920000            THEN               
+            POREKKE.PÅ_ETTER91(BER_SØ_IND) = 0;                                 
+   /*    IF FEIL_MELD_NR > 0   THEN                                             
+            GO TO RETUR;                                                        
+         ELSE                                                                   
+            PROGRAM_ID = 'R0014401';    */                                      
+         TEST_TP = F_TP92(FNR_R13.ÅR,G,                                         
+                     POREKKE.SPT(BER_SØ_IND),                                   
+                     POREKKE.OPT(BER_SØ_IND),                                   
+                     POREKKE.PÅ (BER_SØ_IND),                                   
+                     POREKKE.PÅ_ETTER91(BER_SØ_IND),                            
+                     (UFGRAD),100,'J');                                         
+         IF TEST_TP > TP_UP                       THEN                          
+            DO;                                                                 
+                /*UFØRHIST I NEST SISTE STATUS RETTES         */                
+               DO I = 1 TO 7;                                                   
+                  B01.UFØRHIST(BER_SØ_IND,I) =                                  
+                      B02.UFØRHIST(BER_SØ_IND,I);                               
+                  DO J = 1 TO 12; /*FRA 7 TIL 12 JFA*/                          
+                     B01.UFØRGRAD(BER_SØ_IND,I,J)   =                           
+                        B02.UFØRGRAD(BER_SØ_IND,I,J);                           
+                     B01.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,I,J) =                    
+                        B02.VIRK_UFØRGRAD_ÅMD(BER_SØ_IND,I,J);                  
+                     B01.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,I,J) =                 
+                        B02.YNGSTE_BARN_FÅR_GRAD(BER_SØ_IND,I,J);               
+                     B01.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,I,J) =              
+                        B02.FRIINNTEKT_FRA_GRAD_ÅMD(BER_SØ_IND,I,J);            
+                  END;                                                          
+               END;                                                             
+               TP_UP                       = TEST_TP;                           
+               B02.UFØRPENS.SPT(BER_SØ_IND) = POREKKE.SPT(BER_SØ_IND);          
+               B02.UFØRPENS.OPT(BER_SØ_IND) = POREKKE.OPT(BER_SØ_IND);          
+               B02.UFØRPENS.PÅ (BER_SØ_IND) = POREKKE.PÅ (BER_SØ_IND);          
+               B02.UFØRPENS.PÅ_ETTER91(BER_SØ_IND) =                            
+                                POREKKE.PÅ_ETTER91(BER_SØ_IND);                 
+               DIV_PERIODE.AP_TRANSTYPE_SPART(BER_SØ_IND) = 22;                 
+            END;                                                                
+         ELSE                                                                   
+            DO;  /*LEGG TILBAKE OPPRINNELIG HISTORIKK*/                         
+               B02 = W_B02;                                                     
+               POREKKE(BER_SØ_IND) = W_SAVE_POREKKE;                            
+            END;                                                                
+      END;                                                                      
+ END FINN_BESTE_UFT;                                                            

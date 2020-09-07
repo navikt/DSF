@@ -1,0 +1,233 @@
+ /*   SIST ENDRET PÅ PROD   2000.11.15 11.35.16 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.01.18 11.47.39 AV   JDA7339          */        
+ /*       SIST ENDRET 20/09-99 09.34.07 AV   JDA7339                  */        
+ /*       SIST ENDRET 20/09-99 09.16.00 AV   JDA7339                  */        
+ /*       SIST ENDRET 24/08-99 08.59.06 AV   JDA7339                  */        
+ /*       SIST ENDRET 24/08-99 08.55.54 AV   JDA7339                  */        
+ /*       SIST ENDRET 02/09-98 11.18.07 AV   SPA7339                  */        
+ /*       SIST ENDRET 04/05-98 12.59.12 AV   JDA7339                  */        
+ /*       SIST ENDRET 25/02-98 09.33.42 AV   RFA9991                  */        
+ /* *************************************************************** */          
+ /*IDENTIFIKASJON:                                                  */          
+ /*    R0014221 - PROSEDYRE I PLI                                   */          
+ /*    PROGRAMMERER:          ROLF FARVIK     MARS -82.             */          
+ /*HENSIKT:                                                         */          
+ /*    BEREGNE FØRSTE DEL AV ALDERSPENSJONEN.                       */          
+ /*     BEREGNER 100 % - APD ER IKKE REGNET UT ENNÅ                 */          
+ /*PROGRAMTILKNYTNING:                                              */          
+ /*    PROSEDYREN INNGÅR SOM EN DEL AV BEHANDLINGA AV ALDERSPENSJON-*/          
+ /*    SBEREGNINGEN.                                                */          
+ /*    INCLUDES I R0014201                                          */          
+ /*BRUK:                                                            */          
+ /*    CALL BEREGN_AP_DEL1                                          */          
+ /*                                                                 */          
+ /* *************************************************************** */          
+ BEREGN_AP_DEL1:PROC;                                                           
+    DCL W_BT                              FIXED DEC(5)  INIT(0),                
+        SUM_TP                            FIXED DEC(5)         ,                
+        W_FNR_EK                          PIC'(11)9'           ,                
+        ALDER_EK                          FIXED DEC(5)  INIT(0),                
+        W_DATO_ÅMD                        PIC'(8)9'            ,                
+        W_HH       DEF W_DATO_ÅMD POS(1)  PIC'99'              ,                
+        W_ÅR       DEF W_DATO_ÅMD POS(3)  PIC'99'              ,                
+        W_MN       DEF W_DATO_ÅMD POS(5)  PIC'99'              ,                
+        W_DD       DEF W_DATO_ÅMD POS(7)  PIC'99'              ;                
+    /* == START 4221 ================================================ */        
+    W_DATO_ÅMD = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD; /*9908*/                     
+    /*W_DATO_ÅMD = W_MN !! W_ÅR;                  2000*/                        
+    W_FNR_EK  = B02.FNR(BER_EK_IND);                                            
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL UNDERPROGRAM SOM BEREGNER TILLEGGSPENSJON                    */        
+ /* ***************************************************************** */        
+                                                                                
+    CALL BEREGN_TP_AP;                      /*4231*/                            
+                                                                                
+    IF FEIL_MELD_NR > 0  THEN                                                   
+       GO TO RETUR;                                                             
+    ELSE                                                                        
+       PROGRAM_ID = 'R0014201';                                                 
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL UNDERPROGRAM SOM BEREGNER GRUNNPENSJON.                      */        
+ /* ***************************************************************** */        
+                                                                                
+    CALL BEREGN_GP_AP;                      /*4232*/                            
+ /* */                                                                          
+    SUM_TP = B02.ALDERSP.TP(BER_SØ_IND) + B02.TP_BRUTTO(BER_SØ_IND)             
+             + B02.GT_TILLEGG_LOV92(BER_SØ_IND);                                
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL FUNKSJON SOM BEREGNER SÆRTILLEGG.     4133                   */        
+ /* ***************************************************************** */        
+                                                                                
+     /*PENSJONSRETT_FØR_91 ER OPPDATERT I R0014232 */                           
+                                                                                
+ IF (B02.BOSATT(BER_SØ_IND)  > 0          &             /*UTLAND*/              
+     B02.TT_16_66(BER_SØ_IND) = 0 )   &    /*NY0191*/                           
+     B02.ALDERSP.UTTAKSDATO_ÅMD(BER_SØ_IND) < 19910000 THEN  /*2000*/           
+    DO;                                                                         
+       IF B02.PENSJONSTYPE2(BER_SØ_IND)  = 'F' THEN                             
+         DO;                                                                    
+                                                                                
+  /*LOVENDRING OM BEHOVSPRØVET FORSØRGINGSTI_ÅMDLLEGG FRA 1.5.91 :*/            
+  /* SÅ SNART DET SKAL BEREGNES MED HØYERE GRUNNBELØP ENN     */                
+  /* PR 30.4.91, SÅ SKAL ALL BEREGNING SKJE I R0014011        */                
+                                                                                
+            IF G > 34100 THEN                                                   
+               DO;                                                              
+                  B02.ALDERSP.ET(BER_SØ_IND) = 0;                               
+  /*HL*/          IF B02.FT_SKAL_BEREGNES(BER_SØ_IND) ^= 'J'  THEN              
+                     B02.FT_SKAL_BEREGNES(BER_SØ_IND) = 'N';                    
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+                  B02.ALDERSP.ET(BER_SØ_IND)=                                   
+                  F_ET_UTLAND((B02.TT_FØR_1967(BER_SØ_IND)),/*4181*/            
+                           (B02.TT_FØR_1967(BER_EK_IND)),                       
+                           (B02.TT_ETTER_1966(BER_SØ_IND)),                     
+                           (B02.TT_ETTER_1966(BER_EK_IND)));                    
+                                                                                
+                  IF B02.PENSJONSTYPE2(BER_SØ_IND)  = 'S' !                     
+                    (B02.PENSJONSTYPE2(BER_SØ_IND) = 'N' &                      
+                    (B02.SIVILSTAND (BER_SØ_IND)   = 'G' !  /*0898HL*/          
+                     B02.SIVILSTAND (BER_SØ_IND)   = 'P' !                      
+                     B02.SIVILSTAND (BER_SØ_IND)   = 'W') &                     
+                     B02.PENSJONSTYPE2(BER_EK_IND) = 'P') THEN                  
+                     B02.ALDERSP.ET(BER_SØ_IND) = 0;                            
+               END;                                                             
+         END;                                                                   
+       ELSE                                           /*TRUDE 0991*/            
+                     B02.ALDERSP.ET(BER_SØ_IND) = 0;                            
+                                                                                
+      CALL SÆRTILLEGG_UTLAND(SUM_TP);  /* 4180 */                               
+      GO TO L500;                                                               
+    END;                                             /* TIL HIT TS   */         
+   /*14.01.00 : EKTEFELLER TIL AFP K/S FÅR FULLT ST (IFLG RIBE) */              
+ IF ((B02.PENSJONSTYPE2(BER_SØ_IND)  = 'S') &                                   
+    ^(B02.PENSJONSTYPE3(BER_EK_IND) = 'K')  &                                   
+    ^(B02.PENSJONSTYPE3(BER_EK_IND) = 'S')) !                                   
+    (B02.PENSJONSTYPE2(BER_SØ_IND) = 'N'   &                                    
+    (B02.SIVILSTAND   (BER_SØ_IND) = 'G'   !          /*0898HL*/                
+     B02.SIVILSTAND   (BER_SØ_IND) = 'P'   !                                    
+     B02.SIVILSTAND   (BER_SØ_IND) = 'W')  &                                    
+     B02.PENSJONSTYPE2(BER_EK_IND) = 'P')  THEN                                 
+                                                                                
+     DO;                                                                        
+        B02.ALDERSP.ET(BER_SØ_IND) = 0;                                         
+        B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                       
+                                         SUM_TP,0,'J',                          
+                                         (ST_PROSENT_SAMST),                    
+                                         100,                                   
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+    END;                                                                        
+ ELSE                                                                           
+                                                                                
+ /*ENDRET 2.3.89 HL - DOBBELT ST TIL DEN SOM FORSØRGER EK > 60 */               
+                                                                                
+                                                                                
+                         /*** ET  ***/                                          
+ IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'F' THEN                                    
+                                                                                
+       DO;                                                                      
+                                                                                
+                                                                                
+  /*LOVENDRING OM BEHOVSPRØVET FORSØRGINGSTI_ÅMDLLEGG FRA 1.5.91 :*/            
+  /* SÅ SNART DET SKAL BEREGNES MED HØYERE GRUNNBELØP ENN     */                
+  /* PR 30.4.91, SÅ SKAL ALL BEREGNING SKJE I R0014011        */                
+                                                                                
+            IF G > 34100 THEN                                                   
+               DO;                                                              
+                  B02.ALDERSP.ET(BER_SØ_IND) = 0;                               
+  /*HL*/          IF B02.FT_SKAL_BEREGNES(BER_SØ_IND) ^= 'J'  THEN              
+                     B02.FT_SKAL_BEREGNES(BER_SØ_IND) = 'N';                    
+               END;                                                             
+            ELSE                                                                
+               B02.ALDERSP.ET(BER_SØ_IND) = 0.5 * G *                           
+                   B02.TT_ANV(BER_SØ_IND) / (12 * 40) + 0.5;                    
+                                                                                
+                                                                                
+                                                                                
+ /*HL*/   ALDER_EK = F_ALDER(W_FNR_EK,W_DATO_ÅMD);                              
+                                                                                
+ /*HL*/   IF (ALDER_EK       >= 6000   &                                        
+              W_DATO_ÅMD     >  19890300   &  /*2000*/                          
+              W_DATO_ÅMD     <  19910000  )    !  /*2000*/                      
+             (ALDER_EK       >= 6001   &                                        
+              W_DATO_ÅMD     >  19910000  )      THEN    /*2000*/               
+                                                                                
+             B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                  
+                                         SUM_TP,0,'J',                          
+                                        (ST_PROSENT_SAMST * 2),                 
+                                         100,                                   
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+          ELSE                                                                  
+                                                                                
+             B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                  
+                                         SUM_TP,0,'J',                          
+                                         (ST_PROSENT_ENSLIG),                   
+                                         100,                                   
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+                                                                                
+           /*TILLEGGSTEST 03.94 TRUDE */                                        
+                                                                                
+           IF  ALDER_EK       >= 6001   &                                       
+               W_DATO_ÅMD     >  19931200     THEN                              
+                                                                                
+             B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                  
+                                         SUM_TP,0,'J',                          
+                                        (ST_PROSENT_ENSLIG * 2),                
+                                         100,                                   
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+                                         /*TRUDE HIT 0394*/                     
+       END;                                                                     
+                                                                                
+ ELSE                                                                           
+                                                                                
+   DO;                                                                          
+                                                                                
+       B02.ALDERSP.ET(BER_SØ_IND) = 0;                                          
+                                                                                
+       B02.ALDERSP.ST(BER_SØ_IND) = F_BEREGN_SÆRTILLEGG(                        
+                                         SUM_TP,0,'J',                          
+                                         (ST_PROSENT_ENSLIG),                   
+                                         100,                                   
+                                         (B02.TT_ANV(BER_SØ_IND)));             
+                                                                                
+   END;                                                                         
+                                                                                
+                                                                                
+                                                                                
+ /* ***************************************************************** */        
+ /* KALL FUNKSJON SOM BEREGNER KOMPENSASJONSTI_ÅMDLLEGG. 4134         */        
+ /* ***************************************************************** */        
+                                                                                
+   /*    ENDRET   17.03.88    SATISH                                 */         
+ /*                                                                   */        
+ /* B02.ALDERSP.KT(BER_SØ_IND) = F_BEREGN_KOMPENSASJONSTILLEGG(   */            
+ /*                                  B02.PENSJONSTYPE2(BER_SØ_IND),   */        
+ /*                                  B02.TT_ANV(BER_SØ_IND),0,1,'J'); */        
+   /*     HITTIL                                                      */        
+  L500:                                                                         
+    B02.ALDERSP.KT(BER_SØ_IND) = F_BEREGN_KOMPENSASJONSTILLEGG(                 
+                                     B02.PENSJONSTYPE1(BER_SØ_IND),             
+                                     B02.PENSJONSTYPE2(BER_SØ_IND),             
+                                     B02.TT_ANV(BER_SØ_IND),0,1,'J');           
+ /* ***************************************************************** */        
+ /* DEN PÅFØLGENDE TESTEN SKAL UNNGÅ Å GI UTENLANDSBOENDE KOMP.       */        
+ /* ERIK 22.12.86.                                                    */        
+ /* ***************************************************************** */        
+                                                                                
+    IF B02.SPESOPPL.BOSATT(BER_SØ_IND) > 0 THEN                                 
+       B02.ALDERSP.KT(BER_SØ_IND) = 0 ;                                         
+                                                                                
+    CALL BEREGN_BT(W_BT,100);                   /*4233*/                        
+                                                                                
+    B02.ALDERSP.BT(BER_SØ_IND) = W_BT;                                          
+                                                                                
+    B02.AP_ST_NETTO(BER_SØ_IND) = B02.ALDERSP.ST(BER_SØ_IND);                   
+                                                                                
+    RETUR:                                                                      
+                                                                                
+   END BEREGN_AP_DEL1;                                                          

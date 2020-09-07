@@ -1,0 +1,389 @@
+ /*   SIST ENDRET PÅ PROD   2003.03.13 10.25.16 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2002.01.07 12.38.10 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.11.07 12.22.32 AV   JDA7339          */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R0014022 - SUB-PROC  I PLI.                                    */        
+ /*    PROGRAMMERER: HERMAN OKT. 2000                                 */        
+ /*HENSIKT:                                                           */        
+ /*    RUTINEN OPPDATERER TP_NETTO,GP_NETTO,ST_NETTO                  */        
+ /*    PROGRAMMET ERSTATTER 4015 OG 4139(DISSE PROGRAM UTGÅR)         */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    PROGRAMMET BLIR INKLUDERT I R0014001,CALL FRA 4010             */        
+ /*    PROGRAMMET BLIR INKLUDERT I R0014101,CALL FRA 4126             */        
+ /*    PROGRAMMET BLIR INKLUDERT I R0014201,CALL FRA 4222             */        
+ /*    PROGRAMMET BLIR INKLUDERT I R0014251                           */        
+ /*    PROGRAMMET BLIR INKLUDERT I R0014270                           */        
+ /*BRUK:                                                              */        
+ /*    CALL JUSTER_FORVENTET(W_KT,INDEX     )                         */        
+ /*    PROGRAMMET KAN BLI KALT OPP MED INDEX FOR EKTEFELLE. VI        */        
+ /*    OVERFØRER DERFOR INDEX, MEN SETTER I DETTE PROGRAMMET          */        
+ /*    MIDLERTIDIG BER_SØ_IND = INDEX - FORDI ANDRE PROGRAM OGSÅ      */        
+ /*    BLIR CALLED.                                                   */        
+ /* ***************************************************************** */        
+                                                                                
+ JUSTER_FORVENTET: PROC(W_KT,INDEX     );                                       
+                                                                                
+    DCL                                                                         
+       W_KT          DEC FIXED(3),                                              
+       INDEX         FIXED BIN(15),                                             
+       SPARE_IND     FIXED BIN(15),                                             
+       I             FIXED BIN(15),                                             
+       EP_SUM_YTELSE DEC FIXED(7) INIT (0),                                     
+       FRADRAG_F     DEC FIXED(7) INIT (0),                                     
+       FRIBELØP      DEC FIXED(7) INIT (0),                                     
+       G_HALVE       DEC FIXED(7) INIT (0),                                     
+       HJ_AP         DEC FIXED(7) INIT (0),                                     
+       REST_FRADRAG  DEC FIXED(5)  INIT (0),                                    
+       TREDEC        DEC FIXED(3) INIT (0),                                     
+       W_BRUTTO_AP   DEC FIXED(7) INIT (0),                                     
+       W_BRUTTO_GP   DEC FIXED(5) INIT (0),                                     
+       W_BRUTTO_TP   DEC FIXED(5) INIT (0),                                     
+       W_BRUTTO_TP_EP DEC FIXED(7) INIT (0),                                    
+       W_BRUTTO_ST   DEC FIXED(5) INIT (0),                                     
+       W_BRUTTO_GT   DEC FIXED(7) INIT (0),                                     
+       W_SUM_TP      DEC FIXED(7) INIT (0),                                     
+       W_YP_AP       DEC FIXED(7) INIT (0),                                     
+       W_YP          DEC FIXED(7) INIT (0),                                     
+       W_NETTO_AP    DEC FIXED(7) INIT (0),                                     
+       W_FULL_KT     DEC FIXED(5,2) INIT (0),                                   
+       W_TEI         DEC FIXED(7)  INIT (0),                                    
+       W_TAI         DEC FIXED(7)  INIT (0),                                    
+       W_BRP         DEC FIXED(7,2) INIT (0),                                   
+       W_TAK         DEC FIXED(7)  INIT (0),                                    
+       W_APD_ANVENDT DEC FIXED(3)  INIT (0),                                    
+       W_KT_FRADRAG  DEC FIXED(3)  INIT (0),                                    
+       W_ST_FRADRAG  DEC FIXED(5)  INIT (0),                                    
+       W_GP_FRADRAG  DEC FIXED(5)  INIT (0),                                    
+       W_ALDER_ÅM    PIC '9999',                                                
+       W_ETTER92     DEC FIXED(7)  INIT (0);                                    
+                                                                                
+    DCL KODE         CHAR (1) INIT (' ');                                       
+    DCL HJ_FAI       FIXED DEC (7);                                             
+    DCL W_FNR        PIC  '(11)9';             /*2000*/                         
+                                                                                
+    DCL ROUND        BUILTIN;                                                   
+                                                                                
+    /* == START 4022 ================================================ */        
+                                                                                
+    SPARE_IND = BER_SØ_IND;                                                     
+    BER_SØ_IND = INDEX;                                                         
+                                                                                
+    W_FNR  = B02.FNR(BER_SØ_IND);                                               
+                                                                                
+   IF ^(DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND) = 'W' !                           
+        DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND) = 'P' ) THEN                      
+      DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND) = 'A';                              
+                                                                                
+   W_ALDER_ÅM = F_ALDER((W_FNR),(TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD));            
+                                                                                
+ /* LOVENDRING FRA 1.1.2002 : */                                                
+                                                                                
+   IF TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD > 20020000   &                           
+      B02.PENSJONSTYPE1(BER_SØ_IND)  =   'A'   THEN                             
+      FRIBELØP = 2 * G;                                                         
+   ELSE                                                                         
+      FRIBELØP = G;                                                             
+                                                                                
+   IF W_ALDER_ÅM  > 7000  THEN                                                  
+     DO;                                                                        
+       B02.ALDERSP.FAI(BER_SØ_IND)        = 0;                                  
+       B02.ETTEPENS.FORVENTET(BER_SØ_IND)  = 0;                                 
+     END;                                                                       
+                                                                                
+                                                                                
+   IF B02.KONV_P_KODE(BER_SØ_IND)   = 'Y'  &                                    
+      B02.PENSJONSTYPE2(BER_SØ_IND) ^=   'E'   THEN                             
+      DO;                                                                       
+         B02.ALDERSP.APD(BER_SØ_IND)  = 100;                                    
+         CALL BEREGN_AP_OVERGANG_FRA_YP;                                        
+      END;                                                                      
+                                                                                
+                                                                                
+   W_BRUTTO_ST    = B02.ALDERSP.ST(BER_SØ_IND);                                 
+   W_BRUTTO_GP    = B02.ALDERSP.GP(BER_SØ_IND);                                 
+   W_BRUTTO_TP    = B02.ALDERSP.TP(BER_SØ_IND);                                 
+   W_BRUTTO_TP_EP = B02.TP_BRUTTO(BER_SØ_IND);                                  
+   W_ETTER92      = W_BRUTTO_TP + W_BRUTTO_ST + W_BRUTTO_TP_EP;                 
+                                                                                
+   IF B02.GT_LOV92(BER_SØ_IND)  > W_ETTER92        THEN                         
+      W_BRUTTO_GT = B02.GT_LOV92(BER_SØ_IND) - W_ETTER92;                       
+                                                                                
+   W_BRUTTO_AP       = W_BRUTTO_GP + W_BRUTTO_TP + W_BRUTTO_ST                  
+                       + B02.TP_BRUTTO(BER_SØ_IND) + W_KT                       
+                       + W_BRUTTO_GT;                                           
+                                                                                
+   W_SUM_TP          = W_BRUTTO_TP                                              
+                       + B02.TP_BRUTTO(BER_SØ_IND);                             
+                                                                                
+                                                                                
+   CALL TIDLIGERE_ARBEIDSINNTEKT(W_TAI,W_BRP);  /*4135*/                        
+   W_TEI  = W_TAI * 1000;                                                       
+                                                                                
+   /*TIDLIGERE LAV ARBEIDSINNTEKT:  GJENNOMSNITT SKAL IKKE < 3 G */             
+   /*FORHØYES OPP TIL NÆRMESTE HELE TUSEN                        */             
+   /*AFP FOM 0197 SKAL IKKE DENNE REGEL GJELDE                   */             
+                                                                                
+    IF (B02.PENSJONSTYPE1(BER_SØ_IND)   = 'K' &                                 
+        B02.UTTAKSDATO_ÅMD(BER_SØ_IND)   > 19970900 ) !                         
+       (B02.KONV_P_KODE  (BER_SØ_IND)   = 'K' &                                 
+        B02.UTTAKSDATO_ÅMD(BER_SØ_IND)   > 19970900) THEN ;                     
+    ELSE                                                                        
+     DO;                                                                        
+    IF W_TEI < ( 3 * G )   THEN                                                 
+      DO;                                                                       
+       W_TEI   = 3 * G + 999;                                                   
+       TREDEC  = W_TEI / 1000;                                                  
+       W_TEI   = TREDEC * 1000;                                                 
+       DIV_PARAM_OMR.TAI(BER_SØ_IND) = W_TEI;                                   
+      END;                                                                      
+     END;                                                                       
+                                                                                
+    IF B02.FAI(BER_SØ_IND) = 0    THEN                                          
+      IF B02.KONV_P_KODE(BER_SØ_IND)   = 'E'  THEN                              
+         B02.FAI(BER_SØ_IND) = B01.FORVENTET(BER_SØ_IND);                       
+         /* HIT 180992 */                                                       
+                                                                                
+    G_HALVE   = G / 2;                                                          
+    W_FULL_KT = W_KT;                                                           
+    HJ_FAI  = B02.FAI(BER_SØ_IND) * 100;                                        
+                                                                                
+ IF HJ_FAI  > FRIBELØP THEN                                                     
+   DO;                                                                          
+    FRADRAG_F = (B02.FAI(BER_SØ_IND) * 100);                                    
+    FRADRAG_F = FRADRAG_F - FRIBELØP;                                           
+                                                                                
+    IF FRADRAG_F > 0 THEN                                                       
+       FRADRAG_F = ( FRADRAG_F * 0.5 ) / 12;                                    
+                                                                                
+   IF FRADRAG_F > W_BRUTTO_AP THEN                                              
+       DO;                                                                      
+        IF B02.KONV_P_KODE(BER_SØ_IND)  = 'E' !                                 
+           B02.PENSJONSTYPE2(BER_SØ_IND)  = 'E' THEN GOTO L999;                 
+                                                                                
+           B02.ALDERSP.AP_GP_NETTO(BER_SØ_IND)    = 0;                          
+           B02.ALDERSP.AP_TP_NETTO(BER_SØ_IND)    = 0;                          
+           B02.TP_NETTO           (BER_SØ_IND)    = 0;                          
+           B02.ALDERSP.AP_ST_NETTO(BER_SØ_IND)    = 0;                          
+           B02.ALDERSP.KT         (BER_SØ_IND)    = 0;                          
+           W_KT                                   = 0;                          
+       END;                                                                     
+                                                                                
+   ELSE                                                                         
+       DO;                                                                      
+                                                                                
+ /* ***************************************************************** */        
+ /* FRADRAGET ER MINDRE ENN GP + TP + ST                              */        
+ /* ***************************************************************** */        
+                                                                                
+          DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND)  =  'A';                        
+                                                                                
+          W_NETTO_AP    = W_BRUTTO_AP - FRADRAG_F;                              
+                                                                                
+          /*-----------------------------------------------------*/             
+          /*SUMMEN AV PENSJON OG FREMTIDIG ARBEIDSINNTEKT KAN    */             
+          /*IKKE UTGJØRE MER ENN TIDLIGERE  ARBEIDSINNTEKT.      */             
+          /*-----------------------------------------------------*/             
+                                                                                
+          W_TAK =   W_TEI -  (B02.FAI(BER_SØ_IND) * 100);                       
+          IF W_TAK   > 0  THEN                                                  
+             W_TAK   = W_TAK / 12;                                              
+                                                                                
+          IF W_TAK   > 0           &                                            
+             W_TAK   < W_NETTO_AP  THEN                                         
+            DO;                                                                 
+             DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND)  =  'B';                     
+             W_NETTO_AP   =  W_TAK;                                             
+             FRADRAG_F    = W_BRUTTO_AP - W_NETTO_AP;                           
+            END;                                                                
+          ELSE                                                                  
+            IF W_TAK <=  0  THEN                                                
+              DO;                                                               
+               IF B02.KONV_P_KODE(BER_SØ_IND)  = 'E' THEN GOTO L999;            
+                                                                                
+                 B02.ALDERSP.AP_GP_NETTO(BER_SØ_IND) = 0;                       
+                 B02.ALDERSP.AP_TP_NETTO(BER_SØ_IND) = 0;                       
+                 B02.TP_NETTO   (BER_SØ_IND)    = 0;                            
+                 B02.ALDERSP.AP_ST_NETTO(BER_SØ_IND) = 0;                       
+                 B02.ALDERSP.KT (BER_SØ_IND)    = 0;                            
+                 GOTO L500;                                                     
+              END;                                                              
+                                                                                
+          IF B02.KONV_P_KODE(BER_SØ_IND) = 'Y'       THEN                       
+             W_YP = F_OVERGANG_FRA_YP(W_YP_AP);                                 
+                                                                                
+          IF W_YP > W_NETTO_AP   THEN                                           
+            DO;                                                                 
+               W_NETTO_AP   =  W_YP;                                            
+               FRADRAG_F    =  W_BRUTTO_AP - (W_NETTO_AP + W_KT);               
+               DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND)   =  'Y';                  
+               IF FRADRAG_F  <=  0 THEN                                         
+                  DO;                                                           
+        B02.AP_GP_NETTO(BER_SØ_IND)   = B02.ALDERSP.GP(BER_SØ_IND);             
+        B02.AP_TP_NETTO(BER_SØ_IND)   = B02.ALDERSP.TP(BER_SØ_IND);             
+        B02.TP_NETTO(BER_SØ_IND)      = B02.TP_BRUTTO (BER_SØ_IND);             
+        B02.AP_ST_NETTO(BER_SØ_IND)   = B02.ALDERSP.ST(BER_SØ_IND);             
+        B02.ALDERSP.KT(BER_SØ_IND)    = W_KT;                                   
+        GOTO L500;                                                              
+                  END;   /*FRADRAG <= 0 */                                      
+            END;                                                                
+                                                                                
+                                                                                
+          B02.AP_GP_NETTO(BER_SØ_IND) = ROUND(W_BRUTTO_GP *                     
+                                      W_NETTO_AP / W_BRUTTO_AP , 0);            
+                                                                                
+          REST_FRADRAG = FRADRAG_F - W_BRUTTO_GP                                
+                                   + B02.AP_GP_NETTO(BER_SØ_IND);               
+          IF B02.TP_BRUTTO(BER_SØ_IND) > 0 THEN                                 
+            DO;                                                                 
+               B02.TP_NETTO(BER_SØ_IND) =                                       
+                                   ROUND(B02.TP_BRUTTO(BER_SØ_IND)              
+                                   *  W_NETTO_AP / W_BRUTTO_AP , 0);            
+               REST_FRADRAG =  REST_FRADRAG -                                   
+                               B02.TP_BRUTTO(BER_SØ_IND) +                      
+                               B02.TP_NETTO(BER_SØ_IND);                        
+            END;                                                                
+                                                                                
+          IF W_BRUTTO_GT   > 0 THEN                                             
+            DO;                                                                 
+             B02.GT_TILLEGG_LOV92(BER_SØ_IND)  =                                
+                              ROUND(W_BRUTTO_GT                                 
+                                   *  W_NETTO_AP / W_BRUTTO_AP , 0);            
+              REST_FRADRAG =  REST_FRADRAG -                                    
+                               W_BRUTTO_GT +                                    
+                               B02.GT_TILLEGG_LOV92(BER_SØ_IND);                
+            END;                                                                
+          ELSE                                                                  
+            DO;                                                                 
+             B02.GT_TILLEGG_LOV92(BER_SØ_IND)  = 0;                             
+            END;                                                                
+                                                                                
+          IF W_BRUTTO_TP > 0 THEN                                               
+            DO;                                                                 
+              IF G > 35500    THEN                                              
+                DO;                                                             
+                 IF B02.ALDERSP.ST(BER_SØ_IND)  =  0 THEN                       
+                    B02.AP_TP_NETTO(BER_SØ_IND) =                               
+                             B02.ALDERSP.TP(BER_SØ_IND) - REST_FRADRAG;         
+                 ELSE                                                           
+                  DO;                                                           
+                   B02.AP_TP_NETTO(BER_SØ_IND) = ROUND(W_BRUTTO_TP *            
+                                  W_NETTO_AP / W_BRUTTO_AP , 0);                
+                   REST_FRADRAG =  REST_FRADRAG -                               
+                                   W_BRUTTO_TP +                                
+                                   B02.AP_TP_NETTO(BER_SØ_IND);                 
+                  END;                                                          
+                END;                                                            
+              ELSE                                                              
+                 DO;                                                            
+                   B02.AP_TP_NETTO(BER_SØ_IND) = ROUND(W_BRUTTO_TP *            
+                                  W_NETTO_AP / W_BRUTTO_AP , 0);                
+                   REST_FRADRAG =  REST_FRADRAG -                               
+                                   W_BRUTTO_TP +                                
+                                   B02.AP_TP_NETTO(BER_SØ_IND);                 
+                 END;                                                           
+            END;                                                                
+                                                                                
+          IF B02.ALDERSP.ST(BER_SØ_IND)   > 0 THEN                              
+            DO;                                                                 
+             IF W_KT  = 0 THEN                                                  
+               DO;                                                              
+                   B02.AP_ST_NETTO(BER_SØ_IND) =                                
+                           B02.ALDERSP.ST(BER_SØ_IND) - REST_FRADRAG;           
+               END;                                                             
+             ELSE                                                               
+                DO;                                                             
+                   B02.AP_ST_NETTO(BER_SØ_IND) =                                
+                              ROUND(B02.ALDERSP.ST(BER_SØ_IND)                  
+                                   *  W_NETTO_AP / W_BRUTTO_AP , 0);            
+                    REST_FRADRAG =  REST_FRADRAG -                              
+                                    W_BRUTTO_ST +                               
+                                    B02.ALDERSP.ST(BER_SØ_IND);                 
+                END;                                                            
+            END;                                                                
+                                                                                
+          IF W_KT > 0 THEN                                                      
+            DO;                                                                 
+                                                                                
+             IF W_KT >= REST_FRADRAG THEN                                       
+                W_KT = W_KT - REST_FRADRAG;                                     
+             ELSE                                                               
+                W_KT  = 0;                                                      
+                                                                                
+             B02.ALDERSP.KT(BER_SØ_IND) = W_KT;                                 
+            END;                                                                
+                                                                                
+     END;                                                                       
+                                                                                
+    IF B02.AP_GP_NETTO(BER_SØ_IND) +                                            
+       B02.AP_TP_NETTO(BER_SØ_IND) < 10 THEN                                    
+                                                                                
+       DO;                                                                      
+          B02.AP_GP_NETTO(BER_SØ_IND)       = 0;                                
+          B02.AP_TP_NETTO(BER_SØ_IND)       = 0;                                
+          B02.AP_ST_NETTO(BER_SØ_IND)       = 0;                                
+          B02.ALDERSP.KT(BER_SØ_IND)        = 0;                                
+          B02.GT_LOV92  (BER_SØ_IND)        = 0;                                
+                                                                                
+          B02.GARANTITILLEGG_EK(BER_SØ_IND)           = 0;                      
+          B02.GARANTITILLEGG_BARN(BER_SØ_IND)         = 0;                      
+          B02.BT_SÆRBARN(BER_SØ_IND)                  = 0;                      
+          B02.GARANTITILLEGG_SÆRBARN(BER_SØ_IND)      = 0;                      
+          B02.FT_SKAL_BEREGNES(BER_SØ_IND)            = 'D';                    
+                                                                                
+       END;                                                                     
+   END;                                                                         
+ ELSE   /*FRADRAGET ER MINDRE ENN FRIBELØP */                                   
+     DO;                                                                        
+        B02.AP_GP_NETTO(BER_SØ_IND)   = B02.ALDERSP.GP(BER_SØ_IND);             
+        B02.AP_TP_NETTO(BER_SØ_IND)   = B02.ALDERSP.TP(BER_SØ_IND);             
+        B02.TP_NETTO(BER_SØ_IND)      = B02.TP_BRUTTO (BER_SØ_IND);             
+        B02.AP_ST_NETTO(BER_SØ_IND)   = B02.ALDERSP.ST(BER_SØ_IND);             
+        B02.ALDERSP.KT(BER_SØ_IND)    = W_KT;                                   
+     END;                                                                       
+                                                                                
+ L500:                                                                          
+                                                                                
+  B02.ALDERSP.UTTAKS_APD(BER_SØ_IND) = 000;                                     
+  B02.ALDERSP.APD(BER_SØ_IND) = 000;                                            
+                                                                                
+  IF B02.ALDERSP.UTTAKSDATO_ÅMD(BER_SØ_IND) = 0   THEN                          
+     B02.ALDERSP.UTTAKSDATO_ÅMD(BER_SØ_IND) =                                   
+                            B02.VIRK_DATO_ÅMD(BER_SØ_IND);                      
+                                                                                
+   /* MARTIN NY VERSJON */                                                      
+   IF (B02.VIRK_DATO_ÅMD(BER_SØ_IND)  > 20010000) THEN                          
+      DO;  /* VIRKNINGSDATO FOM 2001 */                                         
+         IF (B02.UTTAKSDATO_ÅMD(BER_SØ_IND) > 19970900 ) THEN                   
+            DO;  /* VIRKNINGSDATO FOM 2001 & UTTAK FOM OKT 1997 */              
+               IF (B02.PENSJONSTYPE1(BER_SØ_IND) = 'A'   &                      
+                   (B02.KONV_P_KODE(BER_SØ_IND)  = 'K' !                        
+                    B02.KONV_P_KODE(BER_SØ_IND)  = 'O' ) )THEN                  
+                  /* REDUKSJON = (FAI - FRIBELØP) * 40% */                      
+                  DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND) = 'R';                  
+               ELSE                                                             
+               IF (B02.PENSJONSTYPE1(BER_SØ_IND)  = 'K'      &                  
+                   B02.UTTAKSDATO_ÅMD(BER_SØ_IND) < 20000800 ) THEN             
+                  /* REDUKSJON = (FAI - G) * 50% */                             
+ /* REMEDY 172    DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND) = 'A' */                
+ /* SE 4139 HER HAR VI SLURVET - HVA MED DEM MED 'B'? */                        
+                  /* KAN OGSÅ VÆRE EN 'TAK'SAK DVS. 100% REGEL */               
+                  DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND) = 'N';                  
+                  /* ENDRA 03.11.00 MARTIN */                                   
+            END; /* VIRKNINGSDATO FOM 2001 & UTTAK FOM OKT 1997 */              
+      END; /* VIRKNINGSDATO FOM 2001 */                                         
+   ELSE                                                                         
+   IF ((B02.UTTAKSDATO_ÅMD(BER_SØ_IND) > 19970900 &                             
+        B02.UTTAKSDATO_ÅMD(BER_SØ_IND) < 20000800 ) &                           
+       (B02.PENSJONSTYPE1(BER_SØ_IND) = 'K'       !                             
+        B02.KONV_P_KODE  (BER_SØ_IND) = 'K'       ) ) THEN                      
+      /* REDUKSJON = (FAI - G) * 50% */                                         
+      DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND) = 'N';                              
+                                                                                
+    B02.BEREGN_ALT_AEY(BER_SØ_IND) =                                            
+       DIV_PARAM_OMR.AP_KODE_AEY(BER_SØ_IND);                                   
+                                                                                
+  L999:                                                                         
+    BER_SØ_IND = SPARE_IND;                                                     
+                                                                                
+ END JUSTER_FORVENTET;                                                          

@@ -1,0 +1,952 @@
+ /*   SIST ENDRET PÅ PROD   2005.07.26 12.24.25 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.04.08 12.04.44 AV   TSB2970          */        
+ /*   SIST ENDRET PÅ QASS   2005.04.04 12.55.57 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.04.04 12.54.20 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.12.17 15.28.55 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.07.13 13.18.54 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2004.06.18 12.25.23 AV   SPA2970          */        
+ /*   SIST ENDRET PÅ TEST   2004.05.03 12.36.24 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ PROD   2003.07.10 12.53.22 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2003.03.14 10.38.41 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ QASS   2002.09.09 12.48.52 AV   HLA2970          */        
+ /*   SIST ENDRET PÅ PROD   2000.12.04 13.25.01 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.11.29 13.48.39 AV   HLA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.09.14  9.13.22 AV   JDA7339          */        
+ /*   SIST ENDRET PÅ PROD   2000.08.02 13.25.26 AV   JDA7339          */        
+ /*       SIST ENDRET 25/08-99 13.17.28 AV   JDA7339                  */        
+ /*       SIST ENDRET 08/07-99 13.40.04 AV   HLA7339                  */        
+ /*       SIST ENDRET 26/03-99 13.26.07 AV   JDA7339                  */        
+ /*       SIST ENDRET 26/03-99 13.11.37 AV   JDA7339                  */        
+ /*       SIST ENDRET 18/12-98 12.12.39 AV   JDA7339                  */        
+ /*       SIST ENDRET 18/12-98 12.09.24 AV   JDA7339                  */        
+ /*       SIST ENDRET 04/05-98 14.28.21 AV   JDA7339                  */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*     R0014001 - PROSEDYRE I PLI                                    */        
+ /*     PROGRAMMERER: P. BERGESTAD, APRIL 1982                        */        
+ /*HENSIKT:                                                           */        
+ /*     HOVEDPROSEDYRE FOR BEREGNING.                                 */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*     PROGRAMMET KALLES OPP FRA R0013001 (BEHANDLE TRANS) VHA. CICS */        
+ /*BRUK:                                                              */        
+ /*     EXEC CICS LINK('R0014001')                                    */        
+ /* ***************************************************************** */        
+ R001400:PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                  
+    %INCLUDE P0014002;     /* W_POREKKE                         */              
+    %INCLUDE P0014003;     /* TAB                               */              
+    %INCLUDE P0014009;     /* POTALL                            */              
+    %INCLUDE P0019906;     /* TRANS_OPPL_OMR                    */              
+    %INCLUDE P0019908;     /* KOM OMRÅDET                       */              
+    %INCLUDE P0019912;     /* DIV-PARAM OMR                     */              
+    %INCLUDE P0019910;     /* STYRINGSOMRÅDE                    */              
+    %INCLUDE P0019924;     /* VEIET G                           */              
+    %INCLUDE P0019925;     /* GRUNNBELØPS - TABELL              */              
+    DCL 1 B01 BASED(B01_PEKER),%INCLUDE P0019921;                               
+    DCL 1 B02 BASED(B02_PEKER),%INCLUDE P0019921;                               
+    /* SAVE-OMRÅDE FOR EØS-PROGRAM       */                                     
+ /* DCL 1 B02_SAVE BASED(EKSTRA_PEKER2),%INCLUDE P0019921; */                   
+                                                                                
+    DCL ADDR                BUILTIN,                                            
+        COMMAREA_PEKER      PTR,                                                
+        CSTG                BUILTIN,                                            
+        VERIFY              BUILTIN,                                            
+        H_BER_SØ_IND        FIXED BIN(15),/* FOR BYTTING AV IND*/               
+        H_BER_EK_IND        FIXED BIN(15),/* FOR BYTTING AV IND*/               
+        HJELPEDATO_ÅM       FIXED DEC (7),                                      
+        HL_TESTX            CHAR (1),                                           
+        I                   FIXED BIN(15),                                      
+        J                   FIXED BIN(15),                                      
+        W_IND               FIXED BIN(15),                                      
+        W_TRANSTYPE         PIC'99',                                            
+        W_VIRK_DATO_ÅMD     FIXED DEC(9),                                       
+        VIRK_LOV92_ÅM       PIC'(6)9' INIT(0),                                  
+        SAVE_IDENT          CHAR (8) INIT ('        ');                         
+                                                                                
+    /* ============================================================== */        
+                                                                                
+    SAVE_IDENT = PROGRAM_ID;                                                    
+    IF FEIL_MELD_NR = 0  THEN /*AB  09.01.2001*/                                
+    PROGRAM_ID = 'R0014001';                                                    
+ /*                                                                             
+    ALLOCATE B02_SAVE;                                                          
+    KOM_OMR.EKSTRA_PEKER2 = ADDR(B02_SAVE);                                     
+   */                                                                           
+    BER_SØ_IND = SØKER_IND;                                                     
+    BER_EK_IND = EKTEF_IND;                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* FORSØRGET BARN ER DØD  -  ENDRING LAGT INN 18.7.84 HL.            */        
+ /* ***************************************************************** */        
+                                                                                
+    IF (TRANS_OPPL_OMR.TRANSTYPE = 19) THEN                                     
+       DO;                                                                      
+          IF B01.RF0PERSN.FNR(1) = B01.TILKN.FNR_TILKN(SØKER_IND,1) THEN        
+             DO;                                                                
+                BER_SØ_IND = 1;                                                 
+                BER_EK_IND = 2;                                                 
+             END;                                                               
+          ELSE                                                                  
+             DO;                                                                
+                BER_SØ_IND = 2;                                                 
+                BER_EK_IND = 1;                                                 
+             END;                                                               
+       END;                                                                     
+                                                                                
+ /* ***************************************************************** */        
+ /* FORSØRGET EKTEFELLE ER DØD, ELLER EKTEFELLE MED PENSJON ER DØD,   */        
+ /* ELLER EKTEFELLENS PENSJON ER STOPPET AV ANDRE GRUNNER ENN DØD.    */        
+ /* ***************************************************************** */        
+                                                                                
+ /* ENDRET 24.2.88 HL - GAMMEL TRANSTYPE 39 ER FJERNET */                       
+                                                                                
+    IF TRANS_OPPL_OMR.TRANSTYPE = 17 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 18 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 36 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 35 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 37 THEN                                       
+       DO;                                                                      
+          IF BER_SØ_IND = 1 THEN                                                
+             DO;                                                                
+                BER_SØ_IND = 2;                                                 
+                BER_EK_IND = 1;                                                 
+             END;                                                               
+          ELSE                                                                  
+             IF BER_SØ_IND = 2 THEN                                             
+                DO;                                                             
+                   BER_SØ_IND = 1;                                              
+                   BER_EK_IND = 2;                                              
+                END;                                                            
+             ELSE                                                               
+                DO I = 3 TO 14;                                                 
+                                                                                
+                   IF B02.PENSJONSTYPE2(I) = 'P' &                              
+                      (B02.PENSJONSTYPE1(I) = 'N' !                             
+                       B02.PENSJONSTYPE1(I) = 'B')      THEN                    
+                      DO;                                                       
+                         BER_SØ_IND = I;                                        
+                         I = 14;                                                
+                      END;                                                      
+                END;                                                            
+       END;                                                                     
+ /* ***************************************************************** */        
+ /* OBS. NÅR EK. PENSJON MÅ REGNES OM, SETTER VI TRANSTYPE = BLANK    */        
+ /* VI BEHØVER IKKE ANDRE OPPLYSNINGER I TRANSEN FOR ALDERSPENSJONIST */        
+ /* ***************************************************************** */        
+                                                                                
+ /* HENTER G, ST_PROSENT_ENSLIG, ST_PROSENT_SAMST PR.VIRK_DATO, GV_TAB*/        
+                                                                                
+    IF TRANS_OPPL_OMR.TRANSTYPE = 27 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 22 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 23 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 43 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 44 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 90 !      /*200506 HL*/                       
+       TRANS_OPPL_OMR.TRANSTYPE = 95 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 46      THEN    /*9811*/                      
+       W_VIRK_DATO_ÅMD  = TRANS_OPPL_OMR.VIRKNINGSDATO_ÅMD +1;                  
+    ELSE                                                                        
+       W_VIRK_DATO_ÅMD = B02.VIRK_DATO_ÅMD(BER_SØ_IND) +1; /*2000*/             
+                                                                                
+    IF KJØRINGS_TYPE = 'A'   &            /* A = AUTO*/                         
+      (TRANS_OPPL_OMR.TRANSTYPE = 22 !    /* INNNT-ENDRINGER*/                  
+       TRANS_OPPL_OMR.TRANSTYPE = 23 !    /* 200011 */                          
+       TRANS_OPPL_OMR.TRANSTYPE = 43 !                                          
+       TRANS_OPPL_OMR.TRANSTYPE = 44  )        THEN                             
+       W_VIRK_DATO_ÅMD = B02.VIRK_DATO_ÅMD(BER_SØ_IND) + 1;                     
+                                                                                
+                                                                                
+    IF W_VIRK_DATO_ÅMD < 19920000         &              /*2000*/               
+       BER_SØ_IND < 3                         THEN                              
+       DO;                                                                      
+          B01.GT_LOV92(BER_SØ_IND) = 0;                                         
+          B01.GT_LOV92(BER_EK_IND) = 0;                                         
+          B02.GT_LOV92(BER_SØ_IND) = 0;                                         
+          B02.GT_LOV92(BER_EK_IND) = 0;                                         
+          B02.GT_TILLEGG_LOV92(BER_SØ_IND) = 0;                                 
+          B02.GT_TILLEGG_LOV92(BER_EK_IND) = 0;                                 
+          B02.ALDERSP.SPT_1291(BER_SØ_IND) = 0;                                 
+          B02.ALDERSP.OPT_1291(BER_SØ_IND) = 0;                                 
+          B02.ALDERSP.PÅ_1291(BER_SØ_IND) = 0;                                  
+          B02.ALDERSP.SPT_1291(BER_EK_IND) = 0;                                 
+          B02.ALDERSP.OPT_1291(BER_EK_IND) = 0;                                 
+          B02.ALDERSP.PÅ_1291(BER_SØ_IND) = 0;                                  
+          B02.UFØRPENS.SPT_1291(BER_SØ_IND) = 0;                                
+          B02.UFØRPENS.OPT_1291(BER_SØ_IND) = 0;                                
+          B02.UFØRPENS.PÅ_1291(BER_SØ_IND) = 0;                                 
+          B02.UFØRPENS.PÅ_ETTER91(BER_SØ_IND) = 0;                              
+          B02.UFØRPENS.SPT_1291(BER_EK_IND) = 0;                                
+          B02.UFØRPENS.OPT_1291(BER_EK_IND) = 0;                                
+          B02.UFØRPENS.PÅ_1291(BER_EK_IND) = 0;                                 
+          B02.UFØRPENS.PÅ_ETTER91(BER_EK_IND) = 0;                              
+          B02.ETTEPENS.SPT_1291(BER_SØ_IND) = 0;                                
+          B02.ETTEPENS.OPT_1291(BER_SØ_IND) = 0;                                
+          B02.ETTEPENS.PÅ_1291(BER_SØ_IND) = 0;                                 
+          B02.ETTEPENS.PÅ_ETTER91(BER_SØ_IND) = 0;                              
+          B02.ETTEPENS.SPT_1291(BER_EK_IND) = 0;                                
+          B02.ETTEPENS.OPT_1291(BER_EK_IND) = 0;                                
+          B02.ETTEPENS.PÅ_1291(BER_EK_IND) = 0;                                 
+          B02.ETTEPENS.PÅ_ETTER91(BER_EK_IND) = 0;                              
+          B02.YRKEPENS.PÅ_ETTER91(BER_SØ_IND) = 0;                              
+          B02.YRKEPENS.YRKE_POENG_1291(BER_SØ_IND) = 0;                         
+          /* REMEDY 772 - FØR :                                                 
+          B02.YRKEPENS.PÅ_ETTER91(BER_EK_IND) = 0;    */                        
+          /* REMEDY 772 - ETTER: */                                             
+          IF (B02.YRKEHIST.YUFT_ÅMD(BER_EK_IND,1) < 19920000) THEN              
+             B02.YRKEPENS.PÅ_ETTER91(BER_EK_IND) = 0;                           
+          /* REMEDY 772 - TIL HIT */                                            
+          B02.YRKEPENS.YRKE_POENG_1291(BER_EK_IND) = 0;                         
+       END;                                                                     
+                                                                                
+                                                                                
+    IF W_VIRK_DATO_ÅMD > 20050430           THEN                                
+       DIV_PARAM_OMR.GP_PROSENT = 0.85;                                         
+    ELSE                                                                        
+    IF W_VIRK_DATO_ÅMD > 20040430           THEN                                
+       DIV_PARAM_OMR.GP_PROSENT = 0.825;                                        
+    ELSE                                                                        
+    IF W_VIRK_DATO_ÅMD > 20030430           THEN                                
+       DIV_PARAM_OMR.GP_PROSENT = 0.80;                                         
+    ELSE                                                                        
+       DIV_PARAM_OMR.GP_PROSENT = 0.75;                                         
+                                                                                
+ /* DIV_PARAM_OMR.REST_PROSENT  = 0.25;   */                                    
+    DIV_PARAM_OMR.REST_PROSENT  = 1 - DIV_PARAM_OMR.GP_PROSENT;                 
+  /*PENSJONSKONTORET HAR OMBESTEMT SEG IGJEN - DET NEDENFOR  */                 
+  /* GJELDER LIKEVEL IKKE                                    */                 
+                                                                                
+  /*DIV_PARAM_OMR.REST_PROSENT  = 1 - DIV_PARAM_OMR.GP_PROSENT;*/               
+    /* -------------------------------------------------------------- */        
+    /* SE OPPDRAG 04033: ØKNING AV GRUNNPENSJON TIL PENSJONISEKTEPAR  */        
+    /* PUNKT 2 - TREDJE LEDD:                                         */        
+    /*   "DET ER INGEN ENDRING I BEREGNING AV GRUNNPENSJON ETTER      */        
+    /*    PARAGRAF 7-2 NR 2 BOKSTAV B SLIK BESTEMMELSEN LØD FØR       */        
+    /*    1. JAN 1990 NÅR DET GJELDER FRADRAGET FOR DEN SOM ER GIFT   */        
+    /*    MED EN UFØREPENSJONIST MED GRADERT PENSJON. GRUNNPENSJON    */        
+    /*    SKAL VÆRE LIK GRUNNBELØPTET MED FRADRAG AV ET BELØP SOM     */        
+    /*    SKAL UTGØRE 25% AV G * EKTEFELLENS UFØREGRAD"               */        
+    /* DETTE HADDE VI IKKE FÅTT SPESIFISERT IFBM ENDRINGEN AV GP FOR  */        
+    /* PENSJONISTEKTEPAR PR. 1. MAI 2003. I PERIODEN FRA 1.5 2003     */        
+    /* FIKK DISSE ET FRADRAG PÅ 20% FRAM TIL OMREGNING ETTER D.D.     */        
+    /* -------------------------------------------------------------- */        
+                                                                                
+    DO J = 1 TO 65;                                                             
+       IF W_VIRK_DATO_ÅMD >= PERIODE_START_ÅMD(J) &                             
+          W_VIRK_DATO_ÅMD <= PERIODE_SLUTT_ÅMD(J) THEN                          
+          DO;                                                                   
+             G                 = G_TAB_PERIODE.GRUNNBELØP(J);                   
+             ST_PROSENT_ENSLIG = G_TAB_PERIODE.ST_PROSENT_E(J);                 
+             ST_PROSENT_SAMST  = G_TAB_PERIODE.ST_PROSENT_S(J);                 
+                                                                                
+             DO I = 1 TO 14;                                                    
+                IF B02.FNR(I)        > 0 THEN     /*2000: */                    
+                 DO;                                                            
+                   HJELPEDATO_ÅM     = PERIODE_START_ÅMD(J) / 100;              
+                   B02.G_DATO_ÅMD(I) = HJELPEDATO_ÅM * 100;                     
+                 END;                                                           
+             END;                                                               
+             J                 = 99;                                            
+          END;                                                                  
+    END;                                                                        
+ %PAGE;                                                                         
+   /* ENDRET AV SATISH 18.12.2002                       */                      
+   /*   B02_SAVE = B02; **** B02_SAVE ER IKKE BRUKET I SYSTEM */                
+                                                                                
+    SELECT (B02.PENSJONSTYPE1(BER_SØ_IND));                                     
+       WHEN('A')                                                                
+          DO;  /* ALDERSPENSJON */                                              
+             IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'E' THEN                        
+                DO;  /* ALDER ETTERLATT */                                      
+                   B02.ETTEPENS.FORVENTET(BER_SØ_IND) = 0;                      
+                   EXEC CICS LINK PROGRAM('R0014101') COMMAREA(KOM_OMR);        
+                   IF FEIL_MELD_NR > 0  THEN                                    
+                      GO TO L999;                                               
+                   ELSE                                                         
+                      PROGRAM_ID = 'R0014001';                                  
+                END; /* ALDER ETTERLATT */                                      
+             ELSE                                                               
+                DO; /* ALDER UTEN ETTERLATTERETTER */                           
+                   IF (B02.P67_KODE(BER_SØ_IND) ^= '5') THEN                    
+                      /* 5 = NULLPENSJON */                                     
+                         EXEC CICS LINK PROGRAM('R0014201')                     
+                                     COMMAREA(KOM_OMR);                         
+                                                                                
+                   IF FEIL_MELD_NR > 0  THEN                                    
+                      GO TO L999;                                               
+                   ELSE                                                         
+                      PROGRAM_ID = 'R0014001';                                  
+                   IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'S' !                     
+  /*TS 290894*/       B02.PENSJONSTYPE2(BER_EK_IND) = 'S' !                     
+                      B02.PENSJONSTYPE2(BER_EK_IND) = 'P' !                     
+ /*AFP*/              B02.PENSJONSTYPE2(BER_EK_IND) = 'N' THEN                  
+                      DO;                                                       
+                         W_TRANSTYPE = TRANS_OPPL_OMR.TRANSTYPE;                
+                         TRANS_OPPL_OMR.TRANSTYPE   = 0;                        
+                         IF TRANS_OPPL_OMR.BLANKETTYPE = '24' !                 
+                            TRANS_OPPL_OMR.BLANKETTYPE = '26' THEN              
+                            DO;                                                 
+                               TRANS_OPPL_OMR.TRANSTYPE   =                     
+                                  F_FELT_CHAR_PIC2                              
+                                     (TRANS_OPPL_OMR.BLANKETTYPE);              
+                               TRANS_OPPL_OMR.BLANKETTYPE = '  ';               
+                            END;                                                
+                         TRANS_OPPL_OMR.FØDSNUMMER  =                           
+                                                 B02.FNR(BER_EK_IND);           
+                         IF  SØKER_IND > 2 THEN                                 
+                            DO;                                                 
+                                H_BER_SØ_IND = BER_SØ_IND;                      
+                                H_BER_EK_IND = BER_EK_IND;                      
+                                BER_SØ_IND   = H_BER_EK_IND;                    
+                                BER_EK_IND   = H_BER_SØ_IND;                    
+                            END;                                                
+                         ELSE                                                   
+                             DO;                                                
+                                BER_SØ_IND = EKTEF_IND;                         
+                                BER_EK_IND = SØKER_IND;                         
+                             END;                                               
+                         IF B02.PENSJONSTYPE1(BER_SØ_IND) ='A' THEN             
+                            DO;                                                 
+                   IF B02.P67_KODE(BER_SØ_IND) ^= '5'      THEN                 
+                                   EXEC CICS LINK PROGRAM('R0014201')           
+                                                   COMMAREA(KOM_OMR);           
+                               IF FEIL_MELD_NR > 0  THEN                        
+                                  GO TO L999;                                   
+                               ELSE                                             
+                                  PROGRAM_ID = 'R0014001';                      
+                            END;                                                
+                         ELSE                                                   
+                  /*     IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K' THEN */          
+                         IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K'     &            
+                            B02.STATUS_KODE_HIST(BER_SØ_IND) = ' ' THEN         
+                            DO;                                                 
+                               EXEC CICS LINK PROGRAM('R0014251')               
+                                                   COMMAREA(KOM_OMR);           
+                               IF FEIL_MELD_NR > 0  THEN                        
+                                  GO TO L999;                                   
+                               ELSE                                             
+                                  PROGRAM_ID = 'R0014001';                      
+                            END;                                                
+                         ELSE                                                   
+                            DO;                                                 
+                               EXEC CICS LINK PROGRAM('R0014401')               
+                                                   COMMAREA(KOM_OMR);           
+                               IF FEIL_MELD_NR > 0  THEN                        
+                                  GO TO L999;                                   
+                               ELSE                                             
+                                  PROGRAM_ID = 'R0014001';                      
+                            END;                                                
+                         TRANS_OPPL_OMR.FØDSNUMMER =                            
+                                                 B02.FNR(SØKER_IND);            
+                         TRANS_OPPL_OMR.TRANSTYPE  = W_TRANSTYPE;               
+                         BER_SØ_IND  = SØKER_IND;                               
+                         BER_EK_IND  = EKTEF_IND;                               
+                      END;                                                      
+                END;                                                            
+          END;                                                                  
+ %PAGE;                                                                         
+       WHEN('E')                                                                
+          DO;                                                                   
+             EXEC CICS LINK PROGRAM('R0014301') COMMAREA(KOM_OMR);              
+             IF FEIL_MELD_NR > 0  THEN                                          
+                GO TO L999;                                                     
+             ELSE                                                               
+                PROGRAM_ID = 'R0014001';                                        
+          END;                                                                  
+       WHEN('J')                                                                
+          DO;                                                                   
+             EXEC CICS LINK PROGRAM('R0014601') COMMAREA(KOM_OMR);              
+             IF FEIL_MELD_NR > 0  THEN                                          
+                GO TO L999;                                                     
+             ELSE                                                               
+                PROGRAM_ID = 'R0014001';                                        
+          END;                                                                  
+       WHEN('B')                                                                
+          DO;                                                                   
+             DO I = 3 TO 14;                                                    
+                IF B02.PENSJONSTYPE2(I) = 'P' THEN                              
+                   DO;                                                          
+                      BER_SØ_IND = I;                                           
+                      I = 14;                                                   
+                   END;                                                         
+             END;                                                               
+                                                                                
+             EXEC CICS LINK PROGRAM('R0014701') COMMAREA(KOM_OMR);              
+             IF FEIL_MELD_NR > 0  THEN                                          
+                GO TO L999;                                                     
+             ELSE                                                               
+                PROGRAM_ID = 'R0014001';                                        
+          END;                                                                  
+       WHEN('N')                                                                
+          DO;                                                                   
+             DO I = 3 TO 14;                                                    
+                IF B02.PENSJONSTYPE2(I) = 'P' THEN                              
+                   DO;                                                          
+                      BER_SØ_IND = I;                                           
+                      I = 14;                                                   
+                   END;                                                         
+             END;                                                               
+                                                                                
+             EXEC CICS LINK PROGRAM('R0014801') COMMAREA(KOM_OMR);              
+             IF FEIL_MELD_NR > 0  THEN                                          
+                GO TO L999;                                                     
+             ELSE                                                               
+                PROGRAM_ID = 'R0014001';                                        
+          END;                                                                  
+ %PAGE;                                                                         
+       WHEN('U')                                                                
+          DO;                                                                   
+             IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'E' THEN                        
+                DO;                                                             
+                   EXEC CICS LINK PROGRAM('R0014501') COMMAREA(KOM_OMR);        
+                   IF FEIL_MELD_NR > 0  THEN                                    
+                      GO TO L999;                                               
+                   ELSE                                                         
+                      PROGRAM_ID = 'R0014001';                                  
+                END;                                                            
+             ELSE                                                               
+                DO;                                                             
+                   EXEC CICS LINK PROGRAM('R0014401')COMMAREA(KOM_OMR);         
+                   IF FEIL_MELD_NR > 0  THEN                                    
+                      GO TO L999;                                               
+                   ELSE                                                         
+                      PROGRAM_ID = 'R0014001';                                  
+                                                                                
+                  IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'S' !                      
+                     B02.PENSJONSTYPE2(BER_EK_IND) = 'S' !   /*HL*/             
+                     B02.PENSJONSTYPE2(BER_EK_IND) = 'P' !                      
+ /*AFP*/             B02.PENSJONSTYPE2(BER_EK_IND) = 'N' THEN                   
+                     DO;                                                        
+                        W_TRANSTYPE = TRANS_OPPL_OMR.TRANSTYPE;                 
+                        TRANS_OPPL_OMR.TRANSTYPE   = 0;                         
+                        TRANS_OPPL_OMR.FØDSNUMMER  =                            
+                                                B02.FNR(BER_EK_IND);            
+                        IF  SØKER_IND > 2 THEN                                  
+                            DO;                                                 
+                                H_BER_SØ_IND = BER_SØ_IND;                      
+                                H_BER_EK_IND = BER_EK_IND;                      
+                                BER_SØ_IND   = H_BER_EK_IND;                    
+                                BER_EK_IND   = H_BER_SØ_IND;                    
+                            END;                                                
+                        ELSE                                                    
+                            DO;                                                 
+                               BER_SØ_IND = EKTEF_IND;                          
+                               BER_EK_IND = SØKER_IND;                          
+                            END;                                                
+                                                                                
+                        IF B02.PENSJONSTYPE1(BER_SØ_IND) = 'A' THEN             
+                           DO;                                                  
+                   IF B02.P67_KODE(BER_SØ_IND) ^= '5'      THEN                 
+                              EXEC CICS LINK PROGRAM('R0014201')                
+                                                   COMMAREA(KOM_OMR);           
+                              IF FEIL_MELD_NR > 0  THEN                         
+                                 GO TO L999;                                    
+                                 ELSE                                           
+                                    PROGRAM_ID = 'R0014001';                    
+                           END;                                                 
+                        ELSE                                                    
+            /*          IF B02.PENSJONSTYPE1(BER_SØ_IND) = 'K' THEN */          
+                         IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K'     &            
+                            B02.STATUS_KODE_HIST(BER_SØ_IND) = ' ' THEN         
+                           DO;                                                  
+                              EXEC CICS LINK PROGRAM('R0014251')                
+                                                   COMMAREA(KOM_OMR);           
+                              IF FEIL_MELD_NR > 0  THEN                         
+                                 GO TO L999;                                    
+                              ELSE                                              
+                                 PROGRAM_ID = 'R0014001';                       
+                           END;                                                 
+                        ELSE                                                    
+                           DO;                                                  
+                              EXEC CICS LINK PROGRAM('R0014401')                
+                                               COMMAREA(KOM_OMR);               
+                              IF FEIL_MELD_NR > 0  THEN                         
+                                 GO TO L999;                                    
+                              ELSE                                              
+                                 PROGRAM_ID = 'R0014001';                       
+                           END;                                                 
+                        TRANS_OPPL_OMR.FØDSNUMMER =                             
+                                             B02.FNR(SØKER_IND);                
+                        TRANS_OPPL_OMR.TRANSTYPE  = W_TRANSTYPE;                
+                        BER_SØ_IND = SØKER_IND;                                 
+                        BER_EK_IND = EKTEF_IND;                                 
+                     END;                                                       
+                END;                                                            
+          END;                                                                  
+       WHEN('K')                                /*AFP HERFRA*/                  
+          DO;                                                                   
+             IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K'     &                        
+                B02.STATUS_KODE_HIST(BER_SØ_IND) = ' ' THEN                     
+             EXEC CICS LINK PROGRAM('R0014251') COMMAREA(KOM_OMR);              
+             IF FEIL_MELD_NR > 0  THEN                                          
+                GO TO L999;                                                     
+             ELSE                                                               
+                PROGRAM_ID = 'R0014001';                                        
+             IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'S' !                           
+  /*TS 300997*/       B02.PENSJONSTYPE2(BER_EK_IND) = 'S' !                     
+                B02.PENSJONSTYPE2(BER_EK_IND) = 'P' !                           
+                B02.PENSJONSTYPE2(BER_EK_IND) = 'N' THEN                        
+                DO;                                                             
+                   W_TRANSTYPE = TRANS_OPPL_OMR.TRANSTYPE;                      
+                   TRANS_OPPL_OMR.TRANSTYPE   = 0;                              
+                   IF TRANS_OPPL_OMR.BLANKETTYPE = '24' !                       
+                      TRANS_OPPL_OMR.BLANKETTYPE = '26' THEN                    
+                      DO;                                                       
+                         TRANS_OPPL_OMR.TRANSTYPE   =                           
+                            F_FELT_CHAR_PIC2                                    
+                               (TRANS_OPPL_OMR.BLANKETTYPE);                    
+                         TRANS_OPPL_OMR.BLANKETTYPE = '  ';                     
+                      END;                                                      
+                   TRANS_OPPL_OMR.FØDSNUMMER  =                                 
+                                           B02.FNR(BER_EK_IND);                 
+                   BER_SØ_IND  = EKTEF_IND;                                     
+                   BER_EK_IND  = SØKER_IND;                                     
+                   IF B02.PENSJONSTYPE1(BER_SØ_IND) ='A' THEN                   
+                      DO;                                                       
+                   IF B02.P67_KODE(BER_SØ_IND) ^= '5'      THEN                 
+                         EXEC CICS LINK PROGRAM('R0014201')                     
+                                             COMMAREA(KOM_OMR);                 
+                         IF FEIL_MELD_NR > 0  THEN                              
+                            GO TO L999;                                         
+                         ELSE                                                   
+                            PROGRAM_ID = 'R0014001';                            
+                      END;                                                      
+                   ELSE                                                         
+               /*  IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K' THEN */                
+             IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K'     &                        
+                B02.STATUS_KODE_HIST(BER_SØ_IND) = ' ' THEN                     
+                      DO;                                                       
+                         EXEC CICS LINK PROGRAM('R0014251')                     
+                                             COMMAREA(KOM_OMR);                 
+                         IF FEIL_MELD_NR > 0  THEN                              
+                            GO TO L999;                                         
+                         ELSE                                                   
+                            PROGRAM_ID = 'R0014001';                            
+                      END;                                                      
+                   ELSE                                                         
+                      DO;                                                       
+                         EXEC CICS LINK PROGRAM('R0014401')                     
+                                             COMMAREA(KOM_OMR);                 
+                         IF FEIL_MELD_NR > 0  THEN                              
+                            GO TO L999;                                         
+                         ELSE                                                   
+                            PROGRAM_ID = 'R0014001';                            
+                      END;                                                      
+                   TRANS_OPPL_OMR.FØDSNUMMER =                                  
+                                           B02.FNR(SØKER_IND);                  
+                   TRANS_OPPL_OMR.TRANSTYPE  = W_TRANSTYPE;                     
+                   BER_SØ_IND  = SØKER_IND;                                     
+                   BER_EK_IND  = EKTEF_IND;                                     
+                END;                                                            
+                                                                                
+          END;                                                                  
+                                                                                
+ %PAGE;                                                                         
+         /* *************************************************** */              
+         /* HER KOMMER YRKESSKADEPENSJON                        */              
+         /* B02.PENSJONSTYPE1 =  'Y'.   ERIK 27.7.87.           */              
+         /* *************************************************** */              
+        WHEN('Y')                                                               
+           DO;                                                                  
+              IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'E' THEN                       
+                 DO;                                                            
+                    EXEC CICS LINK PROGRAM('R0014501')                          
+                                     COMMAREA(KOM_OMR);                         
+                    IF FEIL_MELD_NR > 0 THEN                                    
+                       GO TO L999;                                              
+                    ELSE                                                        
+                       PROGRAM_ID = 'R0014001';                                 
+                 END;                                                           
+              ELSE                                                              
+                 DO;                                                            
+                    EXEC CICS LINK PROGRAM('R0014401')                          
+                                     COMMAREA(KOM_OMR);                         
+                    IF FEIL_MELD_NR > 0 THEN                                    
+                       GO TO L999;                                              
+                    ELSE                                                        
+                       PROGRAM_ID = 'R0014001';                                 
+                                                                                
+                    IF B02.PENSJONSTYPE2(BER_SØ_IND) = 'S' !                    
+                       B02.PENSJONSTYPE2(BER_EK_IND) = 'P' !                    
+                       B02.PENSJONSTYPE2(BER_EK_IND) = 'N' THEN                 
+                       DO;                                                      
+                          W_TRANSTYPE = TRANS_OPPL_OMR.TRANSTYPE;               
+                          TRANS_OPPL_OMR.TRANSTYPE = 0;                         
+                          TRANS_OPPL_OMR.FØDSNUMMER =                           
+                                            B02.FNR(BER_EK_IND);                
+                         IF  SØKER_IND > 2 THEN                                 
+                            DO;                                                 
+                                H_BER_SØ_IND = BER_SØ_IND;                      
+                                H_BER_EK_IND = BER_EK_IND;                      
+                                BER_SØ_IND   = H_BER_EK_IND;                    
+                                BER_EK_IND   = H_BER_SØ_IND;                    
+                            END;                                                
+                         ELSE                                                   
+                             DO;                                                
+                                BER_SØ_IND = EKTEF_IND;                         
+                                BER_EK_IND = SØKER_IND;                         
+                             END;                                               
+                          IF B02.PENSJONSTYPE1(BER_SØ_IND)                      
+                                                = 'A' THEN                      
+                             DO;                                                
+                   IF B02.P67_KODE(BER_SØ_IND) ^= '5'      THEN                 
+                                EXEC CICS LINK PROGRAM                          
+                                ('R0014201') COMMAREA(KOM_OMR);                 
+                                IF FEIL_MELD_NR > 0 THEN                        
+                                   GO TO L999;                                  
+                                ELSE                                            
+                                   PROGRAM_ID = 'R0014001';                     
+                             END;                                               
+                         ELSE                                                   
+     /*                  IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K' THEN */          
+             IF B02.PENSJONSTYPE1(BER_SØ_IND) ='K'     &                        
+                B02.STATUS_KODE_HIST(BER_SØ_IND) = ' ' THEN                     
+                            DO;                                                 
+                               EXEC CICS LINK PROGRAM('R0014251')               
+                                                   COMMAREA(KOM_OMR);           
+                               IF FEIL_MELD_NR > 0  THEN                        
+                                  GO TO L999;                                   
+                               ELSE                                             
+                                  PROGRAM_ID = 'R0014001';                      
+                            END;                                                
+                          ELSE                                                  
+                             DO;                                                
+                                EXEC CICS LINK PROGRAM                          
+                                ('R0014401') COMMAREA(KOM_OMR);                 
+                                IF FEIL_MELD_NR > 0 THEN                        
+                                   GO TO L999;                                  
+                                ELSE                                            
+                                   PROGRAM_ID = 'R0014001';                     
+                             END;                                               
+                          TRANS_OPPL_OMR.FØDSNUMMER =                           
+                                          B02.FNR(SØKER_IND);                   
+                          TRANS_OPPL_OMR.TRANSTYPE = W_TRANSTYPE;               
+                          BER_SØ_IND = SØKER_IND;                               
+                          BER_EK_IND = EKTEF_IND;                               
+                       END;                                                     
+                    END;                                                        
+               END;                                                             
+                                                                                
+       WHEN('G')                                                                
+          DO;                                                                   
+                PROGRAM_ID = 'R0014001';                                        
+          END;                                                                  
+                                                                                
+       WHEN('D')                                                                
+          DO;                                                                   
+                PROGRAM_ID = 'R0014001';                                        
+          END;                                                                  
+                                                                                
+         /* *************************************************** */              
+         /* YRKESSKADEPENSJON TIL HIT.                          */              
+         /* ERIK 27.7.87.                                       */              
+         /* *************************************************** */              
+                                                                                
+       OTHERWISE                                                                
+          DO;                                                                   
+ L180:                                                                          
+             FEIL_VED_LABEL = '180';                                            
+             FEIL_MELD_NR   = 1802;                                             
+             GO TO L999;                                                        
+          END;                                                                  
+    END;    /*SELECT*/                                                          
+                                                                                
+      /*  IF SØKER_IND > 2 THEN  TRUDE 310105 TD 78 INDEX?*/                    
+  IF BER_SØKER_IND > 2 THEN                                                     
+     GO TO L999;                                                                
+                                                                                
+  IF BER_EK_IND = 0 THEN  /* P-BREV ASRA INDEX VAR 0 # 1001 */                  
+     BER_EK_IND = 1;                                                            
+                                                                                
+  CALL FORSØRG_SØKER;                                                           
+  IF B02.PENSJONSTYPE1(BER_SØ_IND) ^= 'E' THEN                                  
+     CALL FORSØRG_EKTEF;                                                        
+                                                                                
+    /* ENDRING JULI 2000 MARTIN MÅ SJEKKE BEGGE EKTEFELLER */                   
+    IF (B02.PENSJONSTYPE1(BER_SØ_IND) = 'U' !                                   
+        B02.PENSJONSTYPE1(BER_EK_IND) = 'U' ) THEN                              
+       IF (B02.PENSJONSTYPE2(BER_SØ_IND) = 'E' !                                
+           B02.PENSJONSTYPE2(BER_SØ_IND) = 'E' ) THEN                           
+   /*    IF SAVE_IDENT ^= 'R0019H21'   THEN        */                           
+          CALL UE_RUTINE_EØS;                                                   
+   /*    ELSE;            */                                                    
+       ELSE                                                                     
+          CALL UP_RUTINE_EØS;                                                   
+                                                                                
+    IF (B02.PENSJONSTYPE1(BER_EK_IND) = 'E' !                                   
+        B02.PENSJONSTYPE1(BER_SØ_IND) = 'E' ) THEN                              
+       CALL EP_RUTINE_EØS;                                                      
+                                                                                
+    IF (B02.PENSJONSTYPE1(BER_SØ_IND) = 'A' !                                   
+        B02.PENSJONSTYPE1(BER_EK_IND) = 'A' ) THEN                              
+    /*   IF SAVE_IDENT ^= 'R0019H21'   THEN       */                            
+          CALL AP_RUTINE_EØS;                                                   
+    /*   ELSE;            */                                                    
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* DIVERSE INTERNE PROC I 4001                                    */        
+    /* -------------------------------------------------------------- */        
+    UE_RUTINE_EØS: PROC;                                                        
+   /*  IF (W_VIRK_DATO_ÅMD > 19940000              ) &                          
+          (B02.NORDISK_KONVENSJON(SØKER_IND) = 'J' !                            
+          (B02.TT_NORDISK_FAKT_MND(SØKER_IND) +                                 
+           B02.PÅ_NORDISK_FAKT(SØKER_IND) > 0 ) !                               
+           B02.PRO_RATA_BEREGNING(SØKER_IND) = 'J' ) !                          
+          (B02.TT_PRO_RATA_MND(SØKER_IND) +                                     
+           B02.TT_TEORETISK_EØS_MND(SØKER_IND) > 0 ) THEN                       
+          DO;  /*EØS BEREGNING SØKER STARTER HER */                             
+    /*       EXEC CICS LINK PROGRAM('R0014570') COMMAREA(KOM_OMR);              
+             IF FEIL_MELD_NR > 0  THEN                                          
+                GO TO L999;                                                     
+             ELSE                                                               
+                PROGRAM_ID = 'R0014001';                                        
+          END; /*EØS BEREGNING SØKER STARTER HER */                             
+    END UE_RUTINE_EØS;                                                          
+                                                                                
+    /* -------------------------------------------------------------- */        
+    /* UP RUTINE EØS - MÅ KALLES DERSOM EN AV PENSJONISTENE HAR EN    */        
+    /*                 UFØRPENSJON SOM ER BEREGNET ETTER EØS REGLER   */        
+    /* -------------------------------------------------------------- */        
+    UP_RUTINE_EØS: PROC;                                                        
+       IF (W_VIRK_DATO_ÅMD > 19940000              ) &                          
+          (B02.PENSJONSTYPE1(BER_SØ_IND) = 'U'      ) &                         
+        ( (B02.NORDISK_KONVENSJON(BER_SØ_IND) = 'J' !                           
+          (B02.TT_NORDISK_FAKT_MND(BER_SØ_IND) +                                
+           B02.PÅ_NORDISK_FAKT(BER_SØ_IND) > 0 ) !                              
+           B02.PRO_RATA_BEREGNING(BER_SØ_IND) = 'J' ) !                         
+          (B02.TT_PRO_RATA_MND(BER_SØ_IND) +                                    
+           B02.TT_TEORETISK_EØS_MND(BER_SØ_IND) > 0 )  )  THEN                  
+          DO;  /*EØS BEREGNING SØKER STARTER HER */                             
+             EXEC CICS LINK PROGRAM('R0014470') COMMAREA(KOM_OMR);              
+             IF FEIL_MELD_NR > 0  THEN                                          
+                GO TO L999;                                                     
+             ELSE                                                               
+                PROGRAM_ID = 'R0014001';                                        
+                                                                                
+          /* MIDLERTIDIG LAGT HIT : */                                          
+                                                                                
+        CALL FORSØRG_SØKER;                                                     
+        IF B02.PENSJONSTYPE1(BER_SØ_IND) ^= 'E' THEN                            
+           CALL FORSØRG_EKTEF;                                                  
+                                                                                
+   /* ********************************************                              
+                                                                                
+        IF B02.PRO_RATA_BEREGNING(SØKER_IND)  = 'J'   &                         
+           B02.PRO_RATA_BEREGNING(EKTEF_IND) ^= 'J'    THEN                     
+           CALL FORSØRG_EKTEF                                                   
+        ELSE                                                                    
+        IF B02.PRO_RATA_BEREGNING(EKTEF_IND)  = 'J'   &                         
+           B02.PRO_RATA_BEREGNING(SØKER_IND) ^= 'J'    THEN                     
+           CALL FORSØRG_SØKER                                                   
+                                                                                
+   **************************************** */                                  
+                                                                                
+     END; /*EØS BEREGNING SØKER SLUTTER HER */                                  
+  IF W_VIRK_DATO_ÅMD > 19940000           &          /*2000*/                   
+     B02.BEREGN_FOLKETRYGD(EKTEF_IND) ^= ' ' &                                  
+     B02.PENSJONSTYPE1(EKTEF_IND) = 'U'   THEN                                  
+     DO;                                                                        
+                         TRANS_OPPL_OMR.FØDSNUMMER  =                           
+                                                 B02.FNR(BER_EK_IND);           
+                         W_TRANSTYPE = TRANS_OPPL_OMR.TRANSTYPE;                
+                         TRANS_OPPL_OMR.TRANSTYPE   = 0;                        
+        BER_SØ_IND = EKTEF_IND;                                                 
+        BER_EK_IND = SØKER_IND;                                                 
+        EXEC CICS LINK PROGRAM('R0014470') COMMAREA(KOM_OMR);                   
+        IF FEIL_MELD_NR > 0  THEN                                               
+           GO TO L999;                                                          
+        ELSE                                                                    
+           PROGRAM_ID = 'R0014001';                                             
+                                                                                
+     /* MIDLERTIDIG LAGT HIT : */                                               
+                                                                                
+        CALL FORSØRG_SØKER;                                                     
+        IF B02.PENSJONSTYPE1(BER_SØ_IND) ^= 'E' THEN                            
+           CALL FORSØRG_EKTEF;                                                  
+                                                                                
+ /* **********************************                                          
+                                                                                
+        IF B02.PRO_RATA_BEREGNING(SØKER_IND)  = 'J'   &                         
+           B02.PRO_RATA_BEREGNING(EKTEF_IND) ^= 'J'    THEN                     
+           CALL FORSØRG_EKTEF                                                   
+        ELSE                                                                    
+        IF B02.PRO_RATA_BEREGNING(EKTEF_IND)  = 'J'   &                         
+           B02.PRO_RATA_BEREGNING(SØKER_IND) ^= 'J'    THEN                     
+           CALL FORSØRG_SØKER                                                   
+                                                                                
+  ************************************ */                                       
+                                                                                
+                         TRANS_OPPL_OMR.FØDSNUMMER =                            
+                                                 B02.FNR(SØKER_IND);            
+                         TRANS_OPPL_OMR.TRANSTYPE  = W_TRANSTYPE;               
+        BER_SØ_IND = SØKER_IND;                                                 
+        BER_EK_IND = EKTEF_IND;                                                 
+     END;                                                                       
+  IF (B02.BEREGN_FOLKETRYGD(SØKER_IND) ^= ' '  !                                
+      B02.BEREGN_FOLKETRYGD(EKTEF_IND) ^= ' '  ) &                              
+      B02.P67_KODE         (EKTEF_IND) ^= '5'    &                              
+     (W_VIRK_DATO_ÅMD > 19940000               ) THEN   /*2000*/                
+     CALL GARANTI_ST; /* 4010 GARANTERT SÆRTILLEGG FRA 0194 */                  
+  END UP_RUTINE_EØS;                                                            
+    /* -------------------------------------------------------------- */        
+  EP_RUTINE_EØS: PROC;                                                          
+     IF (W_VIRK_DATO_ÅMD > 19940000          &                                  
+         B02.PENSJONSTYPE1(SØKER_IND) = 'E' ) &                                 
+        (B02.NORDISK_KONVENSJON(EKTEF_IND) = 'J' !                              
+        (B02.TT_NORDISK_FAKT_MND(EKTEF_IND) +                                   
+         B02.PÅ_NORDISK_FAKT(EKTEF_IND) > 0 ) !                                 
+         B02.PRO_RATA_BEREGNING(EKTEF_IND) = 'J' ) !                            
+        (B02.TT_PRO_RATA_MND(EKTEF_IND) +                                       
+         B02.TT_TEORETISK_EØS_MND(EKTEF_IND) > 0 ) THEN                         
+        DO;                                                                     
+           EXEC CICS LINK PROGRAM('R0014370') COMMAREA(KOM_OMR);                
+           IF FEIL_MELD_NR > 0  THEN                                            
+              GO TO L999;                                                       
+           ELSE                                                                 
+              PROGRAM_ID = 'R0014001';                                          
+        END;                                                                    
+                                                                                
+     IF (W_VIRK_DATO_ÅMD > 19940000          &                                  
+         B02.PENSJONSTYPE1(EKTEF_IND) = 'E' ) &                                 
+        (B02.NORDISK_KONVENSJON(SØKER_IND) = 'J' !                              
+        (B02.TT_NORDISK_FAKT_MND(SØKER_IND) +                                   
+         B02.PÅ_NORDISK_FAKT(SØKER_IND) > 0 ) !                                 
+         B02.PRO_RATA_BEREGNING(SØKER_IND) = 'J' ) !                            
+        (B02.TT_PRO_RATA_MND(SØKER_IND) +                                       
+         B02.TT_TEORETISK_EØS_MND(SØKER_IND) > 0 ) THEN                         
+        DO;                                                                     
+           EXEC CICS LINK PROGRAM('R0014370') COMMAREA(KOM_OMR);                
+           IF FEIL_MELD_NR > 0  THEN                                            
+              GO TO L999;                                                       
+           ELSE                                                                 
+              PROGRAM_ID = 'R0014001';                                          
+        END;                                                                    
+  END EP_RUTINE_EØS;                                                            
+    /* -------------------------------------------------------------- */        
+  AP_RUTINE_EØS: PROC;                                                          
+                                                                                
+  IF W_VIRK_DATO_ÅMD > 19940000           &                                     
+     (B02.P67_KODE(BER_SØ_IND) ^= '5')    &                                     
+                      /* 5 = NULLPENSJON */                                     
+     B02.PENSJONSTYPE1(BER_SØ_IND) = 'A'   &                                    
+    (B02.GUNSTIGSTE_ALTERNATIV(BER_SØ_IND) = '2'      !                         
+    (B02.GUNSTIGSTE_ALTERNATIV(BER_SØ_IND) = ' '  &                             
+     B02.PRO_RATA_BEREGNING   (BER_SØ_IND) ^= ' ')   )  THEN                    
+     DO;                                                                        
+        EXEC CICS LINK PROGRAM('R0014270') COMMAREA(KOM_OMR);                   
+        IF FEIL_MELD_NR > 0  THEN                                               
+           GO TO L999;                                                          
+        ELSE                                                                    
+           PROGRAM_ID = 'R0014001';                                             
+        CALL FORSØRG_SØKER;                                                     
+        IF B02.PENSJONSTYPE1(BER_SØ_IND) ^= 'E' THEN                            
+           CALL FORSØRG_EKTEF;                                                  
+                                                                                
+     END;                                                                       
+                                                                                
+  IF W_VIRK_DATO_ÅMD > 19940000           &                                     
+     (B02.P67_KODE(BER_EK_IND) ^= '5')    &                                     
+                      /* 5 = NULLPENSJON */                                     
+     B02.PENSJONSTYPE1(BER_EK_IND) = 'A'  &                                     
+    (B02.GUNSTIGSTE_ALTERNATIV(BER_EK_IND) = '2'      !                         
+    (B02.GUNSTIGSTE_ALTERNATIV(BER_EK_IND) = ' '  &                             
+     B02.PRO_RATA_BEREGNING   (BER_EK_IND) ^= ' ')   )  THEN                    
+     DO;                                                                        
+                         TRANS_OPPL_OMR.FØDSNUMMER  =                           
+                                                 B02.FNR(BER_EK_IND);           
+                         W_TRANSTYPE = TRANS_OPPL_OMR.TRANSTYPE;                
+                         TRANS_OPPL_OMR.TRANSTYPE   = 0;                        
+        BER_SØ_IND = EKTEF_IND;                                                 
+        BER_EK_IND = SØKER_IND;                                                 
+        EXEC CICS LINK PROGRAM('R0014270') COMMAREA(KOM_OMR);                   
+        IF FEIL_MELD_NR > 0  THEN                                               
+           GO TO L999;                                                          
+        ELSE                                                                    
+           PROGRAM_ID = 'R0014001';                                             
+                                                                                
+        CALL FORSØRG_SØKER;                                                     
+        IF B02.PENSJONSTYPE1(BER_SØ_IND) ^= 'E' THEN                            
+           CALL FORSØRG_EKTEF;                                                  
+         TRANS_OPPL_OMR.FØDSNUMMER =  B02.FNR(SØKER_IND);                       
+         TRANS_OPPL_OMR.TRANSTYPE  = W_TRANSTYPE;                               
+         BER_SØ_IND  = SØKER_IND;                                               
+         BER_EK_IND  = EKTEF_IND;                                               
+     END;                                                                       
+  /*                                                                            
+  IF (B02.BEREGN_FOLKETRYGD(SØKER_IND) ^= ' '  !                                
+      B02.BEREGN_FOLKETRYGD(EKTEF_IND) ^= ' '  ) &                              
+      B02.P67_KODE         (EKTEF_IND) ^= '5'    &                              
+     (W_VIRK_DATO_ÅMD > 19940000               ) THEN                           
+     CALL GARANTI_ST;                                       */                  
+                                                                                
+  END AP_RUTINE_EØS;                                                            
+                                                                                
+    /* -------------------------------------------------------------- */        
+    FORSØRG_SØKER : PROC;                                                       
+       IF (B02.SUM_YTELSE(BER_SØ_IND) > 0) THEN                                 
+          DO;  /* SUM YTELSE STØRRE ENN 0 */                                    
+             IF (W_VIRK_DATO_ÅMD > 19940000           &                         
+                 B02.PENSJONSTYPE2(BER_SØ_IND) = 'S')  !                        
+                (B02.PENSJONSTYPE2(BER_SØ_IND) = 'N' &                          
+                 B02.PENSJONSTYPE2(BER_EK_IND) = 'P' &                          
+                (B02.SIVILSTAND   (BER_SØ_IND) = 'G' !                          
+                 B02.SIVILSTAND   (BER_SØ_IND) = 'W' !                          
+                 B02.SIVILSTAND   (BER_SØ_IND) = 'P'))   THEN                   
+                CALL GARANTI_ST;  /*4010 GARANTI 0194*/                         
+             IF (B02.PENSJONSTYPE1(BER_SØ_IND)   = 'K' &                        
+                 B02.PENSJONSTYPE2(3)            = 'N' ) THEN                   
+                B02.PENSJONSTYPE2(BER_SØ_IND)   = 'F';                          
+             IF (B02.FT_SKAL_BEREGNES(BER_SØ_IND)  = 'J' !                      
+                 B02.FT_SKAL_BEREGNES(BER_SØ_IND)  = 'N' ) THEN                 
+                CALL FORSØRG(BER_SØ_IND);                                       
+             IF (B02.PENSJONSTYPE1(BER_SØ_IND) = 'K' &                          
+                 B02.PENSJONSTYPE2(3)          = 'N' ) THEN                     
+                B02.PENSJONSTYPE2(BER_SØ_IND) = 'N';                            
+          END; /* SUM YTELSE STØRRE ENN 0 */                                    
+       ELSE                                                                     
+          DO;  /* SUM YTELSE ER LIK 0 */                                        
+             B02.GARANTITILLEGG_BARN(BER_SØ_IND)  = 0;                          
+             B02.GARANTITILLEGG_EK(BER_SØ_IND)    = 0;                          
+             B02.GARANTITILLEGG_SÆRBARN(BER_SØ_IND)    = 0;                     
+             B02.BT_SÆRBARN(BER_SØ_IND)    = 0;             /*KONSTS*/          
+          END; /* SUM YTELSE ER LIK 0 */                                        
+    END FORSØRG_SØKER;                                                          
+    /* -------------------------------------------------------------- */        
+    FORSØRG_EKTEF : PROC;                                                       
+       IF (B02.SUM_YTELSE(BER_EK_IND) > 0) THEN                                 
+          DO;  /* HAR YTELSE STØRRE ENN 0 */                                    
+             IF (B02.PENSJONSTYPE1(BER_SØ_IND) = 'K' &                          
+                 B02.PENSJONSTYPE2(3)          = 'N' ) THEN                     
+                B02.PENSJONSTYPE2(BER_SØ_IND)   = 'F';                          
+             IF (B02.FT_SKAL_BEREGNES(BER_EK_IND) = 'J' !                       
+                 B02.FT_SKAL_BEREGNES(BER_EK_IND) = 'N' ) THEN                  
+                CALL FORSØRG(BER_EK_IND);                                       
+             IF (B02.PENSJONSTYPE1(BER_SØ_IND) = 'K' &                          
+                 B02.PENSJONSTYPE2(3)          = 'N' ) THEN                     
+                B02.PENSJONSTYPE2(BER_SØ_IND) = 'N';                            
+          END; /* HAR YTELSE STØRRE ENN 0 */                                    
+       ELSE                                                                     
+          DO;  /* SUM YTELSE ER LIK 0 */                                        
+             B02.GARANTITILLEGG_BARN(BER_EK_IND)  = 0;                          
+             B02.GARANTITILLEGG_EK(BER_EK_IND)    = 0;                          
+             B02.GARANTITILLEGG_SÆRBARN(BER_EK_IND)    = 0;                     
+             B02.BT_SÆRBARN(BER_EK_IND)    = 0;             /*KONSTS*/          
+          END; /* SUM YTELSE ER LIK 0 */                                        
+    END FORSØRG_EKTEF;                                                          
+    /* -------------------------------------------------------------- */        
+                                                                                
+ L999:                                                                          
+    EXEC CICS RETURN;                                                           
+    %INCLUDE R0014010;     /* GARANTERT SÆRTILLEGG 0194         */              
+    %INCLUDE R0014011;     /* FORSØRG   - REGNER INNTEKTSPRØVET */              
+    %INCLUDE R0014021;     /* JUSTER_40PROS                     */              
+    %INCLUDE R0014022;     /* JUSTER_FORVENTET                  */              
+    %INCLUDE R0014133;     /* F_BEREGN_SÆRTILLEGG               */              
+    %INCLUDE R0014135;     /* TIDLIGERE_ARBEIDSINNTEKT          */              
+    %INCLUDE R0014140;     /* F_OVERGANG_FRA YP                 */              
+    %INCLUDE R0014151;     /*                                   */              
+    %INCLUDE R0014161;     /*                                   */              
+    %INCLUDE R0014241;     /* BEREGN_AP_OVERGANG_FRA_YP         */              
+    %INCLUDE R0019905;     /* F_ALDER                           */              
+  /*%INCLUDE R0019910         F_NUMERIC                         */              
+    %INCLUDE R0019995;     /* KONV-FNR11-FNR13                  */              
+    %INCLUDE R0019912;     /* ENDRE CHAR->PIC / PIC->CHAR       */              
+ END R001400;                                                                   

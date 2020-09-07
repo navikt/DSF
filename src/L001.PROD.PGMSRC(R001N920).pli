@@ -1,0 +1,186 @@
+ /*   SIST ENDRET PÅ PROD   2001.07.19  7.29.43 AV   HLA2970          */        
+ /*       SIST ENDRET 22/06-98 09.44.57 AV   JDA7339                  */        
+ /*       SIST ENDRET 06/03-91 14.10.34 AV   DYBVIK                   */        
+ /* ***************************************************************** */        
+ /*IDENTIFIKASJON:                                                    */        
+ /*    R001N920 - PROSEDYRE I PLI                                     */        
+ /*    PROGRAMMERER:                                                  */        
+ /*HENSIKT:                                                           */        
+ /*    KONTROLL AV ETTERLATT FAMILIEPLEIER                            */        
+ /*    RUTINEN KONTROLLERER TRANSAKSJONEN MOT INFO I REGISTERET       */        
+ /*PROGRAMTILKNYTNING:                                                */        
+ /*    KALLES OPP AV PROGRAM R0013520                                 */        
+ /*BRUK:                                                              */        
+ /*    EXEC CICS XCTL PROGRAM ('R001N920') COMMAREA (KOM_OMR)         */        
+ /*                                                                   */        
+ /* ***************************************************************** */        
+ %SKIP(2);                                                                      
+ KON_E4:                                                                        
+   PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                        
+ %SKIP;                                                                         
+      %INCLUDE P0019908;  /* KOM_OMR  BASED(COMMAREA_PEKER)          */         
+      %INCLUDE P0019906;  /* TRANS_OPPL_OMR  BASED(TRANS_OPPL_PEKER) */         
+      %INCLUDE P001N901;  /* TKNR_TAB(450)                           */         
+      %INCLUDE P0019910;  /* STYRINGS_OMR  BASED(STYRINGS_PEKER)     */         
+      %INCLUDE P0019912;  /* DIV_PARAM_OMR  BASED(DIV_PARAM_PEKER)   */         
+                                                                                
+      DCL 1 B01 BASED(B01_PEKER), %INCLUDE P0019921;                            
+      DCL 1 B02 BASED(B02_PEKER), %INCLUDE P0019921;                            
+      DCL COMMAREA_PEKER PTR;                                                   
+      DCL ADDR BUILTIN;                                                         
+   DCL                                                                          
+      IND               FIXED BIN (15),                                         
+      I                 FIXED BIN (15),                                         
+      SEKSTISJU_ÅRSDATO PIC       '(8)9',                                       
+      SYTTI_ÅRSDATO     PIC       '(8)9',                                       
+      HJ_VIRK_DATO_ÅMD  PIC       '(8)9';                                       
+   DCL                                                                          
+    1 ALDER_67 DEF SEKSTISJU_ÅRSDATO,                                           
+      2 ÅR                PIC '9999',                                           
+      2 MND               PIC '99',                                             
+      2 DG                PIC '99';                                             
+   DCL                                                                          
+    1 ALDER_70 DEF SYTTI_ÅRSDATO,                                               
+      2 ÅR                PIC '9999',                                           
+      2 MND               PIC '99',                                             
+      2 DG                PIC '99';                                             
+   DCL                                                                          
+      T_FNR             PIC      '(11)9';                                       
+   DCL                                                                          
+      T_FNR13           PIC      '(13)9';                                       
+   DCL                                                                          
+      T_FNR13_ÅMD       PIC      '(8)9';                                        
+   DCL                                                                          
+      1 NR13            DEF       T_FNR13,                                      
+        2 DG            PIC        '99',                                        
+        2 MN            PIC        '99',                                        
+        2 ÅR            PIC        '9999',                                      
+        2 PERSNR,                                                               
+           3 ÅRHUNDRE   PIC       '999',                                        
+           3 REST       PIC        '99';                                        
+    DCL TT_RED          CHAR  (1)  INIT (' ');                                  
+                                                                                
+ %PAGE;                                                                         
+ /* ***************************************************************** */        
+ /* PROGRAMMET BEGYNNER HER                                           */        
+ /* ***************************************************************** */        
+      PROGRAM_ID      = 'R001N920';                                             
+      T_FNR           = E4S.FNR;                                                
+      T_FNR13         = KONV_FNR11_FNR13(T_FNR);                                
+      TRANSTYPE       = '34';                                                   
+      HJ_VIRK_DATO_ÅMD = TRANS_OMR.VIRK_DATO_ÅMD;                               
+      T_FNR13_ÅMD      = NR13.ÅR * 10000 +                                      
+                         NR13.MN * 100   +                                      
+                         NR13.DG         ;                                      
+  %SKIP;                                                                        
+            SEKSTISJU_ÅRSDATO = T_FNR13_ÅMD + 670000;                           
+            SYTTI_ÅRSDATO     = T_FNR13_ÅMD + 700000;                           
+ /* ***************************************************************** */        
+ /* SØKEREN HAR PENSJONSSTATUS                                        */        
+ /* **************************************************************** */         
+                                                                                
+      IF STATUS_TYPE ^= 'A' &                                                   
+         STATUS_TYPE ^= 'C' &                                                   
+         STATUS_TYPE ^= 'I' &      /* TILLEGGSTEST PÅ 'I' OG 'K' */             
+         STATUS_TYPE ^= 'K' THEN   /* 14.2.85  HL                */             
+         DO;                                                                    
+ /* ***************************************************************** */        
+ /* SØKEREN HAR ENTEN ALDERS-,UFØRE-,ELLER ETTERLATTEPENSJON          */        
+ /* ***************************************************************** */        
+            IF B01.PENSJONSTYPE1(SØKER_IND) ^= 'J' THEN                         
+               DO;                                                              
+  L100:                                                                         
+                  FEIL_VED_LABEL = '100';                                       
+                  FEIL_MELD_NR   = 1104;                                        
+                  GO TO L999;                                                   
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+ /* ***************************************************************** */        
+ /* SØKER ER REGISTRERT MED ET ANNET TKNR I STATUS ENN I TRANS        */        
+ /* ***************************************************************** */        
+                  IF B01.RF0PERSN.TKNR(SØKER_IND) > 0  THEN                     
+                     IF B01.RF0PERSN.TKNR(SØKER_IND) ^= E4S.TKNR THEN           
+                        B02.RF0PERSN.TKNR(SØKER_IND) = E4S.TKNR;                
+  /*                    DO                                                      
+  L110: FJERNA 170701 MARTIN                                                    
+                           FEIL_VED_LABEL = '110'                               
+                           FEIL_MELD_NR   = 1702                                
+                           GO TO L999                                           
+                        END  */                                                 
+                     ELSE                                                       
+                        DO;                                                     
+ /* ***************************************************************** */        
+ /* HVIS SØKEREN ER REGISTRERT SOM GIFT                               */        
+ /* ***************************************************************** */        
+                           IF B01.SIVILSTAND(SØKER_IND) = 'G' THEN              
+                              DO;                                               
+  L120:                                                                         
+                                 FEIL_VED_LABEL = '120';                        
+                                 FEIL_MELD_NR   = 1103;                         
+                                 GO TO L999;                                    
+                              END;                                              
+                           ELSE                                                 
+                              DO;                                               
+ /* ***************************************************************** */        
+ /* SØKEREN ER UGIFT                                                  */        
+ /* ***************************************************************** */        
+                                 CALL                                           
+ /* 9926 */                             FLYTT_B01_TIL_B02(SØKER_IND);           
+                                 CALL                                           
+ /* N922 */                             AJOURFØR_B02_MED_E4_TRANS;              
+                              END;                                              
+                        END;                                                    
+                  ELSE                                                          
+                     DO;                                                        
+                        B02.RF0PERSN.TKNR(SØKER_IND) = E4S.TKNR;                
+                        CALL                                                    
+ /* 9926 */                  FLYTT_B01_TIL_B02(SØKER_IND);                      
+                        CALL                                                    
+ /* N922 */                  AJOURFØR_B02_MED_E4_TRANS;                         
+                     END;                                                       
+               END;                                                             
+         END;                                                                   
+      ELSE                                                                      
+         DO;                                                                    
+ /* ***************************************************************** */        
+ /* SØKEREN HAR IKKE PENSJONSSTATUS                                   */        
+ /* ***************************************************************** */        
+            IF B01.FNR(SØKER_IND) = 0 THEN                                      
+ /* ***************************************************************** */        
+ /* SØKEREN ER IKKE I BASEN                                           */        
+ /* ***************************************************************** */        
+               DO;                                                              
+                  B02.FNR    (SØKER_IND) = E4S.FNR;                             
+                  B02.NAVN   (SØKER_IND) = E4S.NAVN;                            
+                  B02.TKNR   (SØKER_IND) = E4S.TKNR;                            
+                  B02.SPRÅK  (SØKER_IND) = E4S.SPRÅK;                           
+                  CALL                                                          
+ /* N921 */       OPPRETT_STATUS_E4_SØKER;                                      
+               END;                                                             
+            ELSE                                                                
+               DO;                                                              
+ /* ***************************************************************** */        
+ /* SØKEREN ER I BASEN                                                */        
+ /* ***************************************************************** */        
+                  CALL                                                          
+ /* 9926 */       FLYTT_B01_TIL_B02(SØKER_IND);                                 
+                  CALL                                                          
+ /* N921 */       OPPRETT_STATUS_E4_SØKER;                                      
+               END;                                                             
+         END;                                                                   
+ L999:                                                                          
+         EXEC CICS RETURN;                                                      
+ %PAGE;                                                                         
+      %INCLUDE R001N921;   /* OPPRETT_STATUS_E4_SØKER            */             
+ %PAGE;                                                                         
+      %INCLUDE R001N922;   /* AJOURFØR_B02_MED_E4_TRANS          */             
+ %PAGE;                                                                         
+      %INCLUDE R0019905;   /* F_ALDER                            */             
+ %PAGE;                                                                         
+      %INCLUDE R0019926;   /* FLYTT_B01_TIL_B02                  */             
+ %PAGE;                                                                         
+      %INCLUDE R0019995;   /* KONV_FNR11_FNR13                   */             
+ %PAGE;                                                                         
+      %INCLUDE R001N824;   /* F_BEREGN_TT_FRAMT_UTLAND NY0191    */             
+   END KON_E4;                                                                  

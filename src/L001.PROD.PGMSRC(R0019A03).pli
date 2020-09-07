@@ -1,0 +1,123 @@
+ /*   SIST ENDRET PÅ PROD   2005.01.28 11.37.27 AV   JDA2970          */        
+ /*   SIST ENDRET PÅ TEST   2005.01.25  9.09.01 AV   SPA2970          */        
+  /* **************************************************************** */        
+  /*HOVED PROGRAM SOM LESE FNR FRA DATASET OG STYRE BEREGN            */        
+  /* **************************************************************** */        
+                                                                                
+ AU_KJØRING_KONTROLL: PROC;                                                     
+                                                                                
+      FEIL_FUNNET = '0'B;                                                       
+   /* ****************************************  */                              
+                                                                                
+      FEIL_MELD.FEIL  =                                                         
+        '   ******************          ******************** ';                 
+     EXEC CICS WRITE DATASET ('OMRFEIL')                                        
+          FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                                
+                                                                                
+     DATO_ÅMD = DATO_2000;               /*2000*/                               
+     FEIL_MELD.FEIL  = ' AUTO-KJØRING START ' !! DATO_ÅMD !! ' KL. '            
+       !! START_TID !!  '  BRUKER-ID  ' !! DIV_PARAM_OMR.BRUKER_ID;             
+     EXEC CICS WRITE DATASET ('OMRFEIL')                                        
+          FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                                
+   /* ****************************************  */                              
+                                                                                
+     STYRINGS_OMR.FUNKSJONSKODE = 'S';                                          
+     CALL KONTROLL_ACF2;                                                        
+                                                                                
+     IF FEIL_MELD_NR    >  0  THEN                                              
+        DO;                                                                     
+           FEIL_FUNNET = '1'B;                                                  
+           TKNRNR  = FEIL_MELD_NR;                                              
+           TRANSKODE = 'R9A0';                                                  
+                                                                                
+            CALL SKRIV_FEIL(TKNRNR);                                            
+            EXEC CICS SEND MAP('S0019A1') MAPSET('S0019A3');                    
+                                                                                
+           EXEC CICS RETURN;                                                    
+        END;                                                                    
+     ELSE                                                                       
+        ACF2_AUTO = 'B';                                                        
+                                                                                
+     STYRINGS_OMR.FUNKSJONSKODE = 'S';                                          
+  /* ******************************************* */                             
+                                                                                
+     AUTO_REC.TKNR   = AUS.TKNR;                                                
+     AUTO_REC.FNR    = AUS.FNR ;                                                
+                                                                                
+     IF AUTO_DEF = 0 THEN                                                       
+           KEY_FNR   = 1;                                                       
+     ELSE                                                                       
+           KEY_FNR   = AUTO_DEF + 1;                                            
+  /*    OPPTIL HER                               */                             
+                                                                                
+     EXEC CICS STARTBR  DATASET('AUSTART')                                      
+                                RIDFLD(KEY_BIT) GTEQ;                           
+                                                                                
+     EXEC CICS READNEXT DATASET('AUSTART')                                      
+                             INTO(AUTO_REC)                                     
+                             RIDFLD(KEY_BIT);                                   
+                                                                                
+     EXEC CICS ENDBR DATASET('AUSTART');                                        
+                                                                                
+     DO WHILE (AUTO_REC.FNR ^= 99999999999 );                                   
+                                                                                
+        CALL BLANK_AU_MELDNR;                                                   
+        AUS.FNR = AUTO_REC.FNR;                                                 
+        TRANS_OPPL_OMR.FØDSNUMMER = AUS.FNR;                                    
+                                                                                
+        FEIL_MELD.FEIL = 'FNR UNDER BEHANDLING '!! AUTO_REC.FNR !!              
+                          '  TKNR NR.   ' !! AUTO_REC.TKNR;                     
+        EXEC CICS WRITE DATASET ('OMRFEIL')                                     
+                  FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;                        
+                                                                                
+        KJØRINGS_TYPE= 'O' ;                                                    
+        BLANKETTYPE = STYREKODE;                                                
+        TRANSKODE = 'R201'               ;                                      
+        EXEC CICS LINK PROGRAM('R0012002') COMMAREA(KOM_OMR);                   
+                                                                                
+        IF FEIL_FUNNET     THEN                                                 
+           DO;                                                                  
+              FEIL_MELD.FEIL =  AUS.FNR !! '  BEREGN FEIL ' ;                   
+              EXEC CICS WRITE DATASET ('OMRFEIL')                               
+                           FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;               
+              FEIL_FUNNET = '0'B;                                               
+           END;                                                                 
+        ELSE                                                                    
+        IF FEIL_MELD_NR    >  0  THEN                                           
+           DO;                                                                  
+              FEIL_MELD.FEIL =  FEIL_MELD_NR !!                                 
+                                       'KONTROLL FEIL MELD ';                   
+              EXEC CICS WRITE DATASET ('OMRFEIL')                               
+                           FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;               
+           FEIL_MELD_NR    =  0  ;                                              
+         END;                                                                   
+                                                                                
+   NEXT_FNR:                                                                    
+        KEY_FNR   = AUTO_DEF + 1;                                               
+                                                                                
+        EXEC CICS READ     DATASET('AUSTART')                                   
+                             INTO(AUTO_REC)                                     
+                             RIDFLD(KEY_BIT) GTEQ;                              
+                                                                                
+     END;                                                                       
+                                                                                
+                                                                                
+     IF ^FEIL_FUNNET THEN                                                       
+        DO;                                                                     
+           DATO_ÅMD = DATO_2000;                 /*2000*/                       
+           FEIL_MELD.FEIL  = ' AUTO-KJØRING ER OK ' !! DATO_ÅMD;                
+                                                                                
+           EXEC CICS WRITE DATASET ('OMRFEIL')                                  
+                            FROM (FEIL_MELD) RIDFLD(FEIL_RBA) RBA;              
+                                                                                
+            CALL BLANK_AU_SØKER ;                                               
+            CALL BLANK_AU_MAP ;                                                 
+            EXEC CICS SEND MAP('S0019A1')   MAPSET('S0019A3')                   
+                                                       EARSE;                   
+            S0019A1O.MELDING6O = FEIL_MELD.FEIL ;                               
+            EXEC CICS SEND MAP('S0019A1')   MAPSET('S0019A3')                   
+                                                    DATAONLY;                   
+        END;                                                                    
+                                                                                
+  END AU_KJØRING_KONTROLL ;                                                     
+                                                                                
