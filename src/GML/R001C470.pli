@@ -1,0 +1,450 @@
+ /*       SIST ENDRET 07/03-97 12.43.25 AV   JDA7339                  */00000000
+ /*       SIST ENDRET 12/02-97 09.57.01 AV   JDA7339                  */00000010
+ /*       SIST ENDRET 06/02-96 13.12.36 AV   JDA0310                  */00000020
+ /*       SIST ENDRET 16/01-96 11.03.46 AV   TSB0310                  */00000030
+ /*       SIST ENDRET 12/10-95 14.17.38 AV   JDA0310                  */00000040
+ /*       SIST ENDRET 25/07-94 13.52.29 AV   DYBVIK                   */00000050
+ /*       SIST ENDRET 11/07-94 12.45.23 AV   DYBVIK                   */00000060
+ /*       SIST ENDRET 15/03-94 13.54.37 AV   DYBVIK                   */00000070
+ /*       SIST ENDRET 25/02-94 12.53.22 AV   HERMAN                   */00000080
+ /* ***************************************************************** */00000090
+ /*IDENTIFIKASJON:                                                    */00000100
+ /* **********************                                            */00000110
+ /*  PROGRAM-IDENT : R001C470 -                          HOVEDPROGRAM */00000120
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */00000130
+ /*  PROGRAMMERER  : PATHAK                                           */00000140
+ /*  PROGRAMMET BLE LAGET :      1994                                 */00000150
+ /* ***************************************************************** */00000160
+ /*HENSIKT:                                                           */00000170
+ /* **********                                                        */00000180
+ /*  PROGRAMMET SKAL BYGGE OPP SIDER SOM BESTÅR AV BLANKETT-MAPENE    */00000190
+ /*  DETTE GJØRES UT FRA EN LISTE AV TRANSER SOM ER SORTERT PÅ        */00000200
+ /*  FORHÅND.                                                         */00000210
+ /*                                                                   */00000220
+ /* ***************************************************************** */00000230
+ /*PROGRAMTILKNYTTING:                                                */00000240
+ /* ********************                                              */00000250
+ /*  PROGRAMMET ER EN LOGISK DEL AV 0470                              */00000260
+ /*    EXEC CICS XCTL PROGRAM ('R001C470') COMMAREA(KOM_OMR);         */00000270
+ /*  PROGRAMMET INKLUDERER:                                           */00000280
+ /*    R001U606   -   FLYTTER GRBL-U3 FRA ARB.OMR TIL MAP             */00000290
+ /*    R001UC06   -   FLYTTER GRBL-FO FRA ARB.OMR TIL MAP             */00000300
+ /*    R001UC07   -   FLYTTER GRBL-FO FORTEKSTER OG ATTRIBUTTER       */00000310
+ /*    R0019912   -   PIC TIL CHAR OG MOTSATT                         */00000320
+ /*  INTERNE PROCEDURER:                                              */00000330
+ /*    LOW_VALUES_TIL_MAP - HEXA '00' INN I ET OMRÅDE                 */00000340
+ /*    SELECT_BLANKETTYPE -                                           */00000350
+ /*    U3_PROC            - SKRIVER U3-TRANS SOM BLANKETTRANS         */00000360
+ /*    FO_PROC            - SKRIVER FO-TRANS SOM BLANKETTRANS         */00000370
+ /*  PROGRAMMET BRUKER FØLGENDE MAPSET:                               */00000380
+ /*    S001F33:                                                       */00000390
+ /*  RETUR TIL PROGRAMMET SOM AKTIVISERTE DETTE SLIK:                 */00000400
+ /*    EXEC CICS RETURN;                                              */00000410
+ /*                                                                   */00000420
+ /* ***************************************************************** */00000430
+                                                                        00000440
+ R001047: PROC(COMMAREA_PEKER) OPTIONS (MAIN);                          00000450
+ %PAGE;                                                                 00000460
+ %INCLUDE S001F3;    /* MAPPER FOR BLANKETTENE    */                    00000470
+ %PAGE;                                                                 00000480
+ %INCLUDE P0019906;  /* TRANS-OPPL-OMRÅDE (BASED) */                    00000490
+ %PAGE;                                                                 00000500
+ %INCLUDE P0019908;  /* KOM-OMRÅDE (BASED)        */                    00000510
+ %PAGE;                                                                 00000520
+ %INCLUDE P0019910;  /* STYRINGS - OMRÅDE (BASED) */                    00000530
+ %PAGE;                                                                 00000540
+ %INCLUDE P0019912;  /* DIV-PARAM-OMRÅDE(BASED)   */                    00000550
+ %PAGE;                                                                 00000560
+                                                                        00000570
+                                                                        00000580
+ DCL                                                                    00000590
+    QUENAME                CHAR(8),                                     00000600
+       QTERMID             CHAR(4) DEF QUENAME POS(1),                  00000610
+       REST                CHAR(4) DEF QUENAME POS(5);                  00000620
+                                                                        00000630
+ DCL                                                                    00000640
+    1 ROUTELIST,                                                        00000650
+      2 PRINTER,                                                        00000660
+        3 TERMID           CHAR(4),                                     00000670
+        3 REST             CHAR(12),                                    00000680
+      2 SISTE,                                                          00000690
+        3 SLUTT            FIXED BIN(15),                               00000700
+        3 REST             CHAR(14);                                    00000710
+                                                                        00000720
+ DCL                                                                    00000730
+    CSTG                   BUILTIN,                                     00000740
+    LOW                    BUILTIN,                                     00000750
+    COMMAREA_PEKER         PTR,                                         00000760
+    BMSMAPBR               PTR,                                         00000770
+    MAPSET_PTR             PTR,                                         00000780
+    I                      FIXED BIN(15),                               00000790
+    START                  FIXED BIN(15) INIT(1),                       00000800
+    LENGTH                 FIXED BIN(15),                               00000810
+    LABEL_Y                LABEL,                                       00000820
+    MELDING                CHAR(10) INIT('NOE ER GALT'),                00000830
+    LOW_CHAR_BASED         CHAR(1000) BASED(BMSMAPBR),                  00000840
+    ADDR                   BUILTIN;                                     00000850
+                                                                        00000860
+ /*----------------------------------------------------------------*/   00000870
+ /* DUMMY DEKLARASJONER FOR OVERFØRINGSMODULENE                    */   00000880
+ /*----------------------------------------------------------------*/   00000890
+                                                                        00000900
+ DCL                                                                    00000910
+    CURSOR_POS     FIXED BIN  (15)   INIT (-1),                         00000920
+    DFHBMUNP             CHAR (1)    INIT (' '),                        00000930
+    DFHBMBRY             CHAR (1)    INIT ('H'),                        00000940
+    DFHBMASK             CHAR (1)    INIT ('8'),/* H.INT + ASKIP  */    00000950
+    FEIL_FUNNET          BIT  (1)    INIT ('1'B),                       00000960
+    FORKASTES            BIT  (1)    INIT ('0'B),                       00000970
+       W01_FAR_BEHANDLES BIT  (1)    INIT ('0'B),                       00000980
+       W01_MOR_BEHANDLES BIT  (1)    INIT ('0'B),                       00000990
+    MELDING6O            CHAR (78),                                     00001000
+    YMELDING6O           CHAR (78);                                     00001010
+                                                                        00001020
+                                                                        00001030
+         DCL  W01_YSKADE      BIT(1)         INIT  ('0'B);              00001040
+         DCL  W01_NORSK_BOSATT     BIT(1)         INIT  ('0'B);         00001050
+         DCL  W01_SIDE_ANTALL FIXED BIN(15)  INIT  ( 1  );              00001060
+    QTERMID        = EIBTRMID;                                          00001070
+    REST           = 'COMA';                                            00001080
+    ROUTELIST      = '';                                                00001090
+    PRINTER.TERMID = 'R41J';                                            00001100
+    SISTE.SLUTT    = -1;                                                00001110
+                                                                        00001120
+                                                                        00001130
+    EXEC CICS LOAD PROGRAM('S001F33') SET(MAPSET_PTR); /* TRANSMAPSET */00001140
+    ALLOCATE  LOW_CHAR_BASED;                                           00001150
+                                                                        00001160
+    EXEC CICS HANDLE CONDITION OVERFLOW(OVERFLOW);                      00001170
+                                                                        00001180
+                                                                        00001190
+    /*---------------------------------------------*/                   00001200
+    /*  STYRING FOR OVERFØRINGSMODULENE            */                   00001210
+    /*---------------------------------------------*/                   00001220
+                                                                        00001230
+    DIV_PARAM_OMR.FRA_CICS        = '0'B;                               00001240
+    DIV_PARAM_OMR.HENT_FRAM_MAP   = '0'B;                               00001250
+    DIV_PARAM_OMR.FRA_UTEN_DIALOG = '1'B;                               00001260
+    DIV_PARAM_OMR.FRA_MED_DIALOG  = '0'B;                               00001270
+                                                                        00001280
+                                                                        00001290
+    DO I = 1 TO 2;                                                      00001300
+                                                                        00001310
+       /*---------------------------------------------*/                00001320
+       /* SETTER X'00' I HELE LOW_CHAR_BASED          */                00001330
+       /*---------------------------------------------*/                00001340
+       /* SKRIVER BLANKETT-TRANSEN PÅ SKJERMEN        */                00001350
+       /* ELLER GJØR DEN KLAR TIL UTSKRIVING          */                00001360
+       /*---------------------------------------------*/                00001370
+                                                                        00001380
+       LOW_CHAR_BASED = LOW(1000);                                      00001390
+       CALL SELECT_BLANKETTYPE;                                         00001400
+                                                                        00001410
+       IF ^W01_YSKADE      THEN                                         00001420
+           DO;                                                          00001430
+                  I  =  3;                                              00001440
+           END;                                                         00001450
+       EXEC CICS SEND PAGE RETAIN NOAUTOPAGE;                           00001460
+    END;                                                                00001470
+                                                                        00001480
+    /*-------------------------------------------------------------*/   00001490
+    /* AVSLUTTER MED RETURN TIL CICS.                              */   00001500
+    /*-------------------------------------------------------------*/   00001510
+                                                                        00001520
+    EXEC CICS RETURN;                                                   00001530
+                                                                        00001540
+ OVERFLOW:                                                              00001550
+    EXEC CICS SEND  TEXT  FROM (MELDING)ACCUM;                          00001560
+    EXEC CICS SEND  PAGE;                                               00001570
+    EXEC CICS PURGE MESSAGE;                                            00001580
+                                                                        00001590
+                                                                        00001600
+                                                                        00001610
+    /*---------------------------------------------*/                   00001620
+    /* BEHANLER AKTUELL BLANKETT                   */                   00001630
+    /*---------------------------------------------*/                   00001640
+                                                                        00001650
+    SELECT_BLANKETTYPE:                                                 00001660
+      PROC;                                                             00001670
+                                                                        00001680
+       SELECT (TRANS_OPPL_OMR.BLANKETTYPE);                             00001690
+           WHEN('U3')                                                   00001700
+              /* SKRIVER U3-TRANS SOM BLANKETTRANS PÅ SKJERM */         00001710
+              CALL U3_PROC;                                             00001720
+           WHEN('EN')                                                   00001730
+              /* SKRIVER EN-TRANS SOM BLANKETTRANS PÅ SKJERM */         00001740
+              CALL EN_PROC;                                             00001750
+                                                                        00001760
+           WHEN('FO')                                                   00001770
+              /* SKRIVER EN-TRANS SOM BLANKETTRANS PÅ SKJERM */         00001780
+              CALL FO_PROC;                                             00001790
+        /*                                                              00001800
+           WHEN('EE')                                                   00001810
+              CALL EE_PROC;                                             00001820
+        */                                                              00001830
+                                                                        00001840
+           WHEN('KF')                                                   00001850
+              /* SKRIVER EN-TRANS SOM BLANKETTRANS PÅ SKJERM */         00001860
+              CALL KF_PROC;                                             00001870
+                                                                        00001880
+                                                                        00001890
+           OTHERWISE;                                                   00001900
+        END;       /*   SELECT     */                                   00001910
+                                                                        00001920
+                                                                        00001930
+        U3_PROC: PROC;                                                  00001940
+                                                                        00001950
+          %INCLUDE P001U601;                                            00001960
+          %INCLUDE R001U606;                                            00001970
+                                                                        00001980
+           IF ^W01_YSKADE       &                                       00001990
+              ^W01_NORSK_BOSATT  THEN                                   00002000
+              DO;                                                       00002010
+                  CALL OVERFØR_U3_SØKER_MAP;          /* R001U606 */    00002020
+                                                                        00002030
+                                                                        00002040
+                  S001U61O.DUMMYA = 'Ø';             /* PROT,DARK  */   00002050
+                  EXEC CICS SEND MAP('S001U61') MAPSET('S001F33') ACCUM 00002060
+                                                        PAGING ERASE;   00002070
+                                                                        00002080
+                  W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                00002090
+                                                                        00002100
+                  IF U3S.NORSK_BOSATT   = 'N'   &                       00002110
+                     U3S.YSKADE_TILLEGG = 'J' THEN                      00002120
+                     DO;                                                00002130
+                        W01_NORSK_BOSATT = '1'B;                        00002140
+                        W01_YSKADE = '1'B;                              00002150
+                     END;                                               00002160
+                ELSE                                                    00002170
+                  IF U3S.NORSK_BOSATT  = 'N'   THEN                     00002180
+                     DO;                                                00002190
+                       W01_NORSK_BOSATT = '1'B;                         00002200
+                                                                        00002210
+                     END;                                               00002220
+                ELSE                                                    00002230
+                  IF U3S.YSKADE_TILLEGG = 'J' THEN                      00002240
+                     DO;                                                00002250
+                        W01_YSKADE = '1'B;                              00002260
+                                                                        00002270
+                     END;                                               00002280
+            /*    ELSE                                                  00002290
+                    FREE TRANS_OMR,TRANS_OPPL_OMR;   SP 6/6/94 */       00002300
+                                                                        00002310
+              END;                                                      00002320
+           ELSE                                                         00002330
+              IF W01_NORSK_BOSATT  THEN                                 00002340
+                 DO;                                                    00002350
+                        W01_NORSK_BOSATT = '0'B;                        00002360
+                        CALL OVERFØR_U3_SP_MAP;                         00002370
+                        S001U62O.DUMMYA = 'Ø';     /* PROT,DARK  */     00002380
+                        EXEC CICS SEND MAP('S001U62')                   00002390
+                              MAPSET('S001F33') ACCUM   PAGING ERASE;   00002400
+                                                                        00002410
+                  W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                00002420
+                 END;                                                   00002430
+           ELSE                                                         00002440
+              IF W01_YSKADE       THEN                                  00002450
+                 DO;                                                    00002460
+                    CALL OVERFØR_U3_YP_MAP;            /* R001U606 */   00002470
+                    W01_YSKADE = '0'B;                                  00002480
+                                                                        00002490
+                                                                        00002500
+                    S001201O.DUMMYA = 'Ø';             /* PROT,DARK  */ 00002510
+                    EXEC CICS SEND MAP('S001201')                       00002520
+                                 MAPSET('S001F33') ACCUM                00002530
+                                         PAGING   ERASE;                00002540
+                                                                        00002550
+                  W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                00002560
+                 END;                                                   00002570
+         /*     ELSE                                                    00002580
+                    FREE TRANS_OMR,TRANS_OPPL_OMR;        SP 6/6/94 */  00002590
+                                                                        00002600
+                                                                        00002610
+        END U3_PROC;                                                    00002620
+                                                                        00002630
+         KF_PROC:                                                       00002640
+           PROC;                                                        00002650
+           %INCLUDE P001UJ01;   /* TRANS_OMRÅDE KF  */                  00002660
+           %INCLUDE R001UJ06;   /* KF_TRANS_TIL_MAP */                  00002670
+                                                                        00002680
+                                                                        00002690
+            /* INTERN PROC I R0011906: OVERFØRING KF-DELEN          */  00002700
+                                                                        00002710
+            CALL OVERFØR_KFPSØKER_MAP;                                  00002720
+            IF KFP.NORSK_BOSATT = 'N' THEN                              00002730
+               DO;                                                      00002740
+                                                                        00002750
+                  /* INTERN PROC I R0011906: OVERFØRING SPES_DEL    */  00002760
+                                                                        00002770
+                  CALL OVERFØR_KFPSPES_MAP;                             00002780
+                                                                        00002790
+               END;                                                     00002800
+            S001UJ1O.DUMMYA = 'Ø';     /* PROT,DARK  */                 00002810
+                                                                        00002820
+                                                                        00002830
+            EXEC CICS SEND MAP('S001UJ1') MAPSET('S001F33') ACCUM       00002840
+                                                   PAGING   ERASE;      00002850
+                                                                        00002860
+         END KF_PROC;                                                   00002870
+                                                                        00002880
+                                                                        00002890
+        EN_PROC:                                                        00002900
+          PROC;                                                         00002910
+          %INCLUDE P001UE01;   /* TRANS_OMRåDE ENDRINGSBL-1 */          00002920
+                               /* EN_TRANS TIL MAP OG            */     00002930
+          %INCLUDE R001UE06;   /*OVERF. FORTEKSTER OG ATTRIBUTTER*/     00002940
+                                                                        00002950
+           CALL OVERFØR_ENSØKER_MAP; /* R001UE06    */                  00002960
+           CALL OVERFØR_ENKAP7_MAP;  /* R001UE06    */                  00002970
+           CALL OVERFØR_ENKAP8_MAP;  /* R001UE06    */                  00002980
+           CALL OVERFØR_ENKAP10_MAP;/* R001UE06    */                   00002990
+           CALL OVERFØR_ENKAP11_MAP;/* R001UE06    */                   00003000
+           CALL OVERFØR_EN_SPES_MAP;/* R001UE06    */                   00003010
+           CALL OVERFØR_EN_INNTEKT_MAP;/* R001UE06    */                00003020
+           S001UE1O.DUMMYA = 'Ø';     /* PROT,DARK  */                  00003030
+                                                                        00003040
+        /*   FREE TRANS_OMR,TRANS_OPPL_OMR;       SP 6/6/94 */          00003050
+                                                                        00003060
+           /* SKRIVER SKJERMBILDE ENDRINGSBLANKETT-1    */              00003070
+                                                                        00003080
+           EXEC CICS SEND MAP('S001UE1') MAPSET('S001F33') ACCUM        00003090
+                                                   PAGING  ERASE;       00003100
+                                                                        00003110
+        END EN_PROC;                                                    00003120
+                                                                        00003130
+                                                                        00003140
+                                                                        00003150
+                                                                        00003160
+    END SELECT_BLANKETTYPE;                                             00003170
+                                                                        00003180
+    FO_PROC:   PROC;                                                    00003190
+                                                                        00003200
+     %INCLUDE P001UC01;/* TRANS_OMRÅDE TIL FO_TRANS */                  00003210
+     %INCLUDE R001UC06;/* FO_TRANS TIL MAP          */                  00003220
+     %INCLUDE R001UC07;/* OVERF.FORTEKSTER OG ATTR.B*/                  00003230
+                                                                        00003240
+                                                                        00003250
+           /* INTERN PROC I R0011206: OVERFØRING FO_SØKER_DEL      */   00003260
+                                                                        00003270
+      CALL OVERFØR_FO_SØKER_MAP;                                        00003280
+      CALL TEKST_SØKER2;                                                00003290
+      CALL OVERFØR_FO_SØKER2_MAP;                                       00003300
+      S001UC1O.DUMMYA = 'Ø';     /* PROT,DARK  */                       00003310
+      IF TRANS_OMR.FOS.BT_ANT > 0 THEN                                  00003320
+         DO;                                                            00003330
+                                                                        00003340
+           /* INTERN PROC I R001UC07: FORTEKSTER OG          */         00003350
+           /*                         ATTRIBUTTER I BARNEDEL */         00003360
+                                                                        00003370
+            CALL TEKST_BARN;                                            00003380
+                                                                        00003390
+           /* INTERN PROC I R001UC06: OVERFØRING FO_BARNE_DEL*/         00003400
+                                                                        00003410
+           CALL OVERFØR_FO_BARN_MAP;                                    00003420
+        END;                                                            00003430
+                                                                        00003440
+           /* SKRIVER SKJERMBILDE GRUNNBLANKETT-FTTRANS */              00003450
+                                                                        00003460
+           EXEC CICS SEND MAP('S001UC1') MAPSET('S001F33') ACCUM        00003470
+                                                   PAGING  ERASE;       00003480
+                                                                        00003490
+        END FO_PROC;                                                    00003500
+     /*                                                                 00003510
+        EE_PROC: PROC;                                                  00003520
+                                                                        00003530
+          %INCLUDE P001U801;                                            00003540
+          %INCLUDE R001U806;                                            00003550
+                                                                        00003560
+           IF ^W01_YSKADE       &                                       00003570
+              ^W01_NORSK_BOSATT  THEN                                   00003580
+              DO;                                                       00003590
+                  CALL OVERFØR_EE_SØKER_MAP;                            00003600
+                                                                        00003610
+                                                                        00003620
+                  S001U81O.DUMMYA = 'Ø';                                00003630
+                  EXEC CICS SEND MAP('S001U81') MAPSET('S001F33') ACCUM 00003640
+                                                        PAGING ERASE;   00003650
+                                                                        00003660
+                  W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                00003670
+                                                                        00003680
+                  IF EES.NORSK_BOSATT   = 'N'   &                       00003690
+                     EES.YSKADE_TILLEGG = 'J' THEN                      00003700
+                     DO;                                                00003710
+                        W01_NORSK_BOSATT = '1'B;                        00003720
+                        W01_YSKADE = '1'B;                              00003730
+                     END;                                               00003740
+                ELSE                                                    00003750
+                  IF EES.NORSK_BOSATT  = 'N'   THEN                     00003760
+                     DO;                                                00003770
+                       W01_NORSK_BOSATT = '1'B;                         00003780
+                                                                        00003790
+                     END;                                               00003800
+                ELSE                                                    00003810
+                  IF EES.YSKADE_TILLEGG = 'J' THEN                      00003820
+                     DO;                                                00003830
+                        W01_YSKADE = '1'B;                              00003840
+                                                                        00003850
+                     END;                                               00003860
+              END;                                                      00003870
+           ELSE                                                         00003880
+              IF W01_NORSK_BOSATT  THEN                                 00003890
+                 DO;                                                    00003900
+                        W01_NORSK_BOSATT = '0'B;                        00003910
+                        CALL OVERFØR_EE_SP_MAP;                         00003920
+                        S001U82O.DUMMYA = 'Ø';                          00003930
+                        EXEC CICS SEND MAP('S001U82')                   00003940
+                              MAPSET('S001F33') ACCUM   PAGING ERASE;   00003950
+                                                                        00003960
+                  W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                00003970
+                 END;                                                   00003980
+           ELSE                                                         00003990
+              IF W01_YSKADE       THEN                                  00004000
+                 DO;                                                    00004010
+                    CALL OVERFØR_EE_YP_MAP;                             00004020
+                    W01_YSKADE = '0'B;                                  00004030
+                                                                        00004040
+                                                                        00004050
+                    S001201O.DUMMYA = 'Ø';                              00004060
+                    EXEC CICS SEND MAP('S001201')                       00004070
+                                 MAPSET('S001F33') ACCUM                00004080
+                                         PAGING   ERASE;                00004090
+                                                                        00004100
+                  W01_SIDE_ANTALL = W01_SIDE_ANTALL + 1;                00004110
+                 END;                                                   00004120
+                                                                        00004130
+        END EE_PROC;                                                    00004140
+      */                                                                00004150
+                                                                        00004160
+   SKRIV_FEIL:                       /**   DUMMY PROC  **/              00004170
+      PROC(FIXED_DEC_5);                                                00004180
+                                                                        00004190
+      DCL                                                               00004200
+        FIXED_DEC_5 UNAL FIXED DEC(5);                                  00004210
+                                                                        00004220
+   END SKRIV_FEIL;                                                      00004230
+                                                                        00004240
+   SKRIV_FEIL_YP:                    /**   DUMMY PROC  **/              00004250
+      PROC(FIXED_DEC_5);                                                00004260
+                                                                        00004270
+      DCL                                                               00004280
+        FIXED_DEC_5 UNAL FIXED DEC(5);                                  00004290
+                                                                        00004300
+   END SKRIV_FEIL_YP;                                                   00004310
+                                                                        00004320
+   SKRIV_FEIL_SP:                    /**   DUMMY PROC  **/              00004330
+      PROC(FIXED_DEC_5);                                                00004340
+                                                                        00004350
+      DCL                                                               00004360
+        FIXED_DEC_5 UNAL FIXED DEC(5);                                  00004370
+                                                                        00004380
+   END SKRIV_FEIL_SP;                                                   00004390
+                                                                        00004400
+                                                                        00004410
+                                                                        00004420
+   %INCLUDE R0019912;  /* PIC TIL CHAR OG MOTSATT */                    00004430
+   %INCLUDE R0019902;                                                   00004440
+                                                                        00004450
+                                                                        00004460
+                                                                        00004470
+                                                                        00004480
+ END R001047;                                                           00004490

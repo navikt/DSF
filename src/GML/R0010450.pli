@@ -1,0 +1,821 @@
+ /*       SIST ENDRET 26/04-96 12.09.48 AV   JDA0310                  */00000000
+ /*       SIST ENDRET 12/10-95 14.07.00 AV   JDA0310                  */00000010
+ /*       SIST ENDRET 25/02-94 12.59.20 AV   HERMAN                   */00000020
+ /*       SIST ENDRET 06/03-91 14.22.51 AV   DYBVIK                   */00000030
+ /*       SIST ENDRET 20/07-90 13.16.53 AV   DYBVIK                   */00000040
+ /*       SIST ENDRET 22/05-90 09.35.39 AV   DYBVIK                   */00000050
+ /*       SIST ENDRET 14/04-89 15.28.04 AV   DYBVIK                   */00000060
+                                                                        00000070
+ /******************************************************************* */00000080
+ /*IDENTIFIKASJON:                                                    */00000090
+ /************************                                            */00000100
+ /*  PROGRAM-IDENT : R0010450 - FJERNING AV TRANS - HOVEDPROGRAM      */00000110
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */00000120
+ /*  PROGRAMMERER  : JAN HARALD KRISTENSEN                            */00000130
+ /*  PROGRAMMET BLE LAGET  :                                          */00000140
+ /*  ENDRINGERSDATO :                                                 */00000150
+ /*  ENDRINGEN GJELDER:                                               */00000160
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */00000170
+ /*                                                                   */00000180
+ /******************************************************************* */00000190
+ /*HENSIKT:                                                           */00000200
+ /************                                                        */00000210
+ /*  HOVEDPROGRAM I DELSYSTEMET FJERNING.                             */00000220
+ /*  PROGRAMMET AKTIVISERES NÅR BRUKEREN TASTER INN 'F' PÅ BILDE      */00000230
+ /*  OVER FUNKSJONSVALG, MAP S001013. MENYEN FOR FJERNING BLIR DA     */00000240
+ /*  SKREVET OG BRUKEREN MÅ ANGI HVA SOM VIDERE ØNSKES UTFØRT:        */00000250
+ /*   ST _ FJERN SISTE TRANS                                          */00000260
+ /*   AT - FJERN ALLE TRANSER                                         */00000270
+ /*  NÅR ST VELGES GÅR KONTROLLEN TIL R0010451 -FJERN SISTE TRANS     */00000280
+ /*  SOM SKRIVER ET SKJERMBILDE MED OPPLYSNINGER FRA NEST SISTE OG    */00000290
+ /*  SISTE STATUS SAMT SISTE TRANSAKSJON.                             */00000300
+ /*  VED ET BEKREFTENDE SVAR, BLIR SISTE TRANS FJERNET FRA TRANS-     */00000310
+ /*  HIST, TRANSAKSJONEN LAGT UT PÅ VENTEREG. RUTINEN AUTOHENDELSE    */00000320
+ /*  KJØRES, NYE STATUS SKRIVES PÅ BASEN                              */00000330
+ /*            *******                                                */00000340
+ /*  NÅR 'AT' VELGES GÅR KONTROLLEN TIL R0010452 - FJERN ALLE TRANSER */00000350
+ /*  SOM LEGGER UT ET BILDE MED OPPLYSNINGER OM ALLE TRANSER:         */00000360
+ /*  VIRKDAT, BLANKETTYPE, FNR-SØKER, FNR_EKTEF, ANTALL BARN.         */00000370
+ /*  VED ET BEKREFTENDE SVAR, BLIR ALLE TRANSAKSJONENE FJERNET OG LAGT*/00000380
+ /*  UT PÅ VENTEREG. DET BLIR SKREVET NY STATUS, OG DET GÅR MELDING   */00000390
+ /*  TIL STATISTIKK-SYSTEMET.                                         */00000400
+ /*  DERSOM PERSONEN BARE HADDE PENSJONSOPPLYSNINGER I REGISTERET     */00000410
+ /*  OG DISSE FJERNES, SÅ BLIR PERSONEN SLETTET FRA REGISTERET.       */00000420
+ /******************************************************************* */00000430
+ /*PROGRAMTILKNYTTING:                                                */00000440
+ /**********************                                              */00000450
+ /*  PROGRAMMET BLIR AKTIVISERT FRA CICS MED TRANSKODE = R045.        */00000460
+ /*  DENNE TRANSKODEN SETTES I R0010301:                              */00000470
+ /*    EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);         */00000480
+ /*  KONTROLLEN GÅR VIDERE TIL :                                      */00000490
+ /*  R0010301 NÅR RETURFUNKSJONEN SETTES TIL NOE ANNET ENN 'V'        */00000500
+ /*  R0010480 NÅR RETURFUNKSJONEN SETTES TIL 'V'                      */00000510
+ /*                                                                   */00000520
+ /*  R0010451: PROCEDURER INNEN DETTE PROGAMMET CALLES HERFRA         */00000530
+ /*            VIS_MEG_SISTE_TRANS                                    */00000540
+ /*            MAPS_UT_ST                                             */00000550
+ /*            LOW_VALUES_TIL_MAP                                     */00000560
+ /*            MAP_UT_STATUS                                          */00000570
+ /*            HENT_SVAR_OG_BEKREFT                                   */00000580
+ /*  R0010452: PROCEDURER INNEN DETTE PROGAMMET CALLES HERFRA         */00000590
+ /*            FORBEREDE TRANS                                        */00000600
+ /*            HENT_TRANS                                             */00000610
+ /*            MAPS_UT_AT                                             */00000620
+ /*            FJERN ALLE TRANS                                       */00000630
+ /*            BEHANDLE FNR                                           */00000640
+ /*  EXEC LINK TIL:                                                   */00000650
+ /*            R0019906     SJEKKE OM FNR-ENDRINGER                   */00000660
+ /*            R0010490     SKRIV TRANS TIL VENTEREG                  */00000670
+ /*            R0019921     HENTE DIV FEILMELDINGER                   */00000680
+ /*            R0015101     SLETTE SPERREKODE                         */00000690
+ /******************************************************************* */00000700
+ /*DATASETTOPPLYSNINGER:                                              */00000710
+ /*************************                                           */00000720
+ /*  RF-BASEN:    ÅPNES OG CLOSES I DETTE PROGRAMMET                  */00000730
+ /*               LESES I R0010451 OG 0452                            */00000740
+ /*               R0015401 SKRIVER RESULTATET TILBAKE TIL DATABASEN   */00000750
+ /*  VENTETRANSBASEN: BRUKES I R0010480, R0010490                     */00000760
+ /*  FØDSELSNR-ENDRINGSREG: LESES I R0019906                          */00000770
+ /*    ER DETTE NØDVENDIG????                                         */00000780
+ /*  **DDNAVN,TYPE I/O DATASETTOPPLYSNINGER,PSB-NAVN **               */00000790
+ /*                                                                   */00000800
+ /******************************************************************* */00000810
+ /*FEILMELDINGER:                                                     */00000820
+ /*********************                                               */00000830
+ /*  'FEIL KODE REGISTRERT' NÅR IKKE GYLDIG FJERNINGSKODE             */00000840
+ /*  'FNR INNHOLDER IKKE-NUMERISKE FELT'                              */00000850
+ /*  'FNR UGYLDIG ' NÅR FNR IKKE ER GYLDIG I FØLGE FNR-TESTEN         */00000860
+ /*  'FØDSELSNUMMER NNNNNNNNNNN ER ENDRET, TRYKK ENTER'               */00000870
+ /*  'PROGRAMM R001XXXX GÅR I FEIL VED LABEL NNN'                     */00000880
+ /*  '         TASKEN BLIR KANSELERT!!!!!!!!' VED ALVORLIGE FEIL.     */00000890
+ /*                                                                   */00000900
+ /* ***************************************************************** */00000910
+                                                                        00000920
+ R001045:                                                               00000930
+      PROC(COMMAREA_PEKER)     OPTIONS   (MAIN);                        00000940
+  /* *************************************************************** */ 00000950
+  /*                                                                 */ 00000960
+  /*       HOVED STYRING - DECLARASJONER                             */ 00000970
+  /*                                                                 */ 00000980
+  /* *************************************************************** */ 00000990
+   DCL                                                                  00001000
+       1   B00 BASED(B00_PEKER), %INCLUDE P0019921;                     00001010
+   %PAGE;                                                               00001020
+   DCL                                                                  00001030
+       1   B01 BASED(B01_PEKER), %INCLUDE P0019921;                     00001040
+   %PAGE;                                                               00001050
+   DCL                                                                  00001060
+       1   B02 BASED(B02_PEKER), %INCLUDE P0019921;                     00001070
+   %PAGE;                                                               00001080
+   %INCLUDE P0019912;         /*  DIV_PARAM_OMRÅDE     */               00001090
+   %PAGE;                                                               00001100
+   %INCLUDE P0019910;         /*  STYRINGS_OMRÅDE      */               00001110
+   %PAGE;                                                               00001120
+   %INCLUDE P0019908;         /*  KOM_OMRÅDE(BASED)    */               00001130
+   %PAGE;                                                               00001140
+   %INCLUDE P0019906;         /*  TRANS_OPPL_OMRÅDE    */               00001150
+   %PAGE;                                                               00001160
+   %INCLUDE P0019924;         /* G_V_TAB               */               00001170
+   %PAGE;                                                               00001180
+   %INCLUDE P0019925;         /* G_TAB                 */               00001190
+   %PAGE;                                                               00001200
+   %INCLUDE P0014009;         /*  POTALL_OPPL          */               00001210
+   %PAGE;                                                               00001220
+   %INCLUDE P0019014;         /*  FNRTAB  - STØNADSBREV*/               00001230
+   %PAGE;                                                               00001240
+   %INCLUDE P0019913;         /*  LOKAL_KOM - OMR      */               00001250
+   %PAGE;                                                               00001260
+   %INCLUDE S00101;           /*  HOVED MENY - MAPSET        */         00001270
+   %PAGE;                                                               00001280
+   %INCLUDE S0010E;           /*  ENDRINGS - MAPSET          */         00001290
+   %PAGE;                                                               00001300
+   %INCLUDE S001V1;           /*  VENTETRANS - MAPSET        */         00001310
+   %PAGE;                                                               00001320
+                                                                        00001330
+   DCL                                                                  00001340
+     1 TRANS_LISTE_OMR     BASED(TRANS_LISTE_PEKER),                    00001350
+       3 TRANS_LISTE_LINJE (5),                                         00001360
+       %INCLUDE P0019911;         /*    TRANS_LISTE UNDERNIVÅ       */  00001370
+                                                                        00001380
+   DCL                                                                  00001390
+     1 WORK_TRANS_LISTE     BASED(WORK_TRANS_LISTE_PEKER),              00001400
+       %INCLUDE P0019911;         /*    TRANS_LISTE UNDERNIVÅ       */  00001410
+                                                                        00001420
+   DCL                                                                  00001430
+          MAP_MELDING              CHAR(78)      INIT((78)' '),         00001440
+          JA                       BIT(1)        INIT('1'B),            00001450
+          NEI                      BIT(1)        INIT('0'B),            00001460
+          FEIL                     BIT(1)        INIT('0'B),            00001470
+          FATAL_FEIL               BIT(1)        INIT('0'B),            00001480
+          (I,J,K)                  FIXED BIN(15),                       00001490
+          SØKER_IND_SS             FIXED BIN(15) INIT(0),               00001500
+          SØKER_IND_NS             FIXED BIN(15) INIT(0),               00001510
+          STOP                     CHAR(4)       INIT('0450'),          00001520
+          STATUS_TYPE_SS           CHAR(1),                             00001530
+          STATUS_TYPE_NS           CHAR(1),                             00001540
+          LOW_CHAR_BASED           CHAR(300)     BASED (BMSMAPBR),      00001550
+          FNR_DØD                  PIC '(11)9'   INIT(0),               00001560
+          DATE                     BUILTIN,                             00001570
+          MOD                      BUILTIN,                             00001580
+          VERIFY                   BUILTIN,                             00001590
+          NULL                     BUILTIN,                             00001600
+          ADDR                     BUILTIN,                             00001610
+          CSTG                     BUILTIN,                             00001620
+          MAX_ANTALL_TRANS         FIXED DEC(2)  INIT(0),               00001630
+                                                                        00001640
+       1  FNR_REG,                                                      00001650
+          2  FNR1                  FIXED DEC(11),                       00001660
+          2  FNR2                  FIXED DEC(11),                       00001670
+          2  BRUKERID              CHAR  (4)    ,                       00001680
+                                                                        00001690
+       1  FEIL_STRUC,                                                   00001700
+          2  FEIL_NR               FIXED DEC(5),                        00001710
+          2  FEIL_MELDING          CHAR     (78),                       00001720
+          2  KOM_OMR_PEKER         POINTER,                             00001730
+          2  BRUK_LOGG             POINTER,                             00001740
+                                                                        00001750
+          PIC_11                   PIC'(11)9',                          00001760
+          PIC_4                    PIC'(4)9',                           00001770
+          DAGENS_DATO_PLUSS2_ÅM    PIC'(4)9',                           00001780
+          DAGENS_DATO_PLUSS2_Å DEF DAGENS_DATO_PLUSS2_ÅM POS(1) PIC'99',00001790
+          DAGENS_DATO_PLUSS2_M DEF DAGENS_DATO_PLUSS2_ÅM POS(3) PIC'99',00001800
+          DAGENS_DATO_PLUSS1_ÅM    PIC'(4)9',                           00001810
+          DAGENS_DATO_PLUSS1_Å DEF DAGENS_DATO_PLUSS1_ÅM POS(1) PIC'99',00001820
+          DAGENS_DATO_PLUSS1_M DEF DAGENS_DATO_PLUSS1_ÅM POS(3) PIC'99',00001830
+          FNR_SØKER                PIC'(11)9',                          00001840
+          W_TRANS_PEKER            POINTER,                             00001850
+          BMSMAPBR                 POINTER,                             00001860
+          LOKAL_KOM_PTR            POINTER,                             00001870
+          COMMAREA_PEKER           POINTER;                             00001880
+                                                                        00001890
+    DCL GRUNN_OMR1                 CHAR      (1202);                    00001900
+    DCL GRUNN_OMR2                 CHAR      (1202);                    00001910
+    DCL GRUNN_IDENT                CHAR      ( 8);                      00001920
+                                                                        00001930
+                                                                        00001940
+ DCL 01 BRUKERINFO_REC,                                                 00001950
+        02 FNR                  PIC '(11)9',                            00001960
+        02 BLANKET_TYPE         CHAR (2)   ,                            00001970
+        02 TERMINAL_NR          CHAR (4)   ,                            00001980
+        02 BRUKER_ID            CHAR (8)   ,                            00001990
+        02 FILLER               CHAR (5)   ,                            00002000
+        02 DATO                 PIC '(6)9' ,                            00002010
+        02 TID                  PIC '(7)9' ,      /* HHHMMSS  */        00002020
+        02 KJORINGS_TYPE        CHAR (1)   ,                            00002030
+        02 FIL1                 CHAR (06)  ;                            00002040
+                                                                        00002050
+  DCL  HJELP_TID         FIXED DEC(7,0);                                00002060
+                                                                        00002070
+  /* *************************************************************** */ 00002080
+  /*                                                                 */ 00002090
+  /*       EKSEKVERING BEGYNNER HER.                                 */ 00002100
+  /*                                                                 */ 00002110
+  /* *************************************************************** */ 00002120
+                                                                        00002130
+   ALLOCATE GV_TAB_RE                                                ;  00002140
+   ALLOCATE G_TAB_RE                                                 ;  00002150
+   KOM_OMR.DIV_PARAM_PEKER   = ADDR(KOM_OMR.DIV_PARAM_OMR);             00002160
+   KOM_OMR.TRANS_OPPL_PEKER  = ADDR(KOM_OMR.TRANS_OPPL_OMR);            00002170
+   KOM_OMR.TRANS_PEKER       = ADDR(KOM_OMR.TRANS_OMR);                 00002180
+   KOM_OMR.TRANS_LISTE_PEKER = ADDR(KOM_OMR.TRANS_LISTE_OMR);           00002190
+   KOM_OMR.STYRINGS_PEKER    = ADDR(KOM_OMR.STYRINGS_OMR);              00002200
+   KOM_OMR.GV_PEKER          = ADDR (GRUNN_OMR1) ;                      00002210
+   KOM_OMR.G_PEKER           = ADDR (GRUNN_OMR2) ;                      00002220
+   ALLOCATE WORK_TRANS_LISTE, LOW_CHAR_BASED, LOKAL_KOM_OMR,POTALL_OPPL,00002230
+                                                             FNRTAB;    00002240
+   ALLOCATE B00, B01, B02;                                              00002250
+   HOVED_KOM_OMR_PTR         = COMMAREA_PEKER;                          00002260
+   DIV_PARAM_OMR.PROGRAM_ID  = 'R0010450';                              00002270
+   FNR_REG.BRUKERID          =  DIV_PARAM_OMR.CICS_IND;                 00002280
+                                                                        00002290
+   FNRTAB                    = '';                                      00002300
+   POTALL_OPPL               = '';                                      00002310
+   B00                       = '';                                      00002320
+   B01                       = '';                                      00002330
+   B02                       = '';                                      00002340
+   GV_TAB_RE                 = '';                                      00002350
+   G_TAB_RE                  = '';                                      00002360
+                                                                        00002370
+   FNR_ARRAY                 =  0;                                      00002380
+   FNR_ARRAY_IND             =  1;                                      00002390
+   FNR_ARRAY_ANT             =  0;                                      00002400
+   TRANS_ANT                 =  1;                                      00002410
+                                                                        00002420
+                                                                        00002430
+   DO I = 1 TO 27;                                                      00002440
+      TRANS_LISTE.TRANS_OPPL_PTR(I)  = NULL;                            00002450
+      TRANS_LISTE.TRANS_PTR     (I)  = NULL;                            00002460
+      TRANS_LISTE.FNR_EK        (I)  = 0;                               00002470
+      TRANS_LISTE.ANT_BARN      (I)  = 0;                               00002480
+   END;                                                                 00002490
+                                                                        00002500
+                                                                        00002510
+   GRUNN_IDENT                     = 'P0019924';                        00002520
+   CALL P9956_BER_G_CICS(GRUNN_IDENT,GRUNN_OMR1);                       00002530
+   GRUNN_IDENT                     = 'P0019925';                        00002540
+   CALL P9956_BER_G_CICS(GRUNN_IDENT,GRUNN_OMR2);                       00002550
+                                                                        00002560
+   /*--------------------------------------------------------------*/   00002570
+   /* LESER FJERNINGSKODE OG RETURFUNKSJON                         */   00002580
+   /*--------------------------------------------------------------*/   00002590
+                                                                        00002600
+   EXEC CICS RECEIVE MAP('S00101E') MAPSET('S001013') INTO(S00101EI);   00002610
+                                                                        00002620
+   IF S00101EI.RETUR_FUNKSJONL    > 0 THEN                              00002630
+      DO;                                                               00002640
+         FUNKSJONSKODE = S00101EI.RETUR_FUNKSJONI ;                     00002650
+                                                                        00002660
+         SELECT(FUNKSJONSKODE);                                         00002670
+                                                                        00002680
+         WHEN('V')                                                      00002690
+            DO;                                                         00002700
+               STYREKODE                    =  '  '   ;                 00002710
+               TRANS_OPPL_OMR.TRANSKODE     =  'R048' ;                 00002720
+               CALL DATABASE('CLOSE');                                  00002730
+                                                                        00002740
+               ALLOCATE S001481O ;                                      00002750
+               S001481O.FNRO             = SEARCH_FNR ;                 00002760
+               S001481O.CICS_INFOO       = DIV_PARAM_OMR.CICS_NAVN ;    00002770
+                                                                        00002780
+               /*----------------------------------------------*/       00002790
+               /* NULLSTILLER FNR DERSOM UGYLDIG               */       00002800
+               /*----------------------------------------------*/       00002810
+                                                                        00002820
+               IF ^ F_GYLDIG_FNR(S001481O.FNRO)  THEN                   00002830
+                   S001481I.FNRI = LOW(11) ;                            00002840
+                                                                        00002850
+               /*----------------------------------------------*/       00002860
+               /* SKRIVER UT VENTETRANS-BILDET M/ OVERFØRT FNR */       00002870
+               /*----------------------------------------------*/       00002880
+                                                                        00002890
+               EXEC CICS SEND MAP('S001481') MAPSET('S001V13')          00002900
+                                                    ERASE ;             00002910
+               TRANS_OPPL_OMR.TRANSKODE   = 'R048';                     00002920
+                                                                        00002930
+               EXEC CICS RETURN TRANSID     (TRANS_OPPL_OMR.TRANSKODE)  00002940
+                                COMMAREA    (KOM_OMR);                  00002950
+                                                                        00002960
+               /*----------------------------------------------*/       00002970
+               /* ETTER TRYKKET ENTER VIA CICS TIL R0010480    */       00002980
+               /* - BEHANDLING AV VENTETRANS-REGISTERET        */       00002990
+               /*----------------------------------------------*/       00003000
+            END;                                                        00003010
+                                                                        00003020
+         WHEN('F')                                                      00003030
+            DO;                                                         00003040
+               ALLOCATE S001015O ;                                      00003050
+               S001015O.FNRO       = SEARCH_FNR ;                       00003060
+               S001015O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;          00003070
+                                                                        00003080
+               /*----------------------------------------------*/       00003090
+               /* SJEKKER FNR OG NULLSTILLER DERSOM UGYLDIG    */       00003100
+               /*----------------------------------------------*/       00003110
+                                                                        00003120
+               IF ^ F_GYLDIG_FNR(S001015O.FNRO)  THEN                   00003130
+                  DO;                                                   00003140
+                     S001015I.FNRI = LOW(11) ;                          00003150
+                     S001015I.FNRL = -1  ;                              00003160
+                  END;                                                  00003170
+               ELSE                                                     00003180
+                  DO;                                                   00003190
+                     S001015O.OPPLYSNINGSTYPEO = 'S' ;                  00003200
+                     S001015I.FNRL             = -1  ;                  00003210
+                  END;                                                  00003220
+                                                                        00003230
+               /*-----------------------------------------------*/      00003240
+               /* SKRIVER UT FORESPØRSEL-BILDET M/ OVERFØRT FNR */      00003250
+               /*-----------------------------------------------*/      00003260
+                                                                        00003270
+               EXEC CICS SEND MAP('S001015') MAPSET('S001013')          00003280
+                                             CURSOR ERASE ;             00003290
+               TRANS_OPPL_OMR.TRANSKODE  =  'F410';                     00003300
+                                                                        00003310
+               EXEC CICS RETURN TRANSID     (TRANS_OPPL_OMR.TRANSKODE)  00003320
+                                COMMAREA    (KOM_OMR);                  00003330
+            END;                                                        00003340
+                                                                        00003350
+         OTHERWISE                                                      00003360
+            DO;                                                         00003370
+                                                                        00003380
+               STYREKODE = '  ';                                        00003390
+                                                                        00003400
+               IF FEIL THEN                                             00003410
+                  DO;                                                   00003420
+                     KOM_OMR.TRANS_OPPL_PEKER  =                        00003430
+                                        ADDR(KOM_OMR.TRANS_OPPL_OMR);   00003440
+                     TRANS_OPPL_OMR.TRANSKODE  = 'R045';                00003450
+                     EXEC CICS RETURN TRANSID (TRANS_OPPL_OMR.TRANSKODE)00003460
+                                      COMMAREA(KOM_OMR);                00003470
+                     /*----------------------------------------------*/ 00003480
+                     /* VIA CICS TILBAKE TIL STARTEN AV R0010450     */ 00003490
+                     /* FOR Å TA INN NY STYRINGSKODE / FUNKSJONSKODE */ 00003500
+                     /*----------------------------------------------*/ 00003510
+                  END;                                                  00003520
+                                                                        00003530
+               /*----------------------------------------------------*/ 00003540
+               /* VIA CICS TILBAKE TIL R0010301, VELG FUNKSJONSKODE  */ 00003550
+               /*----------------------------------------------------*/ 00003560
+                                                                        00003570
+               EXEC CICS XCTL  PROGRAM('R0010301') COMMAREA(KOM_OMR);   00003580
+            END;                                                        00003590
+         END;  /* SELECT  */                                            00003600
+      END;     /* IF THEN */                                            00003610
+                                                                        00003620
+                                                                        00003630
+   SELECT(S00101EI.FJERNINGSKODEI);                                     00003640
+                                                                        00003650
+      WHEN('ST','AT')                                                   00003660
+         STYREKODE = S00101EI.FJERNINGSKODEI;                           00003670
+                                                                        00003680
+      OTHERWISE                                                         00003690
+        DO;                                                             00003700
+           /*-------------------------------------------------------*/  00003710
+           /* SKRIVER MELDING OM 'FEIL KODE REGISTRERT              */  00003720
+           /*-------------------------------------------------------*/  00003730
+                                                                        00003740
+           MAP_MELDING    = 'FEIL KODE REGISTRERT';                     00003750
+           S00101EI.FJERNINGSKODEL = -1;    /* CURSOR POS           */  00003760
+           CALL SEND_MAP;                                               00003770
+           GO TO RETUR;                                                 00003780
+        END;                                                            00003790
+   END;              /*  SELECT          */                             00003800
+                                                                        00003810
+   ALLOCATE WORK_TRANS_LISTE;                                           00003820
+                                                                        00003830
+   WORK_TRANS_LISTE = '';                                               00003840
+   DO I = 1 TO 5;                                                       00003850
+      TRANS_LISTE_LINJE(I) = WORK_TRANS_LISTE;                          00003860
+   END;                                                                 00003870
+                                                                        00003880
+                                                                        00003890
+   S00101EI.FNRL     = -1;          /* CURSOR POS   */                  00003900
+                                                                        00003910
+   IF ^ F_NUMERISK(S00101EI.FNRI)  THEN                                 00003920
+      DO;                                                               00003930
+         MAP_MELDING = 'FNR INNEHOLDER IKKE-NUMERISKE FELT';            00003940
+         CALL SEND_MAP;                                                 00003950
+         GOTO RETUR;                                                    00003960
+      END;                                                              00003970
+   ELSE                                                                 00003980
+      IF ^ F_GYLDIG_FNR(S00101EO.FNRO)  THEN                            00003990
+         DO;                                                            00004000
+            MAP_MELDING = 'FNR UGYLDIG';                                00004010
+            CALL SEND_MAP;                                              00004020
+            GOTO RETUR;                                                 00004030
+         END;                                                           00004040
+      ELSE                                                              00004050
+         DO;                                                            00004060
+            /*----------------------------------------------------*/    00004070
+            /* VIA CICS TIL R0019906:SJEKKES MOT FNR-ENDRINGS-REG */    00004080
+            /* OM FØDSELSNUMMERET ER ENDRET                       */    00004090
+            /*----------------------------------------------------*/    00004100
+                                                                        00004110
+            FNR_REG.FNR1     = S00101EO.FNRO;                           00004120
+                                                                        00004130
+            EXEC CICS LINK PROGRAM('R0019906') COMMAREA(FNR_REG);       00004140
+                                                                        00004150
+            IF FNR_REG.FNR2  > 0   THEN                                 00004160
+               DO;                                                      00004170
+                  PIC_11        =  S00101EO.FNRO;                       00004180
+                  S00101EO.FNRO =  FNR_REG.FNR2;                        00004190
+                  MAP_MELDING   = 'FØDSELSNUMMER '!!PIC_11!!            00004200
+                                  ' ER ENDRET, TRYKK ENTER !';          00004210
+                  CALL SEND_MAP;                                        00004220
+                  GOTO RETUR;                                           00004230
+               END;                                                     00004240
+                                                                        00004250
+            FNR_SØKER  = S00101EO.FNRO;                                 00004260
+            SEARCH_FNR = S00101EO.FNRO;                                 00004270
+                                                                        00004280
+            /*----------------------------------------------------*/    00004290
+            /* SUB-PROGRAM AV R0010450 SOM ÅPNER DATABASEN        */    00004300
+            /*----------------------------------------------------*/    00004310
+                                                                        00004320
+            CALL DATABASE('OPEN');                                      00004330
+                                                                        00004340
+            IF FEIL THEN                                                00004350
+               DO;                                                      00004360
+                  CALL SEND_MAP;                                        00004370
+                  GOTO RETUR;                                           00004380
+               END;                                                     00004390
+                                                                        00004400
+                                                                        00004410
+            SELECT(STYREKODE);                                          00004420
+               WHEN('ST')                                               00004430
+                  DO;                                                   00004440
+                     IF SUBSTR(DIV_PARAM_OMR.CICS_NAVN,1,4) =           00004450
+                                                           'HELP' THEN  00004460
+                        DO;                                             00004470
+                           MAP_MELDING  =                               00004480
+            'FJERNING AV SISTE TRANS. ER IKKE TILLATT FOR  US-BLANKET'; 00004490
+                           S00101EI.FJERNINGSKODEL = -1;                00004500
+                           FEIL        = '1'B;                          00004510
+                           CALL SEND_MAP;                               00004520
+                           GOTO RETUR;                                  00004530
+                        END;                                            00004540
+                                                                        00004550
+                     CALL VIS_MEG_SISTE_TRANS;                          00004560
+                                                                        00004570
+    /* ENDERING SP FOR CHECKING NEST_SISTE STATUS  FOR  ST   */         00004580
+                                                                        00004590
+                     IF B01.STATUS.STATUS_KODE (1) ^=  'N' &            00004600
+                        B01.STATUS.STATUS_KODE (2) ^=  'N' THEN         00004610
+                        DO;                                             00004620
+                           MAP_MELDING  =                               00004630
+    'FJERNING AV SISTE TRANS. ER IKKE TILLATT...N_SISTE STATUS MANGLER';00004640
+                           S00101EI.FJERNINGSKODEL = -1;                00004650
+                           FEIL        = '1'B;                          00004660
+                           CALL SEND_MAP;                               00004670
+                           GOTO RETUR;                                  00004680
+                        END;                                            00004690
+      /* ENDERING SP TIL HERE                                     */    00004700
+                     /*---------------------------------------------*/  00004710
+                     /* R0010451 : LESER SISTE TRANS FRA TRANS-HIST */  00004720
+                     /*---------------------------------------------*/  00004730
+                                                                        00004740
+                     IF FATAL_FEIL THEN                                 00004750
+                        GOTO FATAL_SLUTT;                               00004760
+                     ELSE IF FEIL THEN                                  00004770
+                        DO;                                             00004780
+                           CALL SEND_MAP        ;                       00004790
+                           GOTO RETUR           ;                       00004800
+                        END;                                            00004810
+                                                                        00004820
+                     CALL MAPS_UT_ST;                                   00004830
+                                                                        00004840
+                     /*-----------------------------------------------*/00004850
+                     /* PROCEDURE I R0010451 SOM SKRIVER SISTE-STATUS */00004860
+                     /* OG NEST-SISTE STATUS TIL SKJERMEN             */00004870
+                     /*-----------------------------------------------*/00004880
+                                                                        00004890
+                     CALL HENT_SVAR_OG_BEKREFT;                         00004900
+                                                                        00004910
+                     /*-----------------------------------------------*/00004920
+                     /* PROCEDURE I R0010451 SOM HENTER SVAR OG       */00004930
+                     /* BEKREFELSE PÅ FJERNING                        */00004940
+                     /*-----------------------------------------------*/00004950
+                                                                        00004960
+                     IF S0010E6I.FJERNEI = 'B' THEN                     00004970
+                        DO;                                             00004980
+                           CALL FJERN_SISTE_TRANS;                      00004990
+                                                                        00005000
+                           /*-----------------------------------------*/00005010
+                           /* PROCEDURE I R0010451: OMGJØR N-SISTE    */00005020
+                           /* STATUS TIL SISTE STATUS, SKRIVER DETTE  */00005030
+                           /* UT PÅ BASEN VED R0015401                */00005040
+                           /*-----------------------------------------*/00005050
+                                                                        00005060
+                           IF FATAL_FEIL THEN                           00005070
+                              GOTO FATAL_SLUTT;                         00005080
+                                                                        00005090
+                           W_TRANS_PEKER = TRANS_PEKER;                 00005100
+                                                                        00005110
+                           /*-----------------------------------------*/00005120
+                           /* VIA CICS TIL R0010490:                  */00005130
+                           /* SKRIV TRANS PÅ VENTEREG                 */00005140
+                           /*-----------------------------------------*/00005150
+                    /*  IF EIBTRMID    =  'R1AD'     !                  00005160
+                     *     EIBTRMID    =  'R2AL'     THEN               00005170
+                     */                                                 00005180
+                           DO I = 1 TO ANTALL_TRANS_I_TRANS_LISTE;      00005190
+                              TRANS_PEKER      = TRANS_PTR      (I);    00005200
+                              TRANS_OPPL_PEKER = TRANS_OPPL_PTR (I);    00005210
+                                                                        00005220
+                              EXEC CICS LINK PROGRAM   ('R0010490')     00005230
+                                             COMMAREA  ( KOM_OMR  );    00005240
+                                                                        00005250
+                              IF FEIL_MELD_NR   >  0 THEN               00005260
+                                 DO;                                    00005270
+                                    TRANS_PEKER =  W_TRANS_PEKER;       00005280
+                                    GOTO FATAL_SLUTT;                   00005290
+                                 END;                                   00005300
+                           END;                                         00005310
+                                                                        00005320
+                           TRANS_PEKER = W_TRANS_PEKER;                 00005330
+                        END;                                            00005340
+                  END;                                                  00005350
+                                                                        00005360
+               WHEN('AT')                                               00005370
+                  DO;                                                   00005380
+                     /*---------------------------------------------*/  00005390
+                     /* PROCEDURE I R0010452:LESER FØRSTE TRANSEN   */  00005400
+                     /* FRA TRANSHIST VED R0015201                  */  00005410
+                     /*---------------------------------------------*/  00005420
+                                                                        00005430
+                     CALL FORBEREDE_TRANS;                              00005440
+                                                                        00005450
+                     IF FATAL_FEIL  THEN                                00005460
+                        GOTO  FATAL_SLUTT;                              00005470
+                     ELSE IF  FEIL  THEN                                00005480
+                        DO;                                             00005490
+                           CALL SEND_MAP        ;                       00005500
+                           GOTO RETUR           ;                       00005510
+                        END;                                            00005520
+                                                                        00005530
+                     /*---------------------------------------------*/  00005540
+                     /* PROCEDURE I R0010452:LESER ALLE TRANSER     */  00005550
+                     /* OG LEGGER DEM UT I EN TRANSLISTE            */  00005560
+                     /*---------------------------------------------*/  00005570
+                                                                        00005580
+                     CALL HENT_TRANS;                                   00005590
+                                                                        00005600
+                     IF FATAL_FEIL  THEN                                00005610
+                        GOTO  FATAL_SLUTT;                              00005620
+                     ELSE IF  FEIL  THEN                                00005630
+                        DO;                                             00005640
+                           CALL SEND_MAP        ;                       00005650
+                           GOTO RETUR           ;                       00005660
+                        END;                                            00005670
+                                                                        00005680
+                     /*----------------------------------------------*/ 00005690
+                     /* PROCEDURE I R0010452 SOM SKRIVER             */ 00005700
+                     /* EN OG EN TRANS UT PÅ SKJERMEN                */ 00005710
+                     /*----------------------------------------------*/ 00005720
+                                                                        00005730
+                     CALL MAPS_UT_AT;                                   00005740
+                                                                        00005750
+                     /*----------------------------------------------*/ 00005760
+                     /* PROCEDURE I R0010451 SOM HENTER SVAR OG      */ 00005770
+                     /* BEKREFELSE PÅ FJERNING                       */ 00005780
+                     /*----------------------------------------------*/ 00005790
+                                                                        00005800
+                     CALL HENT_SVAR_OG_BEKREFT;                         00005810
+                                                                        00005820
+                     IF S0010E6I.FJERNEI = 'B' THEN                     00005830
+                        DO;                                             00005840
+                           /*----------------------------------------*/ 00005850
+                           /* PROCEDURE I R0010452 SOM FJERNER ALLE  */ 00005860
+                           /* TRANSER, N-SISTE STATUS OG SISTE STATUS*/ 00005870
+                           /*----------------------------------------*/ 00005880
+                                                                        00005890
+                           CALL FJERN_ALLE_TRANS;                       00005900
+                                                                        00005910
+                           IF FATAL_FEIL THEN                           00005920
+                              GOTO FATAL_SLUTT;                         00005930
+                                                                        00005940
+                           /*----------------------------------------*/ 00005950
+                           /* VIA CICS TIL R0010490:                 */ 00005960
+                           /* SKRIV TRANS TIL VENTEREG               */ 00005970
+                           /*----------------------------------------*/ 00005980
+                                                                        00005990
+                           W_TRANS_PEKER       = TRANS_PEKER;           00006000
+                                                                        00006010
+                      /*IF EIBTRMID    =  'R1AD'     !                  00006020
+                       *   EIBTRMID    =  'R2AL'     THEN               00006030
+                       */  DO I = 1 TO ANTALL_TRANS_I_TRANS_LISTE  ;    00006040
+                              TRANS_PEKER      = TRANS_PTR      (I);    00006050
+                              TRANS_OPPL_PEKER = TRANS_OPPL_PTR (I);    00006060
+                                                                        00006070
+                              EXEC CICS LINK PROGRAM  ('R0010490')      00006080
+                                             COMMAREA ( KOM_OMR  ) ;    00006090
+                                                                        00006100
+                                                                        00006110
+                              IF FEIL_MELD_NR   > 0 THEN                00006120
+                                 DO;                                    00006130
+                                    TRANS_PEKER = W_TRANS_PEKER;        00006140
+                                    GOTO FATAL_SLUTT;                   00006150
+                                 END;                                   00006160
+                           END;                                         00006170
+                           TRANS_PEKER = W_TRANS_PEKER;                 00006180
+                        END;                                            00006190
+                  END;                                                  00006200
+               OTHERWISE ;                                              00006210
+            END;        /*       SELECT          */                     00006220
+                                                                        00006230
+            KOM_OMR.TRANS_OPPL_PEKER  = ADDR(KOM_OMR.TRANS_OPPL_OMR);   00006240
+            TRANS_OPPL_OMR.TRANSKODE  = 'R045';                         00006250
+                                                                        00006260
+         END;                                                           00006270
+                                                                        00006280
+   /*----------------------------------------------------------------*/ 00006290
+   /** VED NORMAL AVSLUTNING SENDES ENDRINGS - MAP UT PåNYTT         */ 00006300
+   /*----------------------------------------------------------------*/ 00006310
+                                                                        00006320
+   ALLOCATE S00101EO              ;                                     00006330
+   S00101EO.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                      00006340
+                                                                        00006350
+   EXEC CICS SEND  MAP ('S00101E') MAPSET('S001013') ERASE ;            00006360
+                                                                        00006370
+  RETUR:                                                                00006380
+   IF FEIL THEN                                                         00006390
+      DO;                                                               00006400
+         KOM_OMR.TRANS_OPPL_PEKER  =  ADDR (KOM_OMR.TRANS_OPPL_OMR);    00006410
+         TRANS_OPPL_OMR.TRANSKODE  = 'R045';                            00006420
+      END;                                                              00006430
+                                                                        00006440
+   EXEC CICS RETURN TRANSID(TRANS_OPPL_OMR.TRANSKODE)COMMAREA(KOM_OMR); 00006450
+                                                                        00006460
+                                                                        00006470
+  FATAL_SLUTT:                                                          00006480
+   FEIL_MELDING = 'PROGRAM ' !! DIV_PARAM_OMR.PROGRAM_ID   !!           00006490
+                  ' GÅR I FEIL VED LABEL NR. '             !!           00006500
+                    DIV_PARAM_OMR.FEIL_VED_LABEL;                       00006510
+                                                                        00006520
+   EXEC CICS PURGE MESSAGE;                                             00006530
+   EXEC CICS SEND  TEXT FROM (FEIL_MELDING) ACCUM ERASE PAGING          00006540
+                                                  JUSTIFY (10);         00006550
+   FEIL_STRUC.KOM_OMR_PEKER = COMMAREA_PEKER;                           00006560
+   FEIL_STRUC.FEIL_NR       = FEIL_MELD_NR;                             00006570
+                                                                        00006580
+   EXEC CICS LINK PROGRAM ('R0019921') COMMAREA (FEIL_STRUC);           00006590
+                                                                        00006600
+   /*---------------------------------------------------------------*/  00006610
+   /* HENTER FEILMELDING FRA FEILMELDINGSBASEN                      */  00006620
+   /*---------------------------------------------------------------*/  00006630
+                                                                        00006640
+   EXEC CICS SEND TEXT FROM (FEIL_MELDING)  JUSTIFY (14)                00006650
+                                            ACCUM   PAGING;             00006660
+   IF FEIL_MELD_NR ^=  499 THEN                                         00006670
+      FEIL_MELDING  = 'RETUR_KODE = ' !! DIV_PARAM_OMR.DB_STATUS_KODE;  00006680
+   ELSE                                                                 00006690
+      DO;                                                               00006700
+         PIC_11       =  SEARCH_FNR;                                    00006710
+         FEIL_MELDING = 'FEIL PÅ FNR: ' !! PIC_11;                      00006720
+      END;                                                              00006730
+                                                                        00006740
+   EXEC CICS SEND TEXT FROM (FEIL_MELDING)  JUSTIFY(18) ACCUM PAGING;   00006750
+                                                                        00006760
+   FEIL_MELDING = 'TASKEN BLIR KANSELERT !!!!               ' !!        00006770
+                  'TASKEN BLIR KANSELERT !!!!';                         00006780
+                                                                        00006790
+   EXEC CICS SEND  TEXT   FROM (FEIL_MELDING) JUSTIFY(22) ACCUM PAGING; 00006800
+   EXEC CICS SEND  PAGE;                                                00006810
+                                                                        00006820
+   /*---------------------------------------------------------------*/  00006830
+   /*        NB!   NB! TASKEN BLIR KANSELERT                        */  00006840
+   /*---------------------------------------------------------------*/  00006850
+                                                                        00006860
+   EXEC CICS ABEND ABCODE(STOP);                                        00006870
+                                                                        00006880
+                                                                        00006890
+                                                                        00006900
+  /* *************************************************************** */ 00006910
+  /*       PROCEDURE FOR Å SENDE MAP_MELDING TIL SKJERM.             */ 00006920
+  /* *************************************************************** */ 00006930
+                                                                        00006940
+  SEND_MAP:                                                             00006950
+     PROC;                                                              00006960
+         S00101EO.MELDINGO   = MAP_MELDING;                             00006970
+         S00101EO.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                00006980
+         EXEC CICS SEND  MAP('S00101E') MAPSET('S001013') ERASE CURSOR; 00006990
+  END SEND_MAP;                                                         00007000
+                                                                        00007010
+                                                                        00007020
+  /* *************************************************************** */ 00007030
+  /*       PROCEDURE SOM ÅPNER DATABASEN                             */ 00007040
+  /* *************************************************************** */ 00007050
+                                                                        00007060
+ DATABASE:                                                              00007070
+   PROC(STYRING);                                                       00007080
+                                                                        00007090
+   DCL                                                                  00007100
+     STYRING                               CHAR(5),                     00007110
+     NULL                                  BUILTIN,                     00007120
+     UNSPEC                                BUILTIN,                     00007130
+     PLITDLI                               ENTRY;                       00007140
+                                                                        00007150
+   %INCLUDE P0012002;   /* PCB - PEKER - OMR    */                      00007160
+                                                                        00007170
+   /*-----------------------------------------------------------------*/00007180
+   /* DL1-PARAMETRE SOM BRUKES VED INITIERINGS- OG AVSLUTTNINGS-KALL  */00007190
+   /*-----------------------------------------------------------------*/00007200
+                                                                        00007210
+   DCL                                                                  00007220
+      W01_PSB_R001                CHAR (8)       INIT('B001R001'),      00007230
+      W01_PSB_NAVN                CHAR (8)       INIT('        '),      00007240
+      W01_PCB_FUNCTION            CHAR (4)       INIT('PCB '),          00007250
+      W01_TERM_FUNCTION           CHAR (4)       INIT('TERM');          00007260
+                                                                        00007270
+   /*-----------------------------------------------------------------*/00007280
+   /*    ARBEIDSFELTER SOM BRUKES AV UIB (USER INTERFACE BLOCK)       */00007290
+   /*-----------------------------------------------------------------*/00007300
+                                                                        00007310
+   %INCLUDE DLIUIB;                                                     00007320
+                                                                        00007330
+   DCL 1  W01_DLI_PARAM,                                                00007340
+          2   W02_GU             CHAR (4)       INIT('GU  '),           00007350
+          2   W02_PARM_CT_1      FIXED BIN(31)  INIT(1)     ,           00007360
+          2   W02_PARM_CT_3      FIXED BIN(31)  INIT(3)     ,           00007370
+          2   W02_PARM_CT_4      FIXED BIN(31)  INIT(4)     ;           00007380
+                                                                        00007390
+                                                                        00007400
+     IF STYRING = 'OPEN' THEN                                           00007410
+        DO;                                                             00007420
+           W01_PSB_NAVN    =   DIV_PARAM_OMR.PSB_NAVN;                  00007430
+     /*    W01_PSB_NAVN          =   W01_PSB_R001 ; */                  00007440
+                                                                        00007450
+           CALL   PLITDLI                        (W02_PARM_CT_3,        00007460
+                                                  W01_PCB_FUNCTION,     00007470
+                                                  W01_PSB_NAVN,         00007480
+                                                  UIBPTR);              00007490
+                                                                        00007500
+           IF DLIUIB.UIBFCTR                  =  '00000000'B THEN       00007510
+              DO;                                                       00007520
+                 ALLOCATE PCB_UIB_PEKER_OMR;                            00007530
+                 PCB_UIB_PEKER_OMR.PCB_PEKER  =   UIBPCBAL;             00007540
+                 PCB_UIB_PEKER_OMR.UIB_PEKER  =   UIBPTR;               00007550
+              END;                                                      00007560
+           ELSE                                                         00007570
+              DO;                                                       00007580
+                 FEIL        = '1'B;                                    00007590
+                 MAP_MELDING = 'NOE ER GALT MED DATABASEN, KODE: ' !!   00007600
+                     UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);         00007610
+              END;                                                      00007620
+        END;                                                            00007630
+     ELSE                                                               00007640
+        DO;                                                             00007650
+           CALL   PLITDLI                        (W02_PARM_CT_1,        00007660
+                                                  W01_TERM_FUNCTION);   00007670
+           KOM_OMR.PCB_UIB_PEKER = NULL;                                00007680
+        END;                                                            00007690
+                                                                        00007700
+ END DATABASE;                                                          00007710
+                                                                        00007720
+                                                                        00007730
+  /* *************************************************************** */ 00007740
+  /*       PROCEDURE FOR LEGGE LOW-VALUES I MAP'EN                   */ 00007750
+  /* *************************************************************** */ 00007760
+                                                                        00007770
+ LOW_VALUES_TIL_MAP:                                                    00007780
+   PROC;                                                                00007790
+      LOW_CHAR_BASED = (300)' ';           /* X'00'  */                 00007800
+ END LOW_VALUES_TIL_MAP;                                                00007810
+                                                                        00007820
+                                                                        00007830
+   %INCLUDE R0010451;           /* VIS_MEG_SISTE_TRANS      */          00007840
+   %PAGE;                                                               00007850
+   %INCLUDE R0010452;           /* VIS_MEG_ALLE_TRANS       */          00007860
+   %PAGE;                                                               00007870
+   %INCLUDE R0019904;           /* F_GYLDIG_FNR             */          00007880
+   %PAGE;                                                               00007890
+   %INCLUDE R0019910;           /* F_NUMERISK               */          00007900
+   %PAGE;                                                               00007910
+   %INCLUDE R0019913;           /* F_SNU_DATO               */          00007920
+   %PAGE;                                                               00007930
+   %INCLUDE R0019956;           /* P9956_BER_G_CICS         */          00007940
+   %PAGE;                                                               00007950
+   %INCLUDE R0019957;           /* P900_NOR_DATA (FNR,TKNR) */          00007960
+   %PAGE;                                                               00007970
+                                                                        00007980
+ /* **************************************************************** */ 00007990
+ /*    SKRIV INFORMASJON TIL BURKER REG                              */ 00008000
+ /* **************************************************************** */ 00008010
+  SKRIV_BRUKER_ID: PROC;                                                00008020
+                                                                        00008030
+        BRUKERINFO_REC.FNR           = DIV_PARAM_OMR.SEARCH_FNR;        00008040
+        BRUKERINFO_REC.BLANKET_TYPE  = STYRINGS_OMR.STYREKODE;          00008050
+        BRUKERINFO_REC.BRUKER_ID     = DIV_PARAM_OMR.BRUKER_ID;         00008060
+        BRUKERINFO_REC.DATO          = DATE;                            00008070
+                                                                        00008080
+        HJELP_TID                    = EIBTIME;                         00008090
+        BRUKERINFO_REC.TID           = HJELP_TID;                       00008100
+        BRUKERINFO_REC.KJORINGS_TYPE = STYRINGS_OMR.FUNKSJONSKODE   ;   00008110
+        BRUKERINFO_REC.TERMINAL_NR   = EIBTRMID;                        00008120
+     /* BRUKERINFO_REC.BRUKER_NAVN   = DIV_PARAM_OMR.BRUKER_PASS; */    00008130
+                                                                        00008140
+        IF BRUKERINFO_REC.BLANKET_TYPE  ^= 'US' THEN                    00008150
+           EXEC CICS WRITE DATASET('BRUKINFO')                          00008160
+                    FROM (BRUKERINFO_REC)                               00008170
+                    RIDFLD(BRUK_LOGG) RBA;                              00008180
+  END SKRIV_BRUKER_ID;                                                  00008190
+ END R001045;                                                           00008200

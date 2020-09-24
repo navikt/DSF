@@ -1,0 +1,295 @@
+ /*       SIST ENDRET 06/03-91 11.48.15 AV   DYBVIK                   */00000000
+ /* ***************************************************************** */00000050
+ /*               R 0 0 1 N 6 0 5                                     */00000040
+ /* ***************************************************************** */00000050
+ /*IDENTIFIKASJON:                                                    */00000060
+ /* **********************                                            */00000070
+ /*  PROGRAM-IDENT : R001N605   KONTROLL_U2_SPES   SUBPROGRAM         */00000080
+ /*  PROGRAM-SPRÅK : PLI                                              */00000090
+ /*  PROGRAMMERER  : JAN Y. DYBVIK                                    */00000100
+ /*  PROGRAMMET BLE LAGET : NOV.  1990                                */00000110
+ /*                                                                   */00000120
+ /* ***************************************************************** */00000130
+ /*HENSIKT:                                                           */00000140
+ /* **********                                                        */00000150
+ /*  KONTROLLERER GRUNNBLANKETT U2 - DEN SPESIELLE DEL.               */00000160
+ /*  RETURNERER FEIL_FUNNET = '1'B VED FEIL, ELLERS '0'B.             */00000170
+ /*                                                                   */00000180
+ /* ***************************************************************** */00000190
+ /*PROGRAMTILKNYTTING:                                                */00000200
+ /* ********************                                              */00000210
+ /*  PROGRAMMET INCLUDES AV R001N601 - KONTROLL_GRUNNBLANKETT_U2      */00000220
+ /*  ARBEIDSOMRÅDET P001N601 ER INCLUDET I HOVEDPROG.                 */00000230
+ /*  BRUK :                                                           */00000240
+ /*      CALL KONTROLL_U2_SPES(FEIL_FUNNET);                          */00000250
+ /*                                                                   */00000260
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN INCLUDES I HOVEDPROG :       */00000270
+ /*      R0019910 - F_NUMERISK                                        */00000280
+ /*      R0019912 - F_FELT_PIC_CHARNN                                 */00000290
+ /*      VERIFY   - BUILTIN-FUNCTION                                  */00000300
+ /*                                                                   */00000310
+ /*  EKSTERN PROSEDYRE SOM CALLES :                                   */00000320
+ /*      R0010608 - TT_U2_EP     (INCLUDE I HOVEDPROG)                */00000330
+ /*                                                                   */00000340
+ /*  INTERNE PROSEDYRER :                                             */00000350
+ /*      KONTROLL_U2_SPES(FEIL_FUNNET)                                */00000360
+ /*      SJEKK_TT_NUMERISK                                            */00000370
+ /*                                                                   */00000380
+ /* ***************************************************************** */00000390
+ /*DATASETTOPPLYSNINGER:                                              */00000400
+ /* ***********************                                           */00000410
+ /*   STATTAB - STATSBORGERSKAPSTABELL - EXEC CICS READ DATASET       */00000420
+ /*                                      ('STATTAB')........          */00000430
+ /* ***************************************************************** */00000440
+ /*FEILMELDINGER:                                                     */00000450
+ /* *******************                                               */00000460
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */00000470
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */00000480
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDINGER PÅ SKJERMBILDET.   */00000490
+ /*                                                                   */00000500
+ /* ***************************************************************** */00000510
+ KONTROLL_U2_SPES:                                                      00000520
+   PROC(FEIL_FUNNET);                                                   00000530
+ %PAGE;                                                                 00000540
+   DCL                                                                  00000550
+      FEIL_FUNNET         BIT(1);                                       00000560
+   DCL                                                                  00000570
+      KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),            00000580
+      KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),            00000590
+      KEY_PEKER1                 POINTER,                               00000600
+      KEY_PEKER2                 POINTER,                               00000610
+      ST_RECL                    CHAR (35);                             00000620
+   DCL                                                                  00000630
+      T_FNR               PIC'(11)9';                                   00000640
+   DCL                                                                  00000650
+      1 FNR DEF T_FNR,                                                  00000660
+         2 DG             PIC'99',                                      00000670
+         2 MN             PIC'99',                                      00000680
+         2 ÅR             PIC'99',                                      00000690
+         2 PERSNR,                                                      00000700
+            3 ÅRHUNDRE    PIC'999',                                     00000710
+            3 REST        PIC'99';                                      00000720
+   DCL                                                                  00000730
+      FYLT_SEKSTISJU      PIC'(4)9',                                    00000740
+      FYLT_SYTTI          PIC'(4)9';                                    00000750
+   DCL                                                                  00000760
+      HJ_UFT_ÅM           PIC'(4)9',                                    00000770
+      HJ_UFT_Å DEF HJ_UFT_ÅM POS(1)    PIC'99',                         00000780
+      HJ_UFT_M DEF HJ_UFT_ÅM POS(3)    PIC'99',                         00000790
+      HJ_VIRK_ÅM          PIC'(4)9',                                    00000800
+      HJ_STI_ÅM           PIC'(4)9',                                    00000810
+      FEIL                BIT(1);                                       00000820
+   DCL                                                                  00000830
+      TT_MAKS_TIL_DATO    PIC'(4)9',                                    00000840
+      TIL_DATO_ÅM         PIC'(4)9',                                    00000850
+      W_TT_MND            PIC'99';                                      00000860
+ %SKIP(2);                                                              00000870
+      T_FNR       = U2S.FNR;                                            00000880
+ %PAGE;                                /*    */                         00000890
+                                                                        00000900
+ /* ***************************************************************** */00000910
+ /* TESTER OM FORUTSETNINGENE FOR Å KONTROLLERE FELTENE I SPES.INFO   */00000920
+ /* DELEN ER TILSTEDE. DVS.:                                          */00000930
+ /* - ET ELLER FLERE FELT MÅ VÆRE UTFYLT                              */00000940
+ /* - NUMERISKE FELT KAN BARE INNEHOLDE NUMERISKE VERDIER             */00000950
+ /* ***************************************************************** */00000960
+                                                                        00000970
+    FEIL_FUNNET = '0'B;                                                 00000980
+    KEY_PEKER1  = ADDR(U2SP.STATSBORGER);                               00000990
+    KEY_PEKER2  = ADDR(U2SP.BOSATT);                                    00001000
+    HJ_UFT_ÅM   = F_SNU_DATO(U2S.UFT_MÅ);                               00001010
+    HJ_VIRK_ÅM  = F_SNU_DATO(U2S.VIRK_DATO_MÅ);                         00001020
+    HJ_STI_ÅM   = F_SNU_DATO(U2SP.STI_MÅ);                              00001030
+    CALL SJEKK_TT_NUMERISK;                                             00001040
+                                                                        00001050
+    IF ^FEIL_FUNNET THEN                                                00001060
+      DO;                                                               00001070
+                                                                        00001080
+ /* ***************************************************************** */00001090
+ /* FELTKONTROLLER........                                            */00001100
+ /* ***************************************************************** */00001110
+                                                                        00001120
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);               00001130
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)       00001140
+                                               INTO(ST_RECL);           00001150
+              GOTO STAT_UT;                                             00001160
+          NOTFND1:                                                      00001170
+              FEIL_FUNNET        = '1'B;                                00001180
+              U2SP.STATSBORGERNR = 24;                                  00001190
+              GOTO STAT_UT;                                             00001200
+          STAT_UT:                                                      00001210
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);               00001220
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT2)       00001230
+                                               INTO(ST_RECL);           00001240
+              GOTO BO_UT;                                               00001250
+          NOTFND2:                                                      00001260
+              FEIL_FUNNET   = '1'B;                                     00001270
+              U2SP.BOSATTNR = 25;                                       00001280
+              GOTO BO_UT;                                               00001290
+          BO_UT:                                                        00001300
+                                                                        00001310
+            IF U2SP.PENSJONSTRYGDET = 'N'           THEN                00001320
+               U2SP.PENSJONSTRYGDET = ' ';                              00001330
+            IF ^(U2SP.PENSJONSTRYGDET = ' ' !                           00001340
+                 U2SP.PENSJONSTRYGDET = 'J')  THEN                      00001350
+               DO;                                                      00001360
+                  FEIL_FUNNET            = '1'B;                        00001370
+                  U2SP.PENSJONSTRYGDETNR = 354;                         00001380
+               END;                                                     00001390
+            IF U2SP.MINST_20_ÅR     = 'N'            THEN               00001400
+               U2SP.MINST_20_ÅR     = ' ';                              00001410
+            IF ^(U2SP.MINST_20_ÅR     = ' ' !                           00001420
+                 U2SP.MINST_20_ÅR     = 'J')  THEN                      00001430
+               DO;                                                      00001440
+                  FEIL_FUNNET            = '1'B;                        00001450
+                  U2SP.MINST_20_ÅRNR     = 355;                         00001460
+               END;                                                     00001470
+            IF U2SP.BEREGNING_KONV = 'N'            THEN                00001480
+               U2SP.BEREGNING_KONV = ' ';                               00001490
+            IF ^(U2SP.BEREGNING_KONV = ' ' !                            00001500
+                 U2SP.BEREGNING_KONV = 'J')  THEN                       00001510
+               DO;                                                      00001520
+                  FEIL_FUNNET            = '1'B;                        00001530
+                  U2SP.BEREGNING_KONVNR  = 356;                         00001540
+               END;                                                     00001550
+            IF U2SP.KONVENSJON = 'N'             THEN                   00001560
+               U2SP.KONVENSJON = ' ';                                   00001570
+            IF ^(U2SP.KONVENSJON = ' ' ! U2SP.KONVENSJON = 'J') THEN    00001580
+               DO;                                                      00001590
+                  FEIL_FUNNET       = '1'B;                             00001600
+                  U2SP.KONVENSJONNR = 125;                              00001610
+               END;                                                     00001620
+            IF ^(U2SP.FRAVIK_FLYKT = ' ' ! U2SP.FRAVIK_FLYKT = 'J')     00001630
+               THEN                                                     00001640
+               DO;                                                      00001650
+                  FEIL_FUNNET         = '1'B;                           00001660
+                  U2SP.FRAVIK_FLYKTNR = 26;                             00001670
+               END;                                                     00001680
+            IF ^(U2SP.OVERKOMP_UTL = 'J' ! U2SP.OVERKOMP_UTL = ' ' !    00001690
+                 U2SP.OVERKOMP_UTL = 'N')         THEN                  00001700
+               DO;                                                      00001710
+                  FEIL_FUNNET         = '1'B;                           00001720
+                  U2SP.OVERKOMP_UTLNR = 35;                             00001730
+               END;                                                     00001740
+            IF ^(U2SP.IKKE_GP = ' ' ! U2SP.IKKE_GP = 'J') THEN          00001750
+               DO;                                                      00001760
+                  FEIL_FUNNET    = '1'B;                                00001770
+                  U2SP.IKKE_GPNR = 36;                                  00001780
+               END;                                                     00001790
+            IF ^(U2SP.TT_NORDEN_ANNET = ' ' !                           00001800
+                 U2SP.TT_NORDEN_ANNET = 'J')  THEN                      00001810
+               DO;                                                      00001820
+                  FEIL_FUNNET         = '1'B;                           00001830
+                  U2SP.TT_NORDEN_ANNETNR = 361;                         00001840
+               END;                                                     00001850
+            IF U2SP.FRAVIK_8_1_NR3  = 'N'            THEN               00001860
+               U2SP.FRAVIK_8_1_NR3  = ' ';                              00001870
+            IF ^(U2SP.FRAVIK_8_1_NR3  = ' ' !                           00001880
+                 U2SP.FRAVIK_8_1_NR3  = 'J')  THEN                      00001890
+               DO;                                                      00001900
+                  FEIL_FUNNET         = '1'B;                           00001910
+                  U2SP.FRAVIK_8_1_NR3NR = 367;                          00001920
+               END;                                                     00001930
+            IF U2SP.STI_MÅ > 0 THEN                                     00001940
+               IF  ^(HJ_STI_ÅM >= HJ_UFT_ÅM  &                          00001950
+                     HJ_STI_ÅM <= HJ_VIRK_ÅM) THEN                      00001960
+                  DO;                                                   00001970
+                     FEIL_FUNNET        = '1'B;                         00001980
+                     U2SP.STI_MÅNR      = 362;                          00001990
+                  END;                                                  00002000
+        END;                                                            00002010
+                                                                        00002020
+ /* ***************************************************************** */00002030
+ /*              DIV. KRYSSKONTROLLER                                 */00002040
+ /* ***************************************************************** */00002050
+                                                                        00002060
+      IF ^FEIL_FUNNET THEN                                              00002070
+         DO;                                                            00002080
+            IF U2SP.KONVENSJON = 'J' & U2SP.FRAVIK_FLYKT = 'J' THEN     00002090
+               DO;                                                      00002100
+                  FEIL_FUNNET        = '1'B;                            00002110
+                   U2SP.KONVENSJONNR = 155;                             00002120
+                  U2SP.FRAVIK_FLYKTNR  = 999;                           00002130
+               END;                                                     00002140
+            IF U2SP.FRAVIK_FLYKT = 'J' &                                00002150
+              (U2SP.TT_FRA1937_ÅR > 0 ! U2SP.TT_FRA1937_MND > 0) THEN   00002160
+               DO;                                                      00002170
+                  FEIL_FUNNET         = '1'B;                           00002180
+                  U2SP.FRAVIK_FLYKTNR = 157;                            00002190
+                  U2SP.TT_FRA1937_ÅRNR = 999;                           00002200
+                  U2SP.TT_FRA1937_MNDNR = 999;                          00002210
+               END;                                                     00002220
+                                                                        00002230
+                                                                                
+  /* RANDI OHNA SPØR HVORFOR DETTE BLIR AVVIST - TAS BORT 0994 HL :*/           
+  /*        IF U2SP.BOSATT > 0 &                                        00002240
+              (U2SP.PENSJONSTRYGDET ^= 'J'        &                     00002250
+               U2SP.KONVENSJON      ^= 'J'        &                     00002260
+               U2SP.MINST_20_ÅR     ^= 'J'  )  THEN                     00002270
+               DO;                                                      00002280
+                  FEIL_FUNNET             = '1'B;                       00002290
+                  U2SP.BOSATTNR           = 366;                        00002300
+                  U2SP.KONVENSJONNR       = 999;                        00002310
+                  U2SP.PENSJONSTRYGDETNR  = 999;                        00002320
+                  U2SP.MINST_20_ÅRNR      = 999;                        00002330
+               END;                                        */           00002340
+                                                                        00002350
+            IF U2SP.FRAVIK_FLYKT = 'J' & U2SP.KONVENSJON = 'J' THEN     00002360
+               DO;                                                      00002370
+                  FEIL_FUNNET        = '1'B;                            00002380
+                  U2SP.FRAVIK_FLYKTNR  = 155;                           00002390
+                  U2SP.KONVENSJONNR  = 999;                             00002400
+               END;                                                     00002410
+            IF U2SP.FRAVIK_FLYKT = 'J' & U2SP.BOSATT ^= 0 THEN          00002420
+               DO;                                                      00002430
+                  FEIL_FUNNET           = '1'B;                         00002440
+                  U2SP.BOSATTNR         = 106;                          00002450
+                  U2SP.FRAVIK_FLYKTNR   = 999;                          00002460
+               END;                                                     00002470
+            IF U2SP.FRAVIK_8_1_NR3  ^= 'J'  &                           00002480
+               U2SP.STI_MÅ > 0                      THEN                00002490
+               DO;                                                      00002500
+                  FEIL_FUNNET         = '1'B;                           00002510
+                  U2SP.FRAVIK_8_1_NR3NR = 368;                          00002520
+               END;                                                     00002530
+                                                                        00002540
+        FYLT_SEKSTISJU = ((ÅR + 67) * 12) + MN;                         00002550
+                                                                        00002560
+        FYLT_SYTTI = FYLT_SEKSTISJU + (3 * 12);                         00002570
+                                                                        00002580
+ /* ***************************************************************** */00002590
+ /* KONTROLLERER SØKERENS TRYGDETID :                                 */00002600
+ /* ***************************************************************** */00002610
+                                                                        00002620
+    TT_MAKS_TIL_DATO = (HJ_UFT_Å - FNR.ÅR - 16) * 100 + HJ_UFT_M;       00002630
+                                                                        00002640
+    W_TT_MND  = U2SP.TT_FRA1937_ÅR * 12 + U2SP.TT_FRA1937_MND;          00002650
+                                                                        00002660
+    IF W_TT_MND > TT_MAKS_TIL_DATO THEN                                 00002670
+       DO;                                                              00002680
+          FEIL_FUNNET     = '1'B;                                       00002690
+          U2SP.TT_FRA1937_ÅRNR  = 359;                                  00002700
+       END;                                                             00002710
+ END;                                                                   00002720
+                                                                        00002730
+   SJEKK_TT_NUMERISK:                                                   00002740
+                                                                        00002750
+    PROC;                                                               00002760
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(U2SP.TT_FRA1937_ÅR)) THEN          00002770
+        DO;                                                             00002780
+           FEIL_FUNNET           = '1'B;                                00002790
+           U2SP.TT_FRA1937_ÅRNR  = 200;                                 00002800
+        END;                                                            00002810
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(U2SP.TT_FRA1937_MND)) THEN         00002820
+        DO;                                                             00002830
+           FEIL_FUNNET           = '1'B;                                00002840
+           U2SP.TT_FRA1937_MNDNR = 200;                                 00002850
+        END;                                                            00002860
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR4(U2SP.STI_MÅ)) THEN                 00002870
+        DO;                                                             00002880
+           FEIL_FUNNET        = '1'B;                                   00002890
+           U2SP.STI_MÅNR      = 200;                                    00002900
+        END;                                                            00002910
+   END SJEKK_TT_NUMERISK;                                               00002920
+                                                                        00002930
+  END KONTROLL_U2_SPES;                                                 00002940

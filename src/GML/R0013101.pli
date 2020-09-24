@@ -1,0 +1,1023 @@
+ /*       SIST ENDRET 27/01-98 10.26.00 AV   JDA7339                  */00000000
+ /*       SIST ENDRET 27/01-98 10.24.07 AV   JDA7339                  */00000010
+ /*       SIST ENDRET 15/08-94 11.26.53 AV   DYBVIK                   */00000020
+ /*       SIST ENDRET 25/09-92 12.17.44 AV   DYBVIK                   */00000030
+ /*       SIST ENDRET 13/12-91 12.55.56 AV   DYBVIK                   */00000040
+ /*       SIST ENDRET 26/04-91 13.12.04 AV   DYBVIK                   */00000050
+ /*       SIST ENDRET 06/03-91 14.32.48 AV   DYBVIK                   */00000060
+ /*       SIST ENDRET 14/04-89 14.47.28 AV   DYBVIK                   */00000070
+ /*       SIST ENDRET 24/03-87 12.07.18 AV   DYBVIK                   */00000080
+ /*       SIST ENDRET 28/12-84 12.19.22 AV   LUNDEBY                  */00000090
+                                                                        00000100
+                                                                        00000110
+ /* ***************************************************************** */00000120
+ /*IDENTIFIKASJON:                                                    */00000130
+ /*    R0013101 - HOVEDPROGRAM I PLI                                  */00000140
+ /*    PROGRAMMERER: KRISTENSEN, JAN 1982                             */00000150
+ /*    PROGRAMMET ER TOTALENDRET AV HANSEN OG FARVIK SEPT -82.        */00000160
+ /*HENSIKT:                                                           */00000170
+ /*    PROGRAMMET INITIERER B01 OG LINKER INN DE AKTUELLE PROGRAM     */00000180
+ /*    SOM LESER INFORMASJON FRA BASEN OG INN I B01, STATUS BLIR      */00000190
+ /*    OPPRETTET.                                                     */00000200
+ /*PROGRAMTILKNYTNING:                                                */00000210
+ /*    PROGRAMMET BLIR LINKET FRA R0013001.                           */00000220
+ /*BRUK:                                                              */00000230
+ /*    EXEC CICS LINK PROGRAM('R0013101') COMMAREA(KOM_OMR);          */00000240
+ /* ***************************************************************** */00000250
+                                                                        00000260
+ R001310: PROC(COMMAREA_PEKER) OPTIONS (MAIN);                          00000270
+                                                                        00000280
+ %PAGE;                                                                 00000290
+ DCL                                                                    00000300
+ 1 B01 BASED(B01_PEKER),                                                00000310
+ %INCLUDE P0019921;  /* B01-OMRÅDE (BASED)        */                    00000320
+                                                                        00000330
+ %PAGE;                                                                 00000340
+ DCL                                                                    00000350
+ 1 B02 BASED(B02_PEKER),                                                00000360
+ %INCLUDE P0019921;  /* B02-OMRÅDE (BASED)        */                    00000370
+ %PAGE;                                                                 00000380
+ %INCLUDE P0019906;  /* TRANS-OPPL-OMRÅDE (BASED) */                    00000390
+                                                                        00000400
+ %PAGE;                                                                 00000410
+ %INCLUDE P0019908;  /* KOM-OMRÅDE (BASED)        */                    00000420
+                                                                        00000430
+ %PAGE;                                                                 00000440
+ %INCLUDE P0019910;  /* STYRINGS-OMRÅDE (BASED)   */                    00000450
+                                                                        00000460
+ %PAGE;                                                                 00000470
+ DCL                                                                    00000480
+   1 TRANS_LISTE_OMR UNAL BASED (TRANS_LISTE_PEKER),                    00000490
+     3 TRANS_LISTE_LINJE (5),                                           00000500
+ %INCLUDE P0019911;  /* TRANS-LISTE-OMRÅDE UNDERNIVÅ)*/                 00000510
+                                                                        00000520
+ %PAGE;                                                                 00000530
+ DCL                                                                    00000540
+   1 WORK_TRANS_LISTE UNAL BASED (WORK_TRANS_LISTE_PEKER),              00000550
+ %INCLUDE P0019911;  /* TRANS-LISTE-OMRÅDE UNDERNIVÅ)*/                 00000560
+                                                                        00000570
+ %PAGE;                                                                 00000580
+ %INCLUDE P0019912;  /* DIV-PARAM-OMRÅDE (BASED)  */                    00000590
+                                                                        00000600
+ %PAGE;                                                                 00000610
+ DCL                                                                    00000620
+   ( ADDR , CSTG , LOW , STG , SUBSTR , VERIFY ) BUILTIN;               00000630
+                                                                        00000640
+ DCL                                                                    00000650
+   PLITDLI                               ENTRY;                         00000660
+                                                                        00000670
+ DCL                                                                    00000680
+   COMMAREA_PEKER                        PTR;                           00000690
+                                                                        00000700
+ DCL                                                                    00000710
+   (I,J,K,T_IND)                         FIXED BIN(15);                 00000720
+                                                                        00000730
+ DCL                                                                    00000740
+   PIC_11                                PIC      '(11)9'  INIT ( 0 ) , 00000750
+   W_TRANS_IKKE_FUNNET                   BIT       (1 )    INIT ('1'B), 00000760
+   STATUS_TILKN_FUNNET                   BIT       (1 )    INIT ('0'B), 00000770
+   BARNE_IND                             FIXED BIN (15)  ,              00000780
+   BARNE_POS                             FIXED BIN (15)  ,              00000790
+   B01_IND                               FIXED BIN (15)  ,              00000800
+   LES_RESTEN_IND                        FIXED BIN (15)  ,              00000810
+   HJ_STATUS_VIRKDATO_ÅM                 FIXED DEC (4)   ,              00000820
+   W_DØDSDATO                            FIXED DEC (6)   ,              00000830
+   HJ_DØDSDATO_ÅM                        FIXED DEC (4)   ,              00000840
+   HJ_FELT                               CHAR      (1)     INIT (' ' ), 00000850
+   NY_TRANS_VIRKDATO_ÅM                  PIC      '(4)9' ;              00000860
+                                                                        00000870
+                                                                        00000880
+    /* ************************************************************ */  00000890
+    /* STATUS - TILKN                                               */  00000900
+    /* ************************************************************ */  00000910
+                                                                        00000920
+     DCL 1  W01_STATUS_TILKN       UNALIGNED,                           00000930
+            2   FILLER1                     CHAR  (5)      INIT ('' ),  00000940
+            2   PENSJONSTYPE1               CHAR  (1)      INIT ('' ),  00000950
+        /*  2   FILLER2                     CHAR  (48)  INIT ('' ), */  00000960
+            2   FILLER2                     CHAR  (64)     INIT ('' ),  00000970
+            2   FNR_TILKN          FIXED    DEC   (11)     INIT ( 0 ),  00000980
+            2   KODE                        CHAR  (1)      INIT (' ');  00000990
+                                                                        00001000
+                                                                        00001010
+    /* ************************************************************ */  00001020
+    /* DLI CALL-PARAMETRE                                           */  00001030
+    /* ************************************************************ */  00001040
+                                                                        00001050
+     DCL 1  W01_DLI_PARAM,                                              00001060
+            2   W02_GU             CHAR (4)       INIT ('GU  '),        00001070
+            2   W02_PARM_CT_6      FIXED BIN(31)  INIT ( 6    );        00001080
+                                                                        00001090
+                                                                        00001100
+    /* ************************************************************ */  00001110
+    /* DL1 SSA-OMRÅDER FOR ROT OG STATUS-SEGMENTER.                 */  00001120
+    /* ************************************************************ */  00001130
+                                                                        00001140
+     DCL    SSA_UQUAL_TILKN        STATIC  CHAR (9) INIT('TILKN    ');  00001150
+                                                                        00001160
+     DCL 1  SSA1_RF0PERSN          STATIC,                              00001170
+            2    HDEL                      CHAR (17)  INIT              00001180
+                 ('RF0PERSN(FNR     '),                                 00001190
+            2    REL_OP                    CHAR (2)   INIT (' ='),      00001200
+            2    PKEY              FIXED   DEC  (11)  INIT ( 0 ),       00001210
+            2    HP                        CHAR (1)   INIT (')');       00001220
+                                                                        00001230
+     DCL 1  SSA1_STATUS            STATIC,                              00001240
+            2    HDEL                      CHAR (19)  INIT              00001250
+                 ('STATUS  *D(STATKODE'),                               00001260
+            2    REL_OP                    CHAR (2)   INIT (' ='),      00001270
+            2    KODE                      CHAR (1)   INIT ('S'),       00001280
+            2    HP                        CHAR (1)   INIT (')');       00001290
+                                                                        00001300
+                                                                        00001310
+    /* ************************************************************ */  00001320
+    /* ARBEIDSFELTER SOM BRUKES AV UIB (USER INTERFACE BLOCK)       */  00001330
+    /* ************************************************************ */  00001340
+                                                                        00001350
+    %INCLUDE DLIUIB;                                                    00001360
+                                                                        00001370
+     DCL     UIB_RC_OK             BIT (8)       INIT( 0 );             00001380
+                                                                        00001390
+                                                                        00001400
+    /* *********************************************************** */   00001410
+    /* PCB- OG UIB-OMR .                                           */   00001420
+    /* *********************************************************** */   00001430
+                                                                        00001440
+     %INCLUDE   P0012002;                /* PCB_UIB_PEKER_OMR BASED */  00001450
+                                                                        00001460
+     DCL 1  RF1                     BASED (RF1_PCB_PEKER),              00001470
+     %INCLUDE   P0012003;                /*    PCB                  */  00001480
+                                                                        00001490
+                                                                        00001500
+                                                                        00001510
+   /* ********************************************************* */      00001520
+   /* ********************************************************* */      00001530
+   /*                                                           */      00001540
+   /*      DEKLARASJONENE ER FERDIG . EKSEKVERING STARTER       */      00001550
+   /*                                                           */      00001560
+   /* ********************************************************* */      00001570
+   /* ********************************************************* */      00001580
+                                                                        00001590
+                                                                        00001600
+   PROGRAM_ID             =  'R0013101'  ;                              00001610
+   UIBPTR                 =   UIB_PEKER  ;                              00001620
+                                                                        00001630
+                                                                        00001640
+   /* ********************************************************* */      00001650
+   /* BLANKER IKKE   B01 OG B02 DERSOM DET ER ENDRINGS-BEH.     */      00001660
+   /* DERSOM DET ER VENTETRANSBEH. TAES DØDSDATO I POS 13 VARE  */      00001670
+   /* PÅ TIL BRUK I R0010480.                                   */      00001680
+   /* ********************************************************* */      00001690
+                                                                        00001700
+   IF FUNKSJONSKODE     ^=   'E'   THEN                                 00001710
+      DO;                                                               00001720
+         IF FUNKSJONSKODE     =   'V' THEN                              00001730
+            DO;                                                         00001740
+               W_DØDSDATO           = B02.DØDSDATO_ÅMD(13);             00001750
+               B01                  = '';                               00001760
+               B02                  = B01;                              00001770
+               B02.DØDSDATO_ÅMD(13) = W_DØDSDATO;                       00001780
+            END;                                                        00001790
+         ELSE                                                           00001800
+            DO;                                                         00001810
+               B01                  = '';                               00001820
+               B02                  = B01;                              00001830
+            END;                                                        00001840
+      END;                                                              00001850
+                                                                        00001860
+   I                =  0;                                               00001870
+   J                =  0;                                               00001880
+   K                =  0;                                               00001890
+   T_IND            =  0;                                               00001900
+   FEIL_MELD_NR     =  0;               /* FEIL-MARKERINGS-VARIABEL */  00001910
+                                                                        00001920
+   /* ********************************************************* */      00001930
+   /* SETTER POS_I_B01 OG T_IND  (TRANS_INDIKATOR)              */      00001940
+   /* ********************************************************* */      00001950
+                                                                        00001960
+   IF (TRANS_OPPL_OMR.BLANKETTYPE = 'FB' !                              00001970
+       TRANS_OPPL_OMR.BLANKETTYPE = 'B6' !                              00001980
+       TRANS_OPPL_OMR.BLANKETTYPE = 'BP') THEN                          00001990
+     DO;                                                                00002000
+       POS_I_B01    =  3;                                               00002010
+       B01_IND      =  3;                                               00002020
+     END;                                                               00002030
+                                                                        00002040
+   ELSE IF F_KJØNN(TRANS_OPPL_OMR.FØDSNUMMER) = 'K' THEN                00002050
+     DO;                                                                00002060
+       B01_IND   = 1;                                                   00002070
+       POS_I_B01 = 1;                                                   00002080
+     END;                                                               00002090
+   ELSE                                                                 00002100
+     DO;                                                                00002110
+       B01_IND   = 2;                                                   00002120
+       POS_I_B01 = 2;                                                   00002130
+     END;                                                               00002140
+                                                                        00002150
+   IF  TRANS_LISTE_LINJE.FØDSNUMMER (1) =  0  THEN                      00002160
+       T_IND   = 1;                                                     00002170
+   ELSE                                                                 00002180
+       T_IND   = 2;                                                     00002190
+                                                                        00002200
+   /* ********************************************************* */      00002210
+   /* INITIERER DIVERSE OMRÅDER I DIV_PARAM_OMR                 */      00002220
+   /* ********************************************************* */      00002230
+                                                                        00002240
+   TRANS_VIRKDATO_ÅM = F_SNU_DATO ( TRANS_OPPL_OMR.VIRKNINGSDATO);      00002250
+   SEARCH_FNR        =              TRANS_OPPL_OMR.FØDSNUMMER    ;      00002260
+   STATUS_TYPE       = ' ';                                             00002270
+                                                                        00002280
+                                                                        00002290
+  IF TRANS_OPPL_OMR.BLANKETTYPE = 'O1' THEN                             00002300
+     DØD = '1'B;                                                        00002310
+  ELSE                                                                  00002320
+     DØD = '0'B;                                                        00002330
+                                                                        00002340
+  EXEC CICS LINK PROGRAM ('R0013110') COMMAREA(KOM_OMR);                00002350
+                                                                        00002360
+  IF   FEIL_MELD_NR    > 0 THEN                                         00002370
+       GO   TO   L999;                                                  00002380
+  ELSE                                                                  00002390
+       PROGRAM_ID      =  'R0013101';                                   00002400
+                                                                        00002410
+  ØNSKET_STATUS        =   B01.STATUS_KODE (POS_I_B01)  ;               00002420
+                                                                        00002430
+                                                                        00002440
+  SELECT(DIV_PARAM_OMR.STATUS_TYPE);                                    00002450
+                                                                        00002460
+     WHEN('C')                                                          00002470
+     /* ******************************************************* */      00002480
+     /* VTP.TRANS   <   VTP.SS       INGEN  NS                  */      00002490
+     /*                                                         */      00002500
+     /* LESER TRANS HOS SØKER .                                 */      00002510
+     /* FINNES IKKE TRANS SØKES OGSÅ HOS :                      */      00002520
+     /*        HVIS GIFT   :  EKTEFELLE HVIS UP / AP            */      00002530
+     /* ******************************************************* */      00002540
+        DO;                                                             00002550
+           CALL P910_LES_FORRIGE_TRANS;                                 00002560
+                                                                        00002570
+           IF   FEIL_MELD_NR >  0 THEN                                  00002580
+                GO TO L999;                                             00002590
+           ELSE                                                         00002600
+                PROGRAM_ID   =  'R0013101';                             00002610
+                                                                        00002620
+           /*************************************************** */      00002630
+           /* HVIS TRANS IKKE FINNES SJEKKES HOS SØKER :        */      00002640
+           /*      HVIS BARNEPENSJONIST : 1. TILKN. PERSON      */      00002650
+           /*      HVIS AP / UP         : EKTEFELLE             */      00002660
+           /*************************************************** */      00002670
+                                                                        00002680
+           IF TRANS_LISTE_LINJE.VIRKNINGSDATO (T_IND)  =   0   THEN     00002690
+              DO;                                                       00002700
+                                                                        00002710
+                 CALL P050_LES_STATUS_TILKN;                            00002720
+                                                                        00002730
+                 IF FEIL_MELD_NR  >  0 THEN                             00002740
+                    GO TO L999;                                         00002750
+                 ELSE                                                   00002760
+                    PROGRAM_ID      =   'R0013101';                     00002770
+                                                                        00002780
+                                                                        00002790
+                 IF W01_STATUS_TILKN.PENSJONSTYPE1   = 'A'   !          00002800
+ /*AFP*/            W01_STATUS_TILKN.PENSJONSTYPE1   = 'K'   !          00002810
+                    W01_STATUS_TILKN.PENSJONSTYPE1   = 'B'   !          00002820
+                    W01_STATUS_TILKN.PENSJONSTYPE1   = 'N'   !          00002830
+                    W01_STATUS_TILKN.PENSJONSTYPE1   = 'F'   !          00002840
+                    W01_STATUS_TILKN.PENSJONSTYPE1   = 'G'   !          00002850
+                    W01_STATUS_TILKN.PENSJONSTYPE1   = 'L'        THEN  00002860
+                                                                        00002870
+                    IF STATUS_TILKN_FUNNET                        THEN  00002880
+                       DO;                                              00002890
+                          /* *************************************** */ 00002900
+                          /* SØKER ER : ALDERSPENSJONIST             */ 00002910
+                          /* ELLER      BARNEPENSJONIST, ØVRIGE BARN.*/ 00002920
+                          /* *************************************** */ 00002930
+                                                                        00002940
+                          SEARCH_FNR                =  W01_STATUS_TILKN.00002950
+                                                       FNR_TILKN;       00002960
+                       END;                                             00002970
+                    ELSE                                                00002980
+                       DO;                                              00002990
+  L100:                   FEIL_VED_LABEL            =  '100';           00003000
+                          FEIL_MELD_NR              =   497 ;           00003010
+                          GO   TO   L999;                               00003020
+                       END;                                             00003030
+                 ELSE                                                   00003040
+                 IF TRANS_OPPL_OMR.BLANKETTYPE =  'AP'  THEN            00003050
+                       CALL P030_AP_FNR_EK;                             00003060
+                 ELSE                                                   00003070
+                 IF TRANS_OPPL_OMR.BLANKETTYPE =  'A1'  THEN            00003080
+                       CALL P030_A1_FNR_EK;                             00003090
+                 ELSE                                                   00003100
+                 IF TRANS_OPPL_OMR.BLANKETTYPE =  'UP'   THEN           00003110
+                          CALL P040_UP_FNR_EK;                          00003120
+                 ELSE                                                   00003130
+                 IF TRANS_OPPL_OMR.BLANKETTYPE =  'U2'   THEN           00003140
+                          CALL P040_U2_FNR_EK;                          00003150
+                 ELSE                                                   00003160
+                 IF TRANS_OPPL_OMR.BLANKETTYPE =  'U3'   THEN           00003170
+                          CALL P040_U3_FNR_EK;                          00003180
+                 ELSE                                                   00003190
+                 IF TRANS_OPPL_OMR.BLANKETTYPE =  'AF'   THEN           00003200
+                             CALL P045_AF_FNR_EK;                       00003210
+  /*9801 HL : */                                                        00003220
+                 ELSE                                                   00003230
+                 IF TRANS_OPPL_OMR.BLANKETTYPE =  'KF'   THEN           00003240
+                             CALL P045_KF_FNR_EK;                       00003250
+                                                                        00003260
+                                                                        00003270
+                 /* *************************************** */          00003280
+                 /* LESER ROT + INNTEKTS-OPPL. HOS TILKN.   */          00003290
+                 /* PERSON . 3110 GIR STATUS_TYPE = C .     */          00003300
+                 /* UNDERSØKER HVOR I B01 PERSONEN SKAL VÆRE*/          00003310
+                 /* *************************************** */          00003320
+                                                                        00003330
+                 PIC_11                   =   SEARCH_FNR     ;          00003340
+                                                                        00003350
+                 IF F_KJØNN (PIC_11)      =  'K'                  THEN  00003360
+                    POS_I_B01             =   1              ;          00003370
+                 ELSE                                                   00003380
+                    POS_I_B01             =   2              ;          00003390
+                                                                        00003400
+                 IF B01.FNR (POS_I_B01)   =   0                   THEN  00003410
+                                                                        00003420
+                    EXEC CICS LINK PROGRAM  ('R0013110')                00003430
+                                   COMMAREA ( KOM_OMR  )     ;          00003440
+                                                                        00003450
+                                                                        00003460
+                 CALL P910_LES_FORRIGE_TRANS;                           00003470
+                                                                        00003480
+                 IF FEIL_MELD_NR  >  0 THEN                             00003490
+                    GO TO L999;                                         00003500
+                 ELSE                                                   00003510
+                    PROGRAM_ID      =   'R0013101';                     00003520
+                                                                        00003530
+                 /* *********************************************** */  00003540
+                 /* BLANKER PERSON 14 I B01 DERSOM DEN ER BENYTTET  */  00003550
+                 /* VED LESING AV TRANS                             */  00003560
+                 /* *********************************************** */  00003570
+                                                                        00003580
+                 IF B01.RF0PERSN.FNR (14)         =   SEARCH_FNR   THEN 00003590
+                    B01.RF0PERSN     (14)         =   ''       ;        00003600
+              END;                                                      00003610
+                                                                        00003620
+           /*************************************************** */      00003630
+           /* SJEKKER OM TRANS ER FUNNET                        */      00003640
+           /*************************************************** */      00003650
+                                                                        00003660
+           IF TRANS_LISTE_LINJE.VIRKNINGSDATO (T_IND)   =   0    THEN   00003670
+              DO;                                                       00003680
+  L105:                                                                 00003690
+                 FEIL_VED_LABEL     =   '105';                          00003700
+                 FEIL_MELD_NR       =    502 ;                          00003710
+                 GO   TO   L999;                                        00003720
+              END;                                                      00003730
+                                                                        00003740
+           CALL P_SORTER_TRANS_LISTE_OMR ( 1 );                         00003750
+           SEARCH_FNR               =  TRANS_OPPL_OMR.FØDSNUMMER ;      00003760
+                                                                        00003770
+        END;    /* WHEN C */                                            00003780
+                                                                        00003790
+                                                                        00003800
+     WHEN ( 'B' , 'D' , 'G' , 'K' )                                     00003810
+        /* ******************************************************* */   00003820
+        /* STATUS ER INNLAGT I B01.                                */   00003830
+        /* B:      B01 = SISTE STATUS.                             */   00003840
+        /* D,G,K,: B01 = NEST SISTE STATUS.                        */   00003850
+        /* ******************************************************* */   00003860
+        DO;                                                             00003870
+           IF B01.PENSJONSTYPE1(B01_IND) = 'L' THEN                     00003880
+                                                                        00003890
+              /* ************************************************ */    00003900
+              /* SØKER ER REG. SOM FORSØRGET BARN                 */    00003910
+              /* ************************************************ */    00003920
+              DO;                                                       00003930
+                 IF B01_IND                 ^=   3  THEN                00003940
+                    DO;                                                 00003950
+                       BARNE_POS             =   3;                     00003960
+                       B01.PERSON(BARNE_POS) =   B01.PERSON(B01_IND);   00003970
+                       B01.PERSON(B01_IND)   =   '';                    00003980
+                       B01_IND               =   3;                     00003990
+                    END;                                                00004000
+                                                                        00004010
+                 /* *********************************************** */  00004020
+                 /* DET FØLGENDE AVGJØR                             */  00004030
+                 /*        HVOR I B01 SØKERENS FORSØRGER SKAL LIGGE */  00004040
+                 /* *********************************************** */  00004050
+                                                                        00004060
+                 PIC_11 = B01.TILKN.FNR_TILKN(B01_IND,1);               00004070
+                                                                        00004080
+                 IF F_KJØNN (PIC_11) =  'K' THEN                        00004090
+                    POS_I_B01        =   1;                             00004100
+                 ELSE                                                   00004110
+                    POS_I_B01        =   2;                             00004120
+                                                                        00004130
+                 SEARCH_FNR        =   B01.TILKN.FNR_TILKN (B01_IND,1); 00004140
+                                                                        00004150
+                                                                        00004160
+                 EXEC CICS LINK PROGRAM('R0013110') COMMAREA (KOM_OMR); 00004170
+                                                                        00004180
+                 IF FEIL_MELD_NR     >  0      THEN                     00004190
+                    GO   TO   L999;                                     00004200
+                 ELSE                                                   00004210
+                    PROGRAM_ID       =  'R0013101';                     00004220
+                                                                        00004230
+                                                                        00004240
+                 /* ******************************************** */     00004250
+                 /* SJEKKER OM TILKNYTTET PERSON BLE LEST INN    */     00004260
+                 /* ******************************************** */     00004270
+                                                                        00004280
+                 IF B01.RF0PERSN.FNR (POS_I_B01)  =   0        THEN     00004290
+                    DO;                                                 00004300
+  L106:                FEIL_MELD_NR               =   497         ;     00004310
+                       FEIL_VED_LABEL             =  '106'        ;     00004320
+                       GO   TO  L999                              ;     00004330
+                    END;                                                00004340
+              END;                                                      00004350
+           ELSE                                                         00004360
+              DO;                                                       00004370
+                 IF B01.PENSJONSTYPE1 (B01_IND) = 'N'                   00004380
+                  ! B01.PENSJONSTYPE1 (B01_IND) = 'B'      THEN         00004390
+                                                                        00004400
+                    /* ******************************************** */  00004410
+                    /* SØKER ER REG. SOM ETTERLATT BARN             */  00004420
+                    /* ******************************************** */  00004430
+                    DO;                                                 00004440
+ /*  ENDRET 08.02.88 SATISH                                        */   00004450
+ /*                    IF B01.PENSJONSTYPE2 (B01_IND) = 'Y' THEN   */   00004460
+                                                                        00004470
+                       IF B01.PENSJONSTYPE2 (B01_IND) = 'P' THEN        00004480
+                                                                        00004490
+ /*  HIT    08.02.88 SATISH                                        */   00004500
+                                                                        00004510
+                          DO;                                           00004520
+                             IF B01_IND       ^=   3        THEN        00004530
+                                DO;                                     00004540
+                                   BARNE_POS   =   3;                   00004550
+                                   B01.PERSON(BARNE_POS) =              00004560
+                                             B01.PERSON(B01_IND);       00004570
+                                   B01.PERSON(B01_IND)   =   '';        00004580
+                                   B01_IND     =   3;                   00004590
+                                END;                                    00004600
+                          END;                                          00004610
+                       ELSE                                             00004620
+                          /* ************************************** */  00004630
+                          /*    ØVRIGE BARN                         */  00004640
+                          /* ************************************** */  00004650
+                          DO;                                           00004660
+                             BARNE_POS              =  4;               00004670
+                             B01.PERSON (BARNE_POS) =                   00004680
+                                             B01.PERSON(B01_IND);       00004690
+                             B01.PERSON(B01_IND)    =   '';             00004700
+                             B01_IND    =  4;                           00004710
+                             POS_I_B01  =  3;                           00004720
+                             SEARCH_FNR =                               00004730
+                                       B01.TILKN.FNR_TILKN(B01_IND,1);  00004740
+                                                                        00004750
+                             EXEC CICS LINK PROGRAM('R0013110')         00004760
+                                                    COMMAREA(KOM_OMR);  00004770
+                             IF FEIL_MELD_NR > 0 THEN                   00004780
+                                GO TO L999;                             00004790
+                             ELSE                                       00004800
+                                PROGRAM_ID = 'R0013101';                00004810
+                                                                        00004820
+                                                                        00004830
+                             /* ******************************** */     00004840
+                             /* SJEKKER OM TILKNYTTET PERSON     */     00004850
+                             /* BLE LEST INN                     */     00004860
+                             /* ******************************** */     00004870
+                                                                        00004880
+                             IF B01.RF0PERSN.FNR (POS_I_B01) =  0   THEN00004890
+                                DO;                                     00004900
+  L107:                            FEIL_MELD_NR              =  497    ;00004910
+                                   FEIL_VED_LABEL            = '107'   ;00004920
+                                   GO   TO  L999                       ;00004930
+                                END;                                    00004940
+                          END;                                          00004950
+                    END;                                                00004960
+              END;                                                      00004970
+                                                                        00004980
+                                                                        00004990
+              IF B01_IND   =  3  THEN                                   00005000
+                 BARNE_IND =  4;                                        00005010
+              ELSE                                                      00005020
+                 DO;                                                    00005030
+                    IF B01_IND    =  4 THEN                             00005040
+                       DO;                                              00005050
+                                                                        00005060
+  /*  ENDRET 030287 BF : B01_IND SETTES TIL 3.  FEILRAPP 308   */       00005070
+                                                                        00005080
+                          B01_IND   = 3;                                00005090
+                                                                        00005100
+                          BARNE_IND = 5;                                00005110
+                       END;                                             00005120
+                    ELSE                                                00005130
+                       BARNE_IND  =  3;                                 00005140
+                 END;                                                   00005150
+                                                                        00005160
+              /* *************************************************** */ 00005170
+              /* BARNE_IND PEKER PÅ DEN PLASS SOM                    */ 00005180
+              /*    NESTE BARN SKAL INN PÅ                           */ 00005190
+              /* *************************************************** */ 00005200
+                                                                        00005210
+              IF B01.RF0PERSN.FNR (1) > 0 THEN                          00005220
+                 LES_RESTEN_IND  = 1;                                   00005230
+              ELSE                                                      00005240
+                 DO;                                                    00005250
+                    IF B01.RF0PERSN.FNR (2) > 0 THEN                    00005260
+                       LES_RESTEN_IND  = 2;                             00005270
+                    ELSE                                                00005280
+                       LES_RESTEN_IND  = 3;                             00005290
+                 END;                                                   00005300
+                                                                        00005310
+              /* ************************************************* */   00005320
+              /*                                                   */   00005330
+              /* LESER INN RESTEN AV FAMILIEN                      */   00005340
+              /*                                                   */   00005350
+              /* NÅR LES_RESTEN_IND = 1 ELLER 2 DVS IKKE           */   00005360
+              /* BARNEPENSJON, MÅ VI LOOPE TO GANGER               */   00005370
+              /* FORDI EKTEFELLEN KAN VÆRE KNYTTET TIL EGNE        */   00005380
+              /* BARN, ELLERS LOPPER VI BARE EN GANG.              */   00005390
+              /*                                                   */   00005400
+              /* ************************************************* */   00005410
+                                                                        00005420
+              IF LES_RESTEN_IND = 3 THEN                                00005430
+                 K = 2;                                                 00005440
+              ELSE                                                      00005450
+                 K = 1;                                                 00005460
+              DO     I = K  TO  2;                                      00005470
+                 DO  J = 1  TO  13;                                     00005480
+                                                                        00005490
+                    IF B01.TILKN.FNR_TILKN (LES_RESTEN_IND,J)  =        00005500
+                                                               0 THEN   00005510
+                       J = 13;                                          00005520
+                                                                        00005530
+                    ELSE                                                00005540
+                       IF P020_PERSON_IKKE_I_B01 (B01.TILKN.FNR_TILKN   00005550
+                                           (LES_RESTEN_IND , J))  THEN  00005560
+                          DO;                                           00005570
+                             DØD  =  '0'B;                              00005580
+                             SELECT (B01.TILKN.TILKNYTNINGSKODE(        00005590
+                                               LES_RESTEN_IND,J));      00005600
+                                                                        00005610
+ /*YS*/ /*AFP*/                 WHEN ('A','U','Y','K','F','G')          00005620
+                                   DO;                                  00005630
+                                      IF LES_RESTEN_IND = 1 THEN        00005640
+                                         POS_I_B01 = 2;                 00005650
+                                      ELSE                              00005660
+                                         POS_I_B01 = 1;                 00005670
+                                   END;                                 00005680
+                                                                        00005690
+                                WHEN('D')                               00005700
+                                   DO;                                  00005710
+                                     /* *************************** */  00005720
+                                     /* PERS. ER DØD PÅ BASEN       */  00005730
+                                     /* *************************** */  00005740
+                                      DØD    = '1'B;                    00005750
+                                      PIC_11 = B01.TILKN.FNR_TILKN(     00005760
+                                                         B01_IND,J);    00005770
+                                                                        00005780
+                                      IF F_KJØNN(PIC_11) = 'K' THEN     00005790
+                                         POS_I_B01       =  1;          00005800
+                                      ELSE                              00005810
+                                         POS_I_B01       =  2;          00005820
+                                   END;                                 00005830
+                                                                        00005840
+  /*HL*/                        WHEN ('L','Ø','V','W')                  00005850
+                                   DO;                                  00005860
+                                      POS_I_B01 = BARNE_IND;            00005870
+                                                                        00005880
+                                      IF BARNE_IND > 14 THEN            00005890
+                                                                        00005900
+                                        /* ************************* */ 00005910
+                                        /* SYSTEMFEIL. MER ENN 12    */ 00005920
+                                        /* BLIR FORSØKT LEST INN     */ 00005930
+                                        /* ************************* */ 00005940
+                                         DO;                            00005950
+ L110:                                      FEIL_VED_LABEL = 'L110';    00005960
+                                            FEIL_MELD_NR   =   214;     00005970
+                                            GO TO L999;                 00005980
+                                         END;                           00005990
+                                       BARNE_IND     = BARNE_IND + 1;   00006000
+                                   END;                                 00006010
+                                                                        00006020
+                                OTHERWISE                               00006030
+                                   /* *************************** */    00006040
+                                   /* UGYLDIG TILKNYTNINGSKODE    */    00006050
+                                   /* *************************** */    00006060
+                                   DO;                                  00006070
+ L120:                                FEIL_VED_LABEL = 'L120';          00006080
+                                      FEIL_MELD_NR   =   213 ;          00006090
+                                      GO TO L999;                       00006100
+                                   END;                                 00006110
+                             END;  /*       SELECT          */          00006120
+                                                                        00006130
+                             SEARCH_FNR =  B01.FNR_TILKN(               00006140
+                                               LES_RESTEN_IND,J);       00006150
+                                                                        00006160
+                             EXEC CICS LINK PROGRAM ('R0013110')        00006170
+                                                      COMMAREA(KOM_OMR);00006180
+                             IF FEIL_MELD_NR > 0 THEN                   00006190
+                                GO TO L999;                             00006200
+                             ELSE                                       00006210
+                                PROGRAM_ID    = 'R0013101';             00006220
+                                                                        00006230
+                                                                        00006240
+                             /* ******************************** */     00006250
+                             /* SJEKKER OM TILKNYTTET PERSON     */     00006260
+                             /* BLE LEST INN                     */     00006270
+                             /* ******************************** */     00006280
+                                                                        00006290
+                             IF B01.RF0PERSN.FNR (POS_I_B01) =  0   THEN00006300
+                                DO;                                     00006310
+  L122:                            FEIL_MELD_NR              =  497    ;00006320
+                                   FEIL_VED_LABEL            = '122'   ;00006330
+                                   GO   TO  L999                       ;00006340
+                                END;                                    00006350
+                          END;  /* FNR_TILKN ^=  FØDSNUMMER      */     00006360
+                                                                        00006370
+                                                                        00006380
+                 END; /*  J = 1  TO  13                     */          00006390
+                                                                        00006400
+                 IF LES_RESTEN_IND = 1 THEN                             00006410
+                    LES_RESTEN_IND = 2;                                 00006420
+                 ELSE                                                   00006430
+                    LES_RESTEN_IND = 1;                                 00006440
+                                                                        00006450
+                 IF B01.DØDSDATO_ÅMD (LES_RESTEN_IND)  >  0  THEN       00006460
+                    I  =  2;                                            00006470
+                                                                        00006480
+              END;   /* I = 1 TO 2                          */          00006490
+                                                                        00006500
+                                                                        00006510
+                                                                        00006520
+              IF STATUS_TYPE = 'D' !                                    00006530
+                 STATUS_TYPE = 'G' !                                    00006540
+                 STATUS_TYPE = 'K'                     THEN             00006550
+                                                                        00006560
+                 /* ******************************************* */      00006570
+                 /* SETTER SØKER_IND MIDLERTIDIG FOR Å STYRE    */      00006580
+                 /* LESINGEN AV TRANSENE (R0015201).            */      00006590
+                 /* STATUS I B01 ER NEST SISTE                  */      00006600
+                 /* BRUKER ØNSKET_STATUS FOR Å STYRE LESINGEN   */      00006610
+                 /* AV TRANSER . FØRST SØKES ALLE TRANSER MED   */      00006620
+                 /* VTP > VTP. I NS .  FINNES INGEN LETES DET   */      00006630
+                 /* ETTER TRANSER MED  VTP =  VTP. I  NS .      */      00006640
+                 /* ******************************************* */      00006650
+                 DO;                                                    00006660
+                    ØNSKET_STATUS           =  '>'               ;      00006670
+                                                                        00006680
+                    DO K = 1 TO 14 ;                                    00006690
+                                                                        00006700
+                       IF TRANS_OPPL_OMR.FØDSNUMMER = B01.FNR (K) THEN  00006710
+                          DO;                                           00006720
+                             SØKER_IND              = K              ;  00006730
+                             K                      = 14             ;  00006740
+                          END;                                          00006750
+                    END;                                                00006760
+                                                                        00006770
+                    DO K = 1 TO 2  WHILE (W_TRANS_IKKE_FUNNET)   ;      00006780
+                                                                        00006790
+                       CALL P910_LES_FORRIGE_TRANS               ;      00006800
+                                                                        00006810
+                       IF   FEIL_MELD_NR    >   0 THEN                  00006820
+                            GO TO L999;                                 00006830
+                       ELSE                                             00006840
+                            PROGRAM_ID      =  'R0013101'        ;      00006850
+                                                                        00006860
+                       ØNSKET_STATUS        =  '='               ;      00006870
+                                                                        00006880
+                       IF W_TRANS_IKKE_FUNNET              THEN         00006890
+                          T_IND             =   T_IND  +  1      ;      00006900
+                                                                        00006910
+                    END;                                                00006920
+                                                                        00006930
+                    IF W_TRANS_IKKE_FUNNET              THEN            00006940
+                       DO;                                              00006950
+  L125:                                                                 00006960
+                          FEIL_VED_LABEL =   '125';                     00006970
+                          FEIL_MELD_NR   =    502 ;                     00006980
+                          GO   TO   L999;                               00006990
+                       END;                                             00007000
+                                                                        00007010
+                    CALL P_SORTER_TRANS_LISTE_OMR  ( 1 )        ;       00007020
+                                                                        00007030
+                 END;  /* IF STATUS_TYPE = 'D' ! 'G' ! 'K'     */       00007040
+                                                                        00007050
+              ØNSKET_STATUS  = ' ';                                     00007060
+                                                                        00007070
+        END;               /*  WHEN B , D , G ELLER K          */       00007080
+                                                                        00007090
+     WHEN('F')                                                          00007100
+        /* ******************************************************* */   00007110
+        /*                                                         */   00007120
+        /* HVIS IKKE ENDRINGS-BEHANDLING :                         */   00007130
+        /* -------------------------------                         */   00007140
+        /*                                                         */   00007150
+        /* STATUS TYPE ER F SOM IKKE KAN AKSEPTERES.               */   00007160
+        /* TRANSAKSJONENS VIRKNINGSDATO ER FØR VIRKNINGSDATOEN I   */   00007170
+        /* NEST SISTE STATUS.                                      */   00007180
+        /*                                                         */   00007190
+        /* ******************************************************* */   00007200
+                                                                        00007210
+        IF FUNKSJONSKODE      = 'E'       THEN                          00007220
+           DO;                                                          00007230
+              CALL P910_LES_FORRIGE_TRANS;                              00007240
+                                                                        00007250
+              IF   FEIL_MELD_NR >  0 THEN                               00007260
+                   GO TO L999;                                          00007270
+              ELSE                                                      00007280
+                   PROGRAM_ID   =   'R0013101'   ;                      00007290
+                                                                        00007300
+              CALL P_SORTER_TRANS_LISTE_OMR (1)  ;                      00007310
+           END;                                                         00007320
+        ELSE                                                            00007330
+           DO;                                                          00007340
+ L130:        FEIL_VED_LABEL  = 'L130';                                 00007350
+              FEIL_MELD_NR    =   601 ;                                 00007360
+              GO TO L999;                                               00007370
+           END;                                                         00007380
+                                                                        00007390
+     WHEN('H')                                                          00007400
+        /* ******************************************************* */   00007410
+        /*                                                         */   00007420
+        /* STATUS TYPE ER H SOM IKKE KAN AKSEPTERES.               */   00007430
+        /* TRANSAKSJONENS VIRKNINGSDATO ETTER REGISTRERT           */   00007440
+        /* DØDSDATO                                                */   00007450
+        /*                                                         */   00007460
+        /* ******************************************************* */   00007470
+        DO;                                                             00007480
+ L140:     FEIL_VED_LABEL = 'L140';                                     00007490
+           FEIL_MELD_NR   =   602 ;                                     00007500
+           GO TO L999;                                                  00007510
+        END;                                                            00007520
+                                                                        00007530
+     WHEN('I');                                                         00007540
+        /* ******************************************************* */   00007550
+        /*                                                         */   00007560
+        /* STATUS ER EN HISTORISK STATUS, INGEN BEHANDLING         */   00007570
+        /* I DENNE RUTINEN                                         */   00007580
+        /*                                                         */   00007590
+        /* ******************************************************* */   00007600
+                                                                        00007610
+     OTHERWISE;                                                         00007620
+                                                                        00007630
+  END;  /*   SELECT FOR STATUS_TYPE     */                              00007640
+                                                                        00007650
+ L999:                                                                  00007660
+     IF  FEIL_MELD_NR     >  0                                          00007670
+       & FEIL_MELD_NR                 <  600       THEN                 00007680
+                                                                        00007690
+         TERMINERINGS_IND             = 'S'; /***   FATAL - FEIL   ***/ 00007700
+     ELSE                                                               00007710
+       IF  STATUS_TYPE                = 'C'   !                         00007720
+           STATUS_TYPE                = 'D'   !                         00007730
+           STATUS_TYPE                = 'G'   !                         00007740
+           STATUS_TYPE                = 'K'   !                         00007750
+           STATUS_TYPE                = 'F'   THEN                      00007760
+                                                                        00007770
+           ANTALL_TRANS_I_TRANS_LISTE =  T_IND     ;                    00007780
+                                                                        00007790
+       ELSE                                                             00007800
+           ANTALL_TRANS_I_TRANS_LISTE =  T_IND - 1 ;                    00007810
+                                                                        00007820
+                                                                        00007830
+     /* ******************************************************** */     00007840
+     /* BLANKER FNR I DE POS HVOR DET IKKE LIGGER TRANSER .      */     00007850
+     /* ******************************************************** */     00007860
+                                                                        00007870
+     DO I = ANTALL_TRANS_I_TRANS_LISTE + 1  TO   5                      00007880
+        WHILE ( TRANS_LISTE_OMR.FØDSNUMMER  (I)  >   0 )         ;      00007890
+                                                                        00007900
+                TRANS_LISTE_OMR.FØDSNUMMER  (I)  =   0           ;      00007910
+     END;                                                               00007920
+   EXEC CICS RETURN;                                                    00007930
+                                                                        00007940
+                                                                        00007950
+ /* ************************************************************ */     00007960
+ /* ************************************************************ */     00007970
+ /* **********                                    ************** */     00007980
+ /* **********      INTERNE PROCEDURER            ************** */     00007990
+ /* **********                                    ************** */     00008000
+ /* ************************************************************ */     00008010
+ /* ************************************************************ */     00008020
+                                                                        00008030
+                                                                        00008040
+                                                                        00008050
+                                                                        00008060
+ %PAGE;                                                                 00008070
+ /* ************************************************************ */     00008080
+ /*                                                              */     00008090
+ /*  PROCDURE FOR Å SJEKKE OM PERSON FINNES I B01                */     00008100
+ /*                                                              */     00008110
+ /* ************************************************************ */     00008120
+                                                                        00008130
+ P020_PERSON_IKKE_I_B01:                                                00008140
+    PROC   (W01_FNR)         RETURNS ( BIT ( 1) )                 ;     00008150
+                                                                        00008160
+    DCL                                                                 00008170
+       W01_RETUR                       BIN ( 1)     INIT ('1'B)   ,     00008180
+       W01_FNR               FIXED     DEC (11)                   ,     00008190
+       T01                   FIXED     BIN (15)     INIT ( 0  )   ;     00008200
+                                                                        00008210
+                                                                        00008220
+                                                                        00008230
+    DO T01 = 1 TO 14         WHILE     (W01_RETUR)  ;                   00008240
+                                                                        00008250
+       IF W01_FNR      =     B01.FNR   (T01)        THEN                00008260
+          W01_RETUR    =     '0'B                   ;                   00008270
+                                                                        00008280
+    END;                                                                00008290
+    RETURN (W01_RETUR);                                                 00008300
+                                                                        00008310
+ END P020_PERSON_IKKE_I_B01;                                            00008320
+                                                                        00008330
+                                                                        00008340
+                                                                        00008350
+ %PAGE;                                                                 00008360
+ /* ************************************************************ */     00008370
+ /*                                                              */     00008380
+ /*  PROCDURE FOR Å OVERFØRE EKTEFELLE-FNR. TIL SEARCH_FNR       */     00008390
+ /*                                                              */     00008400
+ /* ************************************************************ */     00008410
+                                                                        00008420
+ P030_AP_FNR_EK :                                                       00008430
+    PROC;                                                               00008440
+                                                                        00008450
+    %INCLUDE  P0010501;          /* APS  TRANS_OMR               */     00008460
+                                                                        00008470
+    SEARCH_FNR            =      APS.FNR_EK;                            00008480
+                                                                        00008490
+ END P030_AP_FNR_EK;                                                    00008500
+                                                                        00008510
+ P030_A1_FNR_EK :                                                       00008520
+    PROC;                                                               00008530
+                                                                        00008540
+    %INCLUDE  P001N501;          /* APS  TRANS_OMR               */     00008550
+                                                                        00008560
+    SEARCH_FNR            =      A1S.FNR_EK;                            00008570
+                                                                        00008580
+ END P030_A1_FNR_EK;                                                    00008590
+                                                                        00008600
+                                                                        00008610
+                                                                        00008620
+ %PAGE;                                                                 00008630
+ /* ************************************************************ */     00008640
+ /*                                                              */     00008650
+ /*  PROCDURE FOR Å OVERFØRE EKTEFELLE-FNR. TIL SEARCH_FNR       */     00008660
+ /*                                                              */     00008670
+ /* ************************************************************ */     00008680
+                                                                        00008690
+ P040_UP_FNR_EK :                                                       00008700
+    PROC;                                                               00008710
+                                                                        00008720
+    %INCLUDE  P0010601;          /* UPS  TRANS_OMR               */     00008730
+                                                                        00008740
+    SEARCH_FNR            =      UPS.FNR_EK;                            00008750
+                                                                        00008760
+ END P040_UP_FNR_EK;                                                    00008770
+                                                                        00008780
+ P040_U2_FNR_EK :                                                       00008790
+    PROC;                                                               00008800
+                                                                        00008810
+    %INCLUDE  P001N601;          /* UPS  TRANS_OMR               */     00008820
+                                                                        00008830
+    SEARCH_FNR            =      U2S.FNR_EK;                            00008840
+                                                                        00008850
+ END P040_U2_FNR_EK;                                                    00008860
+                                                                        00008870
+ P040_U3_FNR_EK :                                                       00008880
+    PROC;                                                               00008890
+                                                                        00008900
+    %INCLUDE  P001U601;          /* U3S  TRANS_OMR               */     00008910
+                                                                        00008920
+    SEARCH_FNR            =      U3S.FNR_EK;                            00008930
+                                                                        00008940
+ END P040_U3_FNR_EK;                                                    00008950
+                                                                        00008960
+ %PAGE;                                                                 00008970
+ /* ************************************************************ */     00008980
+ /*                                                              */     00008990
+ /*  PROCDURE FOR Å OVERFØRE EKTEFELLE-FNR. TIL SEARCH_FNR       */     00009000
+ /*                                                              */     00009010
+ /* ************************************************************ */     00009020
+                                                                        00009030
+ /*AFP*/ P045_AF_FNR_EK :                                               00009040
+ /*AFP*/    PROC;                                                       00009050
+                                                                        00009060
+ /*AFP*/    %INCLUDE P0011901;   /* AFP  TRANS_OMR               */     00009070
+                                                                        00009080
+ /*AFP*/    SEARCH_FNR    =      AFP.FNR_EK;                            00009090
+                                                                        00009100
+ /*AFP*/ END P045_AF_FNR_EK;                                            00009110
+                                                                        00009120
+  /*9801 HL : */                                                        00009130
+         P045_KF_FNR_EK :                                               00009140
+            PROC;                                                       00009150
+                                                                        00009160
+            %INCLUDE P001UJ01;   /* KF   TRANS_OMR (AFP)         */     00009170
+                                                                        00009180
+            SEARCH_FNR    =      KFP.FNR_EK;                            00009190
+                                                                        00009200
+         END P045_KF_FNR_EK;                                            00009210
+                                                                        00009220
+                                                                        00009230
+                                                                        00009240
+ /* ************************************************************** */   00009250
+ /*                                                                */   00009260
+ /* PROCEDURE FOR Å LESE TILKNYTTNINGENE TIL STATUS-SEGM.          */   00009270
+ /*                                                                */   00009280
+ /* PROCEDUREN RETURNERER MED VERDIEN SANN (1) / USANN (0) .       */   00009290
+ /*                                                                */   00009300
+ /* ************************************************************** */   00009310
+                                                                        00009320
+ P050_LES_STATUS_TILKN:                                                 00009330
+   PROC;                                                                00009340
+                                                                        00009350
+   SSA1_RF0PERSN.PKEY                    =    SEARCH_FNR        ;       00009360
+                                                                        00009370
+   CALL PLITDLI                              (W02_PARM_CT_6     ,       00009380
+                                              W02_GU            ,       00009390
+                                              RF1               ,       00009400
+                                              W01_STATUS_TILKN  ,       00009410
+                                              SSA1_RF0PERSN     ,       00009420
+                                              SSA1_STATUS       ,       00009430
+                                              SSA_UQUAL_TILKN)  ;       00009440
+                                                                        00009450
+   IF UIBFCTR                           ^=    UIB_RC_OK        THEN     00009460
+      DO;                                                               00009470
+         /* ************************************************** */       00009480
+         /* UAKSEPTABEL KODE FRA   :      UIB                  */       00009490
+         /* ************************************************** */       00009500
+  L150:                                                                 00009510
+         FEIL_MELD_NR                     =     500;                    00009520
+         FEIL_VED_LABEL                   =    '150';                   00009530
+      END;                                                              00009540
+                                                                        00009550
+   SELECT   ( RF1.STATUS_KODE   );                                      00009560
+                                                                        00009570
+      WHEN  ('  ' )                                                     00009580
+         DO;                                                            00009590
+            /* ************************************************ */      00009600
+            /* LEST INN BEGGE SEGM                              */      00009610
+            /* ************************************************ */      00009620
+                                                                        00009630
+            STATUS_TILKN_FUNNET             =    '1'B;                  00009640
+      END;                                                              00009650
+                                                                        00009660
+      WHEN  ('GE' )                                                     00009670
+         DO;                                                            00009680
+            /* ********************************************* */         00009690
+            /* LOVLIG KODE MEN IKKE FUNNET NOEN   : TILKN    */         00009700
+            /* ********************************************* */         00009710
+                                                                        00009720
+            IF RF1.SEGM_NIVAA             ^=    '02'           THEN     00009730
+               DO;                                                      00009740
+  L160:          FEIL_MELD_NR              =     500;                   00009750
+                 FEIL_VED_LABEL            =    '160';                  00009760
+               END;                                                     00009770
+                                                                        00009780
+            STATUS_TILKN_FUNNET            =    '0'B;                   00009790
+      END;                                                              00009800
+                                                                        00009810
+      OTHERWISE                                                         00009820
+         DO;                                                            00009830
+            /* ************************************************* */     00009840
+            /* FEIL VED LES AV STATUS TILKN                      */     00009850
+            /* ************************************************* */     00009860
+  L170:                                                                 00009870
+            FEIL_MELD_NR                     =     500;                 00009880
+            FEIL_VED_LABEL                   =    '170';                00009890
+            DB_STATUS_KODE                   =     RF1.STATUS_KODE;     00009900
+         END;                                                           00009910
+   END;     /*   SELECT (RF1.STATUS_KODE )                   */         00009920
+                                                                        00009930
+  RETUR:                                                                00009940
+ END P050_LES_STATUS_TILKN;                                             00009950
+                                                                        00009960
+                                                                        00009970
+                                                                        00009980
+ /* ************************************************************ */     00009990
+ /* ************************************************************ */     00010000
+ /* **********                                    ************** */     00010010
+ /* *******         EKSTERNE PROCEDURER              *********** */     00010020
+ /* **********                                    ************** */     00010030
+ /* ************************************************************ */     00010040
+ /* ************************************************************ */     00010050
+                                                                        00010060
+                                                                        00010070
+                                                                        00010080
+                                                                        00010090
+ %PAGE;                                                                 00010100
+ % INCLUDE R0019902;   /*    FINNE KJØNN                          */    00010110
+                                                                        00010120
+ %PAGE;                                                                 00010130
+ % INCLUDE R0019913;   /*    SNUR  DATO (PIC(4))                  */    00010140
+                                                                        00010150
+ %PAGE;                                                                 00010160
+ % INCLUDE R0019950;   /*    P_SORTER_TRANS_LISTE_OMR (START_POS) */    00010170
+                                                                        00010180
+ %PAGE;                                                                 00010190
+ % INCLUDE R0019952;   /*    P910_LES_FORRIGE_TRANS               */    00010200
+                                                                        00010210
+ END R001310;                                                           00010220

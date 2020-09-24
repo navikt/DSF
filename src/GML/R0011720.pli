@@ -1,0 +1,581 @@
+ /*       SIST ENDRET 13/03-98 13.38.02 AV   JDA7339                  */00000000
+ /*       SIST ENDRET 13/03-98 13.22.13 AV   JDA7339                  */00000010
+ /*       SIST ENDRET 22/07-92 10.12.02 AV   DYBVIK                   */00000020
+ /*       SIST ENDRET 24/03-92 14.21.35 AV   DYBVIK                   */00000030
+ /*       SIST ENDRET 20/09-91 08.14.42 AV   DYBVIK                   */00000040
+ /*       SIST ENDRET 26/04-91 12.27.18 AV   DYBVIK                   */00000050
+ /*       SIST ENDRET 14/04-89 14.45.14 AV   DYBVIK                   */00000060
+ /*       SIST ENDRET 25/04-86 07.58.44 AV   TASSEN                   */00000070
+ /*       SIST ENDRET 10/07-85 09.58.44 AV   DYBVIK                   */00000080
+ /*       SIST ENDRET 22/04-85 14.32.05 AV   DYBVIK                   */00000090
+ /*       SIST ENDRET 27/02-85 16.32.34 AV   HERMAN                   */00000100
+ /*       SIST ENDRET 07/02-85 10.56.01 AV   HERMAN                   */00000110
+ /*       SIST ENDRET 23/01-85 08.48.32 AV   HERMAN                   */00000120
+ /*       SIST ENDRET 15/01-85 13.33.12 AV   LUNDEBY                  */00000130
+ /*       SIST ENDRET 09/01-85 07.00.22 AV   LUNDEBY                  */00000140
+ /*       SIST ENDRET 20/11-84 09.40.11 AV   DYBVIK                   */00000150
+ /* ***************************************************************** */00000160
+ /* IDENTIFIKASJON:                                                   */00000170
+ /*     R0011720 - PROSEDYRE I PLI                                    */00000180
+ /*     PROGRAMMERER: JAN, MARS 1982                                  */00000190
+ /* HENSIKT:                                                          */00000200
+ /*     RUTINEN KONTROLLERER OPPHØRSTRANS (O2) MOT OPPLYSNINGER I     */00000210
+ /*     REGISTERET.NÅR DET OPPDAGES UOVERENSTEMMELSER BLIR FEILEN     */00000220
+ /*     MELDT IFRA VIA FEILMELDINGSRUTINEN.                           */00000230
+ /*     STATUS OPPDATERES (B02).                                      */00000240
+ /*     TRANSTYPE SETTES I TRANSAKSJONEN.                             */00000250
+ /*     SISTE DEL AV OPPHØRSBLANKETT 2 KONTROLLERES I EN EGEN RUTINE. */00000260
+ /*     DET GJELDER OVERFØRING AV KOMP.TILLEGG.                       */00000270
+ /* PROGRAMTILKNYTNING:                                               */00000280
+ /*     KALLES OPP AV PROGRAM R0013520.                               */00000290
+ /* BRUK:                                                             */00000300
+ /*     EXEC CICS XCTL PROGRAM ('R0011720') COMMAREA (KOM_OMR)        */00000310
+ /* ENDRET AV HERMAN 23.1.85 : OPPHØR BARNEPENSJON SKAL HA KODE 'F'   */00000320
+ /*                            (KODE 'G' BRUKES FOR TIDEN IKKE)       */00000330
+ /* ENDRET AV HERMAN 7.2.85  : OPPHØRSKODENE C,D OG G SKAL IKKE TESTES*/00000340
+ /*                            HER. (HJELPESTØNAD OG GRUNNSTØNAD ER   */00000350
+ /*                            IKKE REGISTRERT PÅ RF-BASEN)           */00000360
+ /*                                                                   */00000370
+ /* ENDRET AV DYBVIK 18.4 85 : NÅR VIRKDATO OG OPPHØRSDATO ER LIK     */00000380
+ /*                            SKRIVES FEILMELDING.                   */00000390
+ /*                                                                   */00000400
+ /* ENDRET AV ERIK   24.4 86 : ENDRET FEILMELDINGREN VED LABEL 190.   */00000410
+ /*                                                                   */00000420
+ /* ***************************************************************** */00000430
+                                                                        00000440
+                                                                        00000450
+ O2TRANS:                                                               00000460
+   PROC (COMMAREA_PEKER) OPTIONS (MAIN);                                00000470
+                                                                        00000480
+                                                                        00000490
+      %INCLUDE P0011701;                                                00000500
+      %INCLUDE P0019906;   /* TRANS_OPPL_OMR  BASED(TRANS_OPPL_PEKER) */00000510
+      %INCLUDE P0019908;   /* KOM_OMR  BASED(COMMAREA_PEKER)          */00000520
+      %INCLUDE P0019910;   /* STYRINGS_OMR  BASED (STYRINGS_PEKER)    */00000530
+      %INCLUDE P0019912;   /* DIV_PARAM_OMR  BASED(DIV_PARAM_PEKER)   */00000540
+                                                                        00000550
+ %PAGE;                                                                 00000560
+      DCL 1 B00 BASED(B00_PEKER), %INCLUDE P0019921;                    00000570
+                                                                        00000580
+ %PAGE;                                                                 00000590
+      DCL 1 B01 BASED(B01_PEKER), %INCLUDE P0019921;                    00000600
+                                                                        00000610
+ %PAGE;                                                                 00000620
+      DCL 1 B02 BASED(B02_PEKER), %INCLUDE P0019921;                    00000630
+                                                                        00000640
+ %PAGE;                                                                 00000650
+   DCL                                                                  00000660
+      COMMAREA_PEKER PTR;                                               00000670
+   DCL                                                                  00000680
+      AVDØD_IND      FIXED BIN(15),                                     00000690
+      BARN_IND       FIXED BIN(15),                                     00000700
+      I              FIXED BIN(15),                                     00000710
+      J              FIXED BIN(15),                                     00000720
+      W02_PT1        CHAR(1),                                           00000730
+      W02_PT2        CHAR(1),                                           00000740
+      W02_VDATO      PIC '9999',                                        00000750
+      W02_FNR        PIC '(11)9',                                       00000760
+      HJ_VIRK_DATO_ÅM PIC '9999';                                       00000770
+   DCL                                                                  00000780
+     (ADDR , CSTG)   BUILTIN;                                           00000790
+                                                                        00000800
+ %PAGE;                                                                 00000810
+ /* ***************************************************************** */00000820
+ /* PROGRAMMET STARTER HER                                            */00000830
+ /* ***************************************************************** */00000840
+                                                                        00000850
+ /* ENDRET 7.2.85 AV HL. : TESTER På OPPHØRSKODE C,D OG G ER FJERNET  */00000860
+                                                                        00000870
+      PROGRAM_ID      =  'R0011720';                                    00000880
+      HJ_VIRK_DATO_ÅM =   F_SNU_DATO(O2.VIRK_DATO_MÅ);   /* 9913   */   00000890
+                                                                        00000900
+ /* ***************************************************************** */00000910
+ /* DERSOM PERSONEN IKKE FINNES I BASEN                               */00000920
+ /* ***************************************************************** */00000930
+                                                                        00000940
+      IF B01.FNR(SØKER_IND) = 0 THEN                                    00000950
+         DO;                                                            00000960
+ L100:                                                                  00000970
+            FEIL_VED_LABEL  = '100';                                    00000980
+            FEIL_MELD_NR    = 1601;                                     00000990
+            GO TO L999;                                                 00001000
+         END;                                                           00001010
+                                                                        00001020
+ /* ***************************************************************** */00001030
+ /* PERSONEN ER I BASEN                                               */00001040
+ /* ***************************************************************** */00001050
+                                                                        00001060
+      ELSE                                                              00001070
+                                                                        00001080
+ /* ***************************************************************** */00001090
+ /* DERSOM SØKER ER REGISTRERT MED ET ANNET TKNR I STATUS ENN I TRANS */00001100
+ /* ***************************************************************** */00001110
+                                                                        00001120
+         IF B01.TKNR(SØKER_IND)     > 0       THEN                      00001130
+                                                                        00001140
+            IF B01.TKNR(SØKER_IND) ^= O2.TKNR THEN                      00001150
+               DO;                                                      00001160
+ L110:                                                                  00001170
+                  FEIL_VED_LABEL = '110';                               00001180
+                  FEIL_MELD_NR   = 1702;                                00001190
+                  GO TO L999;                                           00001200
+               END;                                                     00001210
+                                                                        00001220
+         IF SØKER_IND < 3 THEN                                          00001230
+            DO;                                                         00001240
+               CALL FLYTT_B01_TIL_B02(SØKER_IND);      /* 9926  */      00001250
+                                                                        00001260
+               B02.FØRSTE_GANG_REG(SØKER_IND) = 'N';                    00001270
+                                                                        00001280
+               IF FEIL_MELD_NR                >  0 THEN                 00001290
+                  GO TO L999;                                           00001300
+               ELSE                                                     00001310
+                  PROGRAM_ID = 'R0011720';                              00001320
+                                                                        00001330
+               IF B01.FNR(EKTEF_IND) > 0 THEN                           00001340
+                  DO;                                                   00001350
+                     IF B01.DØDSDATO_ÅMD(EKTEF_IND) > 0 THEN            00001360
+                        B02.PERSON(EKTEF_IND) = B01.PERSON(EKTEF_IND);  00001370
+                     ELSE                                               00001380
+                                                                        00001390
+                        CALL FLYTT_B01_TIL_B02(EKTEF_IND); /* 9926 */   00001400
+                                                                        00001410
+                     B02.FØRSTE_GANG_REG(EKTEF_IND) = 'N';              00001420
+                                                                        00001430
+                     IF FEIL_MELD_NR > 0 THEN                           00001440
+                        GO TO L999;                                     00001450
+                     ELSE                                               00001460
+                        PROGRAM_ID = 'R0011720';                        00001470
+                  END;                                                  00001480
+ /* RULLERING AV FORVENTET            - 9802 HL */                      00001490
+    IF B02.ETTEPENS.FORVENTET(SØKER_IND) > 0   THEN                     00001500
+       CALL RULL_FORVENTET(B02.G_DATO_ÅM(SØKER_IND),                    00001510
+                     B02.VIRK_DATO_ÅM(SØKER_IND),                       00001520
+                     B02.ETTEPENS.FORVENTET(SØKER_IND));                00001530
+                                                                        00001540
+ /* RULLERING AV INNTEKTER - 9802 HL */                                 00001550
+               DO I = 1 TO 2;                                           00001560
+                  IF B02.ALDERSP.FAI(I) > 0   THEN                      00001570
+                     CALL RULL_FAI(B02.G_DATO_ÅM(I),                    00001580
+                               B02.VIRK_DATO_ÅM(I),                     00001590
+                               B02.ALDERSP.FAI(I));                     00001600
+                                                                        00001610
+                  IF B02.FORSI.PENSJONSINNTEKT(I) > 0  THEN             00001620
+                     B02.FORSI.PENSJONSINNTEKT(I) =                     00001630
+                        F_RULL_FORSI(B02.G_DATO_ÅM(I),                  00001640
+                               B02.VIRK_DATO_ÅM(I),                     00001650
+                               B02.FORSI.PENSJONSINNTEKT(I));           00001660
+                                                                        00001670
+                  IF B02.FORSI.ARBEIDSINNTEKT(I) > 0  THEN              00001680
+                     B02.FORSI.ARBEIDSINNTEKT(I) =                      00001690
+                         F_RULL_FORSI(B02.G_DATO_ÅM(I),                 00001700
+                              B02.VIRK_DATO_ÅM(I),                      00001710
+                              B02.FORSI.ARBEIDSINNTEKT(I));             00001720
+                                                                        00001730
+                  IF B02.FORSI.PENSJONSINNTEKT_EK(I) > 0  THEN          00001740
+                     B02.FORSI.PENSJONSINNTEKT_EK(I) =                  00001750
+                         F_RULL_FORSI(B02.G_DATO_ÅM(I),                 00001760
+                               B02.VIRK_DATO_ÅM(I),                     00001770
+                               B02.FORSI.PENSJONSINNTEKT_EK(I));        00001780
+                                                                        00001790
+                  IF B02.FORSI.ARBEIDSINNTEKT_EK(I) > 0  THEN           00001800
+                     B02.FORSI.ARBEIDSINNTEKT_EK(I) =                   00001810
+                         F_RULL_FORSI(B02.G_DATO_ÅM(I),                 00001820
+                               B02.VIRK_DATO_ÅM(I),                     00001830
+                               B02.FORSI.ARBEIDSINNTEKT_EK(I));         00001840
+               END; /* DO I = 1 TO 2*/                                  00001850
+            END;                                                        00001860
+         ELSE                                                           00001870
+            DO;    /* SØKER_IND > 2, DVS BARNEPENSJON */                00001880
+                                                                        00001890
+               CALL FLYTT_B01_TIL_B02(3);                 /* 9926 */    00001900
+                                                                        00001910
+ /* ***************************************************************** */00001920
+ /* YNGSTE OG ØVRIGE BARN ER NÅ FLYTTET                               */00001930
+ /* ***************************************************************** */00001940
+                                                                        00001950
+                B02.FØRSTE_GANG_REG(SØKER_IND) = 'N';                   00001960
+                                                                        00001970
+                IF FEIL_MELD_NR > 0 THEN                                00001980
+                   GO TO L999;                                          00001990
+                ELSE                                                    00002000
+                   PROGRAM_ID = 'R0011720';                             00002010
+            END;                                                        00002020
+ /* ***************************************************************** */00002030
+ /* DERSOM EKTEFELLETILLEGG ER UTFYLT.                                */00002040
+ /* ***************************************************************** */00002050
+                                                                        00002060
+         IF O2.EK_TILL = 'X' THEN                                       00002070
+            DO;                                                         00002080
+                                                                        00002090
+ /* ***************************************************************** */00002100
+ /* DERSOM DET IKKE ER EKTEFELLETILLEGG I BASEN.                      */00002110
+ /* ***************************************************************** */00002120
+                                                                        00002130
+               IF B01.PENSJONSTYPE2(SØKER_IND) ^= 'F' THEN              00002140
+                  DO;                                                   00002150
+ L150:                                                                  00002160
+                     FEIL_VED_LABEL = '150';                            00002170
+                     FEIL_MELD_NR   = 1602;                             00002180
+                     GO TO L999;                                        00002190
+                  END;                                                  00002200
+               ELSE                                                     00002210
+                  DO;                                                   00002220
+                     TRANSTYPE                    = 20;                 00002230
+                     B02.PENSJONSTYPE2(SØKER_IND) = 'P';                00002240
+                     B02.PENSJONSTYPE1(EKTEF_IND) = 'G';                00002250
+                     B02.GAMMEL_FT_KODE(EKTEF_IND) = ' ';               00002260
+                                                                        00002270
+ /* ***************************************************************** */00002280
+ /* FINNER EKTEFELLEN I SØKERS TILKNYTNINGSSEGMENT.                   */00002290
+ /* ***************************************************************** */00002300
+                                                                        00002310
+                     DO I = 1 TO 13 WHILE (                             00002320
+                                     B01.FNR_TILKN(SØKER_IND,I) > 0);   00002330
+                        IF B01.FNR_TILKN(SØKER_IND,I) =                 00002340
+                                            B01.FNR(EKTEF_IND) THEN     00002350
+                           DO;                                          00002360
+                              B02.TILKNYTNINGSKODE(                     00002370
+                                                 SØKER_IND,I) = 'G';    00002380
+                              B02.FT_FØR_91(SØKER_IND,I) = ' ';         00002390
+                              I = 13;                                   00002400
+                           END;                                         00002410
+                     END;                                               00002420
+                                                                        00002430
+ /* ***************************************************************** */00002440
+ /* EKTEFELLETILLEGG SETTES LIK 0.    050489 BRITT.                   */00002450
+ /* ***************************************************************** */00002460
+                                                                        00002470
+                     IF B02.PENSJONSTYPE1(SØKER_IND) = 'A' !            00002480
+                        B02.PENSJONSTYPE1(SØKER_IND) = 'K' THEN         00002490
+                                                                        00002500
+                        B02.ALDERSP.ET(SØKER_IND)    =  0;              00002510
+                                                                        00002520
+                     IF B02.PENSJONSTYPE1(SØKER_IND) = 'U' !            00002530
+ /*YS*/                 B02.PENSJONSTYPE1(SØKER_IND) = 'Y' THEN         00002540
+                                                                        00002550
+                        B02.UFØRPENS.ET(SØKER_IND)    =  0;             00002560
+                                                                        00002570
+                END;                                                    00002580
+            END;                                                        00002590
+                                                                        00002600
+ /* **************************************************************** */ 00002610
+ /* DERSOM OPPHØR BARNETILLEGG ER UTFYLT.                            */ 00002620
+ /* **************************************************************** */ 00002630
+                                                                        00002640
+         IF O2.FNR_BARN(1) > 0  THEN                                    00002650
+            DO;                                                         00002660
+               TRANSTYPE = 20;                                          00002670
+               DO I = 1 TO 5 WHILE (O2.FNR_BARN(I) > 0);                00002680
+                  BARN_IND = 0;                                         00002690
+                  DO J = 3 TO 14 WHILE (B01.FNR(J) > 0);                00002700
+                     IF O2.FNR_BARN(I) = B01.FNR(J) THEN                00002710
+                        DO;                                             00002720
+                           BARN_IND = J;                                00002730
+                           B02.GAMMEL_FT_KODE(BARN_IND) = ' ';          00002740
+                           J = 14;                                      00002750
+                        END;                                            00002760
+                  END;                                                  00002770
+                                                                        00002780
+ /* **************************************************************** */ 00002790
+ /* DERSOM BARNET IKKE FINNES I STATUS.                              */ 00002800
+ /* **************************************************************** */ 00002810
+                                                                        00002820
+                  IF BARN_IND = 0 THEN                                  00002830
+                     DO;                                                00002840
+ L160:                                                                  00002850
+                        FEIL_VED_LABEL = '160';                         00002860
+                        FEIL_MELD_NR   = 1604;                          00002870
+                        GO TO L999;                                     00002880
+                     END;                                               00002890
+                  ELSE                                                  00002900
+                                                                        00002910
+ /* **************************************************************** */ 00002920
+ /* DERSOM BARNET IKKE  FORSØRGES AV SØKER.                          */ 00002930
+ /* **************************************************************** */ 00002940
+                                                                        00002950
+                     IF B01.FNR_TILKN(BARN_IND,1) ^= O2.FNR THEN        00002960
+                        DO;                                             00002970
+ L170:                                                                  00002980
+                           FEIL_VED_LABEL = '170';                      00002990
+                           FEIL_MELD_NR   = 1603;                       00003000
+                           GO TO L999;                                  00003010
+                        END;                                            00003020
+                     ELSE                                               00003030
+                        DO;                                             00003040
+                                                                        00003050
+ /* **************************************************************** */ 00003060
+ /* SØKERS TILKNYTNINGER TIL BARNET OPPHØRER.                        */ 00003070
+ /* **************************************************************** */ 00003080
+                                                                        00003090
+ /* 9934 */                CALL OPPHØR_KOBLING_TO_PERSONER(             00003100
+                                               SØKER_IND,BARN_IND);     00003110
+                           B02.ANTALL_BARN(SØKER_IND) =                 00003120
+                                    B02.ANTALL_BARN(SØKER_IND) - 1;     00003130
+                           B02.STATUS_KODE_HIST(BARN_IND) = 'O';        00003140
+                           B02.VIRK_DATO_ÅM(BARN_IND)     =             00003150
+                                                       HJ_VIRK_DATO_ÅM; 00003160
+                        END;                                            00003170
+               END;                                                     00003180
+            END;                                                        00003190
+                                                                        00003200
+         SELECT (O2.OPPHØR_KODE);                                       00003210
+                                                                        00003220
+ /* **************************************************************** */ 00003230
+ /* DERSOM OPPHØR ALDERSPENSJON ER UTFYLT.                           */ 00003240
+ /* **************************************************************** */ 00003250
+                                                                        00003260
+           WHEN('A')                                                    00003270
+            DO;                                                         00003280
+                                                                        00003290
+                                                                        00003300
+ /* **************************************************************** */ 00003310
+ /* DERSOM VIRKDATO OG OPPHØRSDATO ER DEN SAMME                      */ 00003320
+ /* **************************************************************** */ 00003330
+                                                                        00003340
+               IF HJ_VIRK_DATO_ÅM <= B01.VIRK_DATO_ÅM(SØKER_IND) THEN   00003350
+                  DO;                                                   00003360
+ L175:                                                                  00003370
+                      FEIL_VED_LABEL = '175';                           00003380
+                      FEIL_MELD_NR   = 1609;                            00003390
+                      GO TO L999;                                       00003400
+                  END;                                                  00003410
+                                                                        00003420
+ /* **************************************************************** */ 00003430
+ /* DERSOM PERSONEN IKKE HAR ALDERSPENSJON                           */ 00003440
+ /* **************************************************************** */ 00003450
+                                                                        00003460
+               ELSE                                                     00003470
+                  IF  B01.PENSJONSTYPE1(SØKER_IND) ^= 'A'  &            00003480
+  /*AFP*/             B01.PENSJONSTYPE1(SØKER_IND) ^= 'K'  THEN         00003490
+                     DO;                                                00003500
+ L180:                                                                  00003510
+                        FEIL_VED_LABEL = '180';                         00003520
+                        FEIL_MELD_NR   = 1605;                          00003530
+                        GO TO L999;                                     00003540
+                     END;                                               00003550
+                  ELSE                                                  00003560
+                     CALL ALDERSPENSJON_OPPHØRER;        /* 9937 */     00003570
+            END;                                                        00003580
+                                                                        00003590
+ /* **************************************************************** */ 00003600
+ /* DERSOM OPPHØR UFØREPENSJON ER UTFYLT                             */ 00003610
+ /* **************************************************************** */ 00003620
+                                                                        00003630
+           WHEN('B')                                                    00003640
+            DO;                                                         00003650
+                                                                        00003660
+ /* **************************************************************** */ 00003670
+ /* DERSOM VIRKDATO OG OPPHØRSDATO ER DEN SAMME                      */ 00003680
+ /* **************************************************************** */ 00003690
+                                                                        00003700
+  /*     IF HJ_VIRK_DATO_ÅM <= B01.VIRK_DATO_ÅM(SØKER_IND) THEN  */     00003710
+               IF HJ_VIRK_DATO_ÅM <  B01.VIRK_DATO_ÅM(SØKER_IND) THEN   00003720
+                  DO;                                                   00003730
+ L185:                                                                  00003740
+                      FEIL_VED_LABEL = '185';                           00003750
+                      FEIL_MELD_NR   = 1609;                            00003760
+                      GO TO L999;                                       00003770
+                  END;                                                  00003780
+               ELSE                                                     00003790
+                                                                        00003800
+                                                                        00003810
+                  IF (B01.PENSJONSTYPE1(SØKER_IND) ^= 'U'  &            00003820
+ /*YS*/               B01.PENSJONSTYPE1(SØKER_IND) ^= 'Y'  &            00003830
+                      B01.PENSJONSTYPE3(SØKER_IND) ^= 'U') !            00003840
+                     (B01.PENSJONSTYPE1(SØKER_IND)  = 'U'  &            00003850
+ /*YS*/               B01.PENSJONSTYPE3(SØKER_IND)  = 'A') !            00003860
+ /*YS*/              (B01.PENSJONSTYPE1(SØKER_IND)  = 'Y'  &            00003870
+ /*YS*/               B01.PENSJONSTYPE3(SØKER_IND)  = 'A') THEN         00003880
+                      DO;                                               00003890
+                                                                        00003900
+ /* **************************************************************** */ 00003910
+ /* DERSOM PERSONEN IKKE HAR UFØREPENSJON                            */ 00003920
+ /* **************************************************************** */ 00003930
+                                                                        00003940
+ L190:                                                                  00003950
+                         FEIL_VED_LABEL = '190';                        00003960
+                         FEIL_MELD_NR   = 9;                            00003970
+       /*  FEILMELDINGSNUMMERET ER ENDRET FRA 1605 TIL 9.           */  00003980
+       /*  DETTE ER GJORT I FORB. MED FEILMELDING 322. 24.4.86.ERIK */  00003990
+                         GO TO L999;                                    00004000
+                      END;                                              00004010
+                  ELSE                                                  00004020
+                      DO;                                               00004030
+                      /*---------------------------------------------*/ 00004040
+                      /*OPPHØRER UFØREPENSJONEN OG SKRIVER DATA TIL  */ 00004050
+                      /*NORTRYGD DERSOM DET ER ET NOR-KONTOR         */ 00004060
+                      /*---------------------------------------------*/ 00004070
+                                                                        00004080
+                         CALL UFØREPENSJON_OPPHØRER;         /* 9940 */ 00004090
+     /* 9957 */          CALL P900_NOR_DATA ( B01.FNR  (SØKER_IND) ,    00004100
+                                           B01.TKNR (SØKER_IND)  )   ;  00004110
+                                                                        00004120
+                         IF FEIL_MELD_NR    >  0                    THEN00004130
+                            GOTO L999                                ;  00004140
+                         ELSE                                           00004150
+                            PROGRAM_ID   = 'R0011720'                ;  00004160
+                      END;                                              00004170
+            END;                                                        00004180
+                                                                        00004190
+ /* **************************************************************** */ 00004200
+ /* DERSOM OPPHØR ETTERLATTEPENSJON ER UTFYLT                        */ 00004210
+ /* **************************************************************** */ 00004220
+                                                                        00004230
+           WHEN('E')                                                    00004240
+            DO;                                                         00004250
+                                                                        00004260
+                                                                        00004270
+ /* **************************************************************** */ 00004280
+ /* DERSOM VIRKDATO OG OPPHØRSDATO ER DEN SAMME                      */ 00004290
+ /* **************************************************************** */ 00004300
+                                                                        00004310
+               IF HJ_VIRK_DATO_ÅM <= B01.VIRK_DATO_ÅM(SØKER_IND) THEN   00004320
+                  DO;                                                   00004330
+ L195:                                                                  00004340
+                      FEIL_VED_LABEL = '195';                           00004350
+                      FEIL_MELD_NR   = 1609;                            00004360
+                      GO TO L999;                                       00004370
+                  END;                                                  00004380
+               ELSE                                                     00004390
+                                                                        00004400
+ /* **************************************************************** */ 00004410
+ /* DERSOM PERSONEN IKKE HAR ETTERLATTEPENSJON                       */ 00004420
+ /* **************************************************************** */ 00004430
+                                                                        00004440
+                  IF (B01.PENSJONSTYPE1(SØKER_IND) ^= 'E' &             00004450
+                      B01.PENSJONSTYPE1(SØKER_IND) ^= 'J' ) &           00004460
+                      B01.PENSJONSTYPE2(SØKER_IND) ^= 'E'   THEN        00004470
+                     DO;                                                00004480
+ L200:                                                                  00004490
+                        FEIL_VED_LABEL = '200';                         00004500
+                        FEIL_MELD_NR   = 1605;                          00004510
+                        GO TO L999;                                     00004520
+                     END;                                               00004530
+                  ELSE                                                  00004540
+                     DO;                                                00004550
+                        CALL ETTERLATTEPENSJON_OPPHØRER;      /* 9938 */00004560
+                     END;                                               00004570
+            END;                                                        00004580
+                                                                        00004590
+ /* **************************************************************** */ 00004600
+ /* DERSOM OPPHØR BARNEPENSJON ER UTFYLT                             */ 00004610
+ /* **************************************************************** */ 00004620
+                                                                        00004630
+           WHEN('F')                                                    00004640
+                                                                        00004650
+            DO;                                                         00004660
+                                                                        00004670
+ /* **************************************************************** */ 00004680
+ /* DERSOM VIRKDATO OG OPPHØRSDATO ER DEN SAMME                      */ 00004690
+ /* **************************************************************** */ 00004700
+                                                                        00004710
+               IF HJ_VIRK_DATO_ÅM <= B01.VIRK_DATO_ÅM(SØKER_IND) THEN   00004720
+                  DO;                                                   00004730
+ L205:                                                                  00004740
+                      FEIL_VED_LABEL = '205';                           00004750
+                      FEIL_MELD_NR   = 1609;                            00004760
+                      GO TO L999;                                       00004770
+                  END;                                                  00004780
+               ELSE                                                     00004790
+                                                                        00004800
+ /* **************************************************************** */ 00004810
+ /* DERSOM PERSONEN IKKE HAR BARNEPENSJON                            */ 00004820
+ /* **************************************************************** */ 00004830
+                                                                        00004840
+                  IF B01.PENSJONSTYPE1(SØKER_IND) ^= 'B' &              00004850
+                     B01.PENSJONSTYPE1(SØKER_IND) ^= 'N' THEN           00004860
+                     DO;                                                00004870
+ L210:                                                                  00004880
+                        FEIL_VED_LABEL = '210';                         00004890
+                        FEIL_MELD_NR   = 1605;                          00004900
+                        GO TO L999;                                     00004910
+                     END;                                               00004920
+                  ELSE                                                  00004930
+                     CALL BARNEPENSJON_OPPHØRER(SØKER_IND); /* 9939 */  00004940
+            END;                                                        00004950
+                                                                        00004960
+ /* **************************************************************** */ 00004970
+ /* DERSOM OPPHØR ATTFØRING  ER   UTFYLT                             */ 00004980
+ /* **************************************************************** */ 00004990
+                                                                        00005000
+           WHEN('H')                                                    00005010
+            DO;                                                         00005020
+                                                                        00005030
+ /* **************************************************************** */ 00005040
+ /* DERSOM VIRKDATO OG OPPHØRSDATO ER DEN SAMME                      */ 00005050
+ /* **************************************************************** */ 00005060
+                                                                        00005070
+               IF HJ_VIRK_DATO_ÅM <= B01.VIRK_DATO_ÅM(SØKER_IND) THEN   00005080
+                  DO;                                                   00005090
+ L215:                                                                  00005100
+                      FEIL_VED_LABEL = '215';                           00005110
+                      FEIL_MELD_NR   = 1609;                            00005120
+                      GO TO L999;                                       00005130
+                  END;                                                  00005140
+               ELSE                                                     00005150
+                                                                        00005160
+ /* **************************************************************** */ 00005170
+ /* DERSOM PERSONEN IKKE HAR ATTFØRING.                              */ 00005180
+ /* **************************************************************** */ 00005190
+                                                                        00005200
+                  IF B01.PENSJONSTYPE3(SØKER_IND) ^= 'A' THEN           00005210
+                     DO;                                                00005220
+ L220:                                                                  00005230
+                       FEIL_VED_LABEL = '220';                          00005240
+                       FEIL_MELD_NR   = 1605;                           00005250
+                       GO TO L999;                                      00005260
+                     END;                                               00005270
+                  ELSE                                                  00005280
+                     DO;                                                00005290
+                        DO I = 1 TO 14;                                 00005300
+                           IF (B01.FNR(I) > 0) THEN                     00005310
+                              B00.PERSON(I)       = B01.PERSON(I);      00005320
+                        END;                                            00005330
+                                                                        00005340
+                        SEARCH_FNR    = B01.FNR(SØKER_IND);             00005350
+                        ØNSKET_STATUS = 'N';                            00005360
+                        EXEC CICS LINK PROGRAM('R0013101')              00005370
+                                                     COMMAREA(KOM_OMR); 00005380
+                        DO I = 1 TO 14 ;                                00005390
+                           B02.FNR(I)              = B00.FNR(I);        00005400
+                           IF (B01.FNR(I) > 0) THEN                     00005410
+                               B02.PERSON(I)       = B01.PERSON(I);     00005420
+                           B01.PERSON(I)       = B00.PERSON(I);         00005430
+                           B00.VIRK_DATO_ÅM(I) = 0            ;         00005440
+                                                                        00005450
+                           IF (B01.FNR(I) > 0) THEN                     00005460
+                              DO;                                       00005470
+                                 B01.VIRK_DATO_ÅM(I)     =              00005480
+                                                  HJ_VIRK_DATO_ÅM;      00005490
+                                 B01.STATUS_KODE_HIST(I) = 'O'      ;   00005500
+                              END;                                      00005510
+                        END;                                            00005520
+                                                                        00005530
+                                                                        00005540
+                        TRANSTYPE = 55;                                 00005550
+                     END;                                               00005560
+            END;                                                        00005570
+                                                                        00005580
+           OTHERWISE;                                                   00005590
+                                                                        00005600
+          END;                                                          00005610
+                                                                        00005620
+ L999:                                                                  00005630
+          EXEC CICS RETURN;                                             00005640
+ %PAGE;                                                                 00005650
+               %INCLUDE R0019913;   /* F_SNU_DATO                   */  00005660
+               %INCLUDE R0019924;   /* KOBLE_TO_PERSONER            */  00005670
+ /* 9924 KALLES IKKE OPP AV DETTE PROGRAM, MEN AV 9939              */  00005680
+               %INCLUDE R0019926;   /* FLYTT_B01_TIL_B02            */  00005690
+ /*            %INCLUDE R0019933; FJERNET 7.2.85 HL. - BRUKES IKKE  */  00005700
+               %INCLUDE R0019934;   /* OPPHØR_KOBLING_TO_PERSONER   */  00005710
+               %INCLUDE R0019937;   /* ALDERSPENSJON OPPHØRER       */  00005720
+               %INCLUDE R0019938;   /* ETTERLATTEPENSJON OPPHØRER   */  00005730
+               %INCLUDE R0019939;   /* BARNEPENSJON OPPHØRER        */  00005740
+               %INCLUDE R0019940;   /* UFØREPENSJON OPPHØRER        */  00005750
+               %INCLUDE R0019957;   /*  P900_NOR_DATA ( FNR , TKNR ) */ 00005760
+      %INCLUDE R0019954;   /*RULL_FORVENTET*/                           00005770
+      %INCLUDE R0019967;   /*RULL_FAI*/                                 00005780
+      %INCLUDE R0019968;   /*F_RULL_FORSI*/                             00005790
+ END O2TRANS;                                                           00005800

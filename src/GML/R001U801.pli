@@ -1,0 +1,794 @@
+ /*       SIST ENDRET 12/10-95 14.13.11 AV   JDA0310                  */00000000
+ /* ***************************************************************** */00000010
+ /*IDENTIFIKASJON:                                                    */00000020
+ /* **********************                                            */00000030
+ /*  PROGRAM-IDENT : R001U801 - KONTROLL GRUNNBLANKETT-EE - HOVEDPROG */00000040
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */00000050
+ /*  PROGRAMMERER  :  SATISH                                          */00000060
+ /*  PROGRAMMET BLE LAGET      1294                                   */00000070
+ /*  ENDRINGERSDATO :                                                 */00000080
+ /*  ENDRINGEN GJELDER:                                               */00000090
+ /*  ENDRINGEN BLE UTFØRT AV :                                        */00000100
+ /*                                                                   */00000110
+ /* ***************************************************************** */00000120
+ /*HENSIKT:                                                           */00000130
+ /* **********                                                        */00000140
+ /*  PROGRAMMET KONTROLLERER GRUNNBLANKETT ETTERLATT EKTEFELLE        */00000150
+ /*  BLANKETTEN KONTROLLERES ISOLERT - IKKE MOT STATUS.               */00000160
+ /*  OPERATØREN KAN BRUKE PF_TASENE:                                  */00000170
+ /*    PF_1 FØRER TIL OPPBEVARING AV TRANSEN I VENTEREGISTERET        */00000180
+ /*    PF_2 FØRER TIL AT TRANSAKSJONEN FORKASTES                      */00000190
+ /*    I BEGGE DISSE TILFELLENE SKRIVES DET UT MELDING PÅ SKJERMEN    */00000200
+ /*    OG PROGRAM R0010401 SØRGER FOR Å LEGGE UT NYTT BILDE FOR       */00000210
+ /*    REGISRERING AV ETTERL.P.    - TRANSKODE R041.                  */00000220
+ /*  NÅR INGEN FEIL FINNES, SETTES TRANSKODE = R042 OG DET RETURNERES */00000230
+ /*  TIL R0010401.                                                    */00000240
+ /* ***************************************************************** */00000250
+ /*PROGRAMTILKNYTTING:                                                */00000260
+ /* ********************                                              */00000270
+ /*  PROGRAMMETS TRANSKODER ER RU80, RU81, RU82, RU83,RU84 OG RU85.   */00000280
+ /*  PROGRAMMET KALLES FRA R0010401 - REGISTRERING MED TRANSKODE      */00000290
+ /*  R060:                                                            */00000300
+ /*    EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);         */00000310
+ /*  PROGRAMMET HAR EXEC CICS XCTL TIL:                               */00000320
+ /*    R0010301 - VALG AV FUNKSJON                                    */00000330
+ /*    R0010401 - REGISTRERING                                        */00000340
+ /*  PROGRAMMET HAR EXEC CICS LINK TIL:                               */00000350
+ /*    R0010490 - SKRIV_UT_PÅ_VENTEREG                                */00000360
+ /*  PROGRAMMET INCLUDERER:                                           */00000370
+ /*    R001U802 - BLANK_ARBEIDSOMRÅDE                                 */00000380
+ /*    R001U803 - KONTROLL_SØKER                                      */00000390
+ /*    R001U805 - KONTROLL_SPESIELL_OPPLYSNINGER                      */00000400
+ /*    R001U806 - FLYTT_FRA_ARBEIDSOMRÅDE_TIL_MAP                     */00000410
+ /*    R001U809 - FLYTT_FRA_MAP_TIL_ARBEIDSOMRÅDE                     */00000420
+ /*    R0019901 - TEST OM DATO ER GYLDIG                              */00000430
+ /*    R0019902 - FINNE KJØNN                                         */00000440
+ /*    R0019903 - ER EKTEFELLES ALDER GYLDIG                          */00000450
+ /*    R0019904 - FØDSELSNUMMERKONTROLL                               */00000460
+ /*    R0019905 - BEREGN_ALDER                                        */00000470
+ /*    R0019909 - KONTROLL TRYGDETID                                  */00000480
+ /*    R0019910 - NUMERISK KONTROLL                                   */00000490
+ /*    R0019911 - DATO KONTROLL                                       */00000500
+ /*    R0019944 - SKRIV FEIL                                          */00000510
+ /*    R0019964 - VIRKNINGSDATO 6 MÅNEDER FREM                        */00000520
+ /*    R0019963 - SKRIV FEIL YP              */      /*               */00000530
+ /*    R0019969 - SKRIV FEIL SP              */      /*               */00000540
+ /*  PROGRAMMET BRUKER FØLGENDE MAPSET:                               */00000550
+ /*    S001U83 :                                                      */00000560
+ /*      MAP - S001U81 - REGISTRERINGSBILDE GRUNNBLANKETT-EE          */00000570
+                                                                        00000580
+ /* !  S001203:                                                       */00000590
+ /* !    MAP - S001201 - REGISTRERINGSBILDE GRUNNBLANKETT-YRKESSKADE  */00000600
+                                                                        00000610
+ /*                                                                   */00000620
+ /* ***************************************************************** */00000630
+ /*DATASETTOPPLYSNINGER:                                              */00000640
+ /* ***********************                                           */00000650
+ /*  FØDSELSNUMMERENDRINGSREGISERET BLIR LEST I SUBPROGRAM R001U803   */00000660
+ /*  VED CALL TIL R0019906.                                           */00000670
+ /* ***************************************************************** */00000680
+ /*FEILMELDINGER:                                                     */00000690
+ /* *******************                                               */00000700
+ /*  BLIR SKREVET UT PÅ SKJERMBILDET FOR ETTERL.P     AV        */      00000710
+ /*  PROSEDYRE SKRIV_FEIL I R0019944.                           */      00000720
+ /*  FOR Å SKRIVE FEILMELDINGER PÅ BILDET FOR REGISTRERING AV   */      00000730
+ /*  TILLEGGSBLANKETTEN FOR YRKESSKADE BRUKES PROSEDYRE         */      00000740
+ /*  SKRIV_FEIL_YP I R0019963   OG                              */      00000750
+ /*  SKRIV_FEIL_SP : 9969                                       */      00000760
+ /*                                                                   */00000770
+ /* ***************************************************************** */00000780
+ /*FEILENDRINGER:                                                     */00000790
+ /* ***************************************************************** */00000800
+  R001U8:                                                               00000810
+    PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                 00000820
+  %PAGE;                                                                00000830
+  %INCLUDE S001U8;    /*  EE-MAPSETTET   */                             00000840
+  %PAGE;                                                                00000850
+  %INCLUDE S00120;    /*  YRKESSKADE-MAPSETTET   */                     00000860
+  %PAGE;                                                                00000870
+  %INCLUDE P001U801;  /*  TRANS_OMR FOR ETTERLATTEPENSJON  */           00000880
+  %PAGE;                                                                00000890
+  %INCLUDE P0019906;  /*  TRANS_OPPL_OMRÅDE (BASED)             */      00000900
+  %PAGE;                                                                00000910
+  %INCLUDE P0019908;  /*  KOM   OMRÅDE (BASED)           */             00000920
+  %PAGE;                                                                00000930
+  %INCLUDE P0019910;  /*  STYRINGS_OMRÅDE (BASED)           */          00000940
+  %PAGE;                                                                00000950
+  %INCLUDE P0019912;  /*  DIV-PARAM_OMRÅDE (BASED)          */          00000960
+  %PAGE;                                                                00000970
+  %INCLUDE DFHBMSCA;                                                    00000980
+  %PAGE;                                                                00000990
+    DCL                                                                 00001000
+       (BMSMAPBR,COMMAREA_PEKER) PTR;                                   00001010
+    DCL PLIXOPT CHAR(13) VAR STATIC EXTERNAL INIT(                      00001020
+                                                'NOSPIE NOSTAE');       00001030
+    DCL                                                                 00001040
+       (ADDR,UNSPEC,CSTG,ONCODE,VERIFY,SUBSTR,LOW) BUILTIN;             00001050
+    DCL                                                                 00001060
+       FEIL_FUNNET     BIT (1),                                         00001070
+       FEIL_I_SØKER    BIT (1),                                         00001080
+       FEIL_I_SPES     BIT (1),                                         00001090
+       FEIL_I_YSKADE   BIT (1),                                         00001100
+       ONKODE PIC'9999',                                                00001110
+       CURSOR_POS FIXED BIN(15) INIT(-1),                               00001120
+       ONK DEF ONKODE CHAR(4),                                          00001130
+       FEILKODE       CHAR(4),                                          00001140
+       DSNAVN         CHAR(8),                                          00001150
+       ANT_FEIL_SKREVET FIXED DEC (3);                                  00001160
+                                                                        00001170
+      DCL X_TRANSKODE         CHAR (4);                                 00001180
+      DCL X_HENT          BIT (1);                                      00001190
+      DCL X_UTEN_DIALOG   BIT (1);                                      00001200
+                                                                        00001210
+  %PAGE;                                                                00001220
+     /*ON ERROR SNAP BEGIN;                                             00001230
+          ON ERROR SYSTEM        ;                                      00001240
+          ONKODE=ONCODE          ;                                      00001250
+          FEILKODE  = ONK        ;                                      00001260
+          DSNAVN     = EIBDS     ;                                      00001270
+          GO TO FEILBEH          ;                                      00001280
+       END;*/                                                           00001290
+                                                                        00001300
+ FEILKODE  = 'FEIL';                                                    00001310
+ DSNAVN     = '        ';                                               00001320
+                                                                        00001330
+ EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                             00001340
+ EXEC CICS HANDLE AID PF1(PF1) PF2(PF2);                                00001350
+                                                                        00001360
+ KOM_OMR.PEKER_LISTE.DIV_PARAM_PEKER  = ADDR(KOM_OMR.DIV_PARAM_OMR);    00001370
+  /*                                                                    00001380
+     IF FEIL_MELD_NR = 666 !                                            00001390
+        FEIL_MELD_NR = 0 THEN;                                          00001400
+       ELSE                                                             00001410
+           GOTO FEILBEH2;                                               00001420
+  */                                                                    00001430
+                                                                        00001440
+ IF FRA_CICS THEN                                                       00001450
+  DO;                                                                   00001460
+    KOM_OMR.PEKER_LISTE.TRANS_OPPL_PEKER = ADDR(KOM_OMR.TRANS_OPPL_OMR);00001470
+    KOM_OMR.PEKER_LISTE.TRANS_PEKER      = ADDR(KOM_OMR.TRANS_OMR);     00001480
+    KOM_OMR.PEKER_LISTE.STYRINGS_PEKER   = ADDR(KOM_OMR.STYRINGS_OMR);  00001490
+  END;                                                                  00001500
+                                                                        00001510
+                                                                        00001520
+ IF HENT_FRAM_MAP  THEN                                                 00001530
+   DO;                                                                  00001540
+       IF TRANSKODE  = 'RU83'  THEN                                     00001550
+          DO;                                                           00001560
+              EXEC CICS SEND MAP('S001U82') MAPSET('S001U83') MAPONLY   00001570
+                                                         SET (BMSMAPBR);00001580
+              ALLOCATE S001U82O;                                        00001590
+              S001U82O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;           00001600
+          END;                                                          00001610
+       ELSE                                                             00001620
+       IF TRANSKODE  = 'RU85'  THEN                                     00001630
+          DO;                                                           00001640
+              EXEC CICS SEND MAP('S001201') MAPSET('S001203') MAPONLY   00001650
+                                                         SET (BMSMAPBR);00001660
+              ALLOCATE S001201O;                                        00001670
+              S001201O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;           00001680
+          END;                                                          00001690
+       ELSE                                                             00001700
+          DO;                                                           00001710
+             /* SKJERMBILDE GRUNNBLANKETT-EE */                         00001720
+             EXEC CICS SEND MAP('S001U81') MAPSET('S001U83') MAPONLY    00001730
+                                                         SET (BMSMAPBR);00001740
+             ALLOCATE S001U81O;                                         00001750
+             S001U81O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;            00001760
+          END;                                                          00001770
+   END;                                                                 00001780
+                                                                        00001790
+ RECEIVE_MAP:                                                           00001800
+                                                                        00001810
+ IF ^HENT_FRAM_MAP THEN                                                 00001820
+    DO;                                                                 00001830
+       IF TRANSKODE  = 'RU80'  !                                        00001840
+          TRANSKODE  = 'RU81'  THEN                                     00001850
+          EXEC CICS RECEIVE MAP('S001U81')                              00001860
+                                    MAPSET('S001U83') SET(BMSMAPBR);    00001870
+                                                                        00001880
+       ELSE                                                             00001890
+       IF TRANSKODE = 'RU82'  !                                         00001900
+          TRANSKODE = 'RU83'  THEN                                      00001910
+          EXEC CICS RECEIVE MAP('S001U82')                              00001920
+                                    MAPSET('S001U83') SET(BMSMAPBR);    00001930
+                                                                        00001940
+       ELSE                                                             00001950
+      IF  TRANSKODE = 'RU84'  !                                         00001960
+          TRANSKODE = 'RU85'  THEN                                      00001970
+          EXEC CICS RECEIVE MAP('S001201')                              00001980
+                                    MAPSET('S001203') SET(BMSMAPBR);    00001990
+       CALL BLANK_EE_MELDNR;                                            00002000
+       CALL BLANK_EE_SP_MELDNR;                                         00002010
+       CALL BLANK_EE_YP_MELDNR;                                         00002020
+       FEIL_MELD_NR = 0;                                                00002030
+    END;                                                                00002040
+                                                                        00002050
+ IF TRANSKODE = 'RU85' THEN                                             00002060
+    DO;                                                                 00002070
+       IF S001201I.FUNKSJONSKODEL > 0 THEN                              00002080
+          DO;                                                           00002090
+             FUNKSJONSKODE = S001201I.FUNKSJONSKODEI;                   00002100
+                                                                        00002110
+             /* KONTROLLEN TILBAKE TIL R001030 - VALG AV FUNKSJON */    00002120
+             EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);      00002130
+          END;                                                          00002140
+                                                                        00002150
+       IF S001201I.STYRE_KODEL > 0 THEN                                 00002160
+          DO;                                                           00002170
+             STYREKODE = S001201I.STYRE_KODEI;                          00002180
+             TRANSKODE = 'R041';                                        00002190
+                                                                        00002200
+             /* KONTROLLEN TILBAKE TIL R0010401 - REGISTRERING */       00002210
+                                                                        00002220
+             EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);      00002230
+          END;                                                          00002240
+    END;                                                                00002250
+ ELSE                                                                   00002260
+    DO;                                                                 00002270
+       IF S001U81I.FUNKSJONSKODEL > 0 THEN                              00002280
+          DO;                                                           00002290
+             FUNKSJONSKODE = S001U81I.FUNKSJONSKODEI;                   00002300
+                                                                        00002310
+             /* KONTROLLEN TILBAKE TIL R001030 - VALG AV FUNKSJON */    00002320
+             EXEC CICS XCTL PROGRAM('R0010301') COMMAREA(KOM_OMR);      00002330
+          END;                                                          00002340
+                                                                        00002350
+       IF S001U81I.STYRE_KODEL > 0 THEN                                 00002360
+          DO;                                                           00002370
+             STYREKODE = S001U81I.STYRE_KODEI;                          00002380
+             TRANSKODE = 'R041';                                        00002390
+                                                                        00002400
+             /* KONTROLLEN TILBAKE TIL R0010401 - REGISTRERING */       00002410
+                                                                        00002420
+             EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);      00002430
+          END;                                                          00002440
+    END;                                                                00002450
+                                                                        00002460
+                                                                        00002470
+ IF STYREKODE ^= 'EE'  &  FRA_CICS THEN                                 00002480
+    TRANSKODE = 'R041';                                                 00002490
+ ELSE                                                                   00002500
+  DO;                                                                   00002510
+                                                                        00002520
+   TRANS_RETURKODE  = TRANSKODE;                                        00002530
+   ANT_FEIL_SKREVET = 0;                                                00002540
+   FEIL_FUNNET      = '0'B;                                             00002550
+   FEIL_I_SØKER     = '0'B;                                             00002560
+   FEIL_I_SPES      = '0'B;                                             00002570
+   FEIL_I_YSKADE    = '0'B;                                             00002580
+ IF HENT_FRAM_MAP  THEN                                                 00002590
+   FEIL_I_SØKER     = '1'B;                                             00002600
+                                                                        00002610
+   SELECT (TRANSKODE);                                                  00002620
+     WHEN('RU80')                                                       00002630
+        DO;                                                             00002640
+           CALL BLANK_EE_SØKER;                  /* R001U802 */         00002650
+           CALL BLANK_EE_SPES;                   /* R001U802 */         00002660
+           CALL BLANK_EE_YP;                     /* R001U802 */         00002670
+           CALL BLANK_EE_SP_MELDNR;              /* R001U802 */         00002680
+           CALL BLANK_EE_YP_MELDNR;              /* R001U802 */         00002690
+           CALL BLANK_EE_MELDNR;                 /* R001U802 */         00002700
+           CALL OVERFØR_EE_SØKER;       /* R001U809 FRA MAP TIL OMR */  00002710
+           CALL KONTROLL_EE_SØKER(FEIL_I_SØKER); /* R001U803 */         00002720
+        END;                                                            00002730
+     WHEN('RU81')                                                       00002740
+        DO;                                                             00002750
+          CALL BLANK_EE_MELDNR;                  /* R001U802 */         00002760
+          CALL OVERFØR_EE_SØKER;        /* R001U809 FRA MAP TIL OMR */  00002770
+          CALL KONTROLL_EE_SØKER(FEIL_I_SØKER);  /* R001U803 */         00002780
+          IF FUNKSJONSKODE ^= 'V' THEN                                  00002790
+             CALL BLANK_EE_SPES;                                        00002800
+                                                                        00002810
+        END;                                                            00002820
+     WHEN('RU82')                                                       00002830
+        DO;                                                             00002840
+          CALL BLANK_EE_SP_MELDNR;                                      00002850
+          IF FUNKSJONSKODE ^= 'V' THEN                                  00002860
+          CALL BLANK_EE_SPES;                            /* R001U802 */ 00002870
+          CALL OVERFØR_EE_SPES;          /* R001U809 FRA MAP TIL OMR */ 00002880
+          CALL KONTROLL_EE_SPES(FEIL_I_SPES);           /*  R001U805 */ 00002890
+                                                                        00002900
+        END;                                                            00002910
+     WHEN('RU83')                                                       00002920
+        DO;                                                             00002930
+           CALL BLANK_EE_SP_MELDNR;                                     00002940
+           CALL OVERFØR_EE_SPES;        /* R001U809 FRA MAP TIL OMR */  00002950
+           CALL KONTROLL_EE_SPES(FEIL_I_SPES);     /*       R001U805 */ 00002960
+        END;                                                            00002970
+     WHEN('RU84')                                                       00002980
+        DO;                                                             00002990
+           CALL BLANK_EE_YP_MELDNR;                                     00003000
+          IF FUNKSJONSKODE ^= 'V' THEN                                  00003010
+           CALL BLANK_EE_YP;                             /* R001U802 */ 00003020
+           CALL OVERFØR_EE_YP;           /* R001U809 FRA MAP TIL OMR */ 00003030
+           CALL KONTROLL_EE_YP  (FEIL_I_SPES);       /*     R001U805 */ 00003040
+        END;                                                            00003050
+     WHEN('RU85')                                                       00003060
+        DO;                                                             00003070
+                                                                        00003080
+           CALL BLANK_EE_YP_MELDNR;                                     00003090
+           CALL OVERFØR_EE_YP;                                          00003100
+           CALL KONTROLL_EE_YP(FEIL_I_SØKER);                           00003110
+        END;                                                            00003120
+     OTHERWISE;                                                         00003130
+        /*INGEN UTGANG DA CICS IKKE GODTAR UGYLDIGE TRANSAKSJONSKODER */00003140
+  END;                                                                  00003150
+                                                                        00003160
+                                                                        00003170
+     IF FEIL_I_SØKER   = '0'B &                                         00003180
+        FEIL_I_SPES    = '0'B &                                         00003190
+        FEIL_I_YSKADE  = '0'B THEN                                      00003200
+        FEIL_FUNNET    = '0'B;                                          00003210
+     ELSE                                                               00003220
+        FEIL_FUNNET = '1'B;                                             00003230
+                                                                        00003240
+                                                                        00003250
+  IF ^FEIL_FUNNET   THEN                                                00003260
+      DO;                                                               00003270
+         IF (TRANSKODE = 'RU80' !                                       00003280
+             TRANSKODE = 'RU81'  )    &                                 00003290
+             EES.NORSK_BOSATT   = 'J' &                                 00003300
+             EES.NORSK_BOSATT_EK= 'J' &                                 00003310
+            (EES.YSKADE_TILLEGG = ' ' !                                 00003320
+             EES.YSKADE_TILLEGG = 'N' ) THEN                            00003330
+              TRANSKODE = 'RU81';                                       00003340
+                                                                        00003350
+         ELSE                                                           00003360
+         IF (TRANSKODE = 'RU80' !                                       00003370
+             TRANSKODE = 'RU81'  )    &                                 00003380
+             EES.NORSK_BOSATT   = 'J' &                                 00003390
+             EES.NORSK_BOSATT_EK= 'J' &                                 00003400
+             EES.YSKADE_TILLEGG = 'J'   THEN                            00003410
+              TRANSKODE = 'RU84';                                       00003420
+                                                                        00003430
+         ELSE                                                           00003440
+         IF (TRANSKODE = 'RU80' !                                       00003450
+             TRANSKODE = 'RU81'  )    &                                 00003460
+            (EES.NORSK_BOSATT   = 'N'   !                               00003470
+             EES.NORSK_BOSATT_EK= 'N')  THEN                            00003480
+              TRANSKODE = 'RU82';                                       00003490
+                                                                        00003500
+         ELSE                                                           00003510
+         IF  TRANSKODE = 'RU82' &                                       00003520
+             EES.YSKADE_TILLEGG = 'J'   THEN                            00003530
+              TRANSKODE = 'RU84';                                       00003540
+                                                                        00003550
+         ELSE                                                           00003560
+         IF  TRANSKODE = 'RU82'  &                                      00003570
+             (EES.YSKADE_TILLEGG = ' ' !                                00003580
+              EES.YSKADE_TILLEGG = 'N'   )   THEN                       00003590
+              TRANSKODE = 'RU83';                                       00003600
+                                                                        00003610
+         ELSE                                                           00003620
+         IF  TRANSKODE = 'RU83' &                                       00003630
+             EES.YSKADE_TILLEGG = 'J'   THEN                            00003640
+              TRANSKODE = 'RU84';                                       00003650
+                                                                        00003660
+         ELSE                                                           00003670
+         IF  TRANSKODE = 'RU83' &                                       00003680
+            (EES.YSKADE_TILLEGG = ' ' !                                 00003690
+             EES.YSKADE_TILLEGG = 'N' ) THEN                            00003700
+              TRANSKODE = 'RU83';                                       00003710
+                                                                        00003720
+         ELSE                                                           00003730
+         IF  TRANSKODE = 'RU84' !                                       00003740
+             TRANSKODE = 'RU85'    THEN                                 00003750
+              TRANSKODE = 'RU85';                                       00003760
+                                                                        00003770
+         TRANS_RETURKODE  = TRANSKODE ;                                 00003780
+      END;                                                              00003790
+                                                                        00003800
+                                                                        00003810
+                                                                        00003820
+  IF FEIL_FUNNET ! HENT_FRAM_MAP !                                      00003830
+     FRA_UTEN_DIALOG ! TRANS_RETURKODE ^= TRANSKODE THEN                00003840
+     DO;                                                                00003850
+         IF TRANSKODE = 'RU80' THEN                                     00003860
+            TRANSKODE = 'RU81';                                         00003870
+                                                                        00003880
+         IF TRANSKODE = 'RU82' THEN                                     00003890
+            TRANSKODE = 'RU83';                                         00003900
+                                                                        00003910
+         IF TRANSKODE = 'RU84' THEN                                     00003920
+            TRANSKODE = 'RU85';                                         00003930
+                                                                        00003940
+        SELECT (TRANSKODE);                                             00003950
+           WHEN ('RU81')                                                00003960
+              DO;                                                       00003970
+                 CALL BLANK_EE_SØKER_MAP;              /* R001U809 */   00003980
+                 CALL OVERFØR_EE_SØKER_MAP;  /* R001U806 OMR TIL MAP */ 00003990
+              END;                                                      00004000
+           WHEN ('RU83')                                                00004010
+              DO;                                                       00004020
+                 CALL BLANK_EE_SP_MAP;              /* R001U809 */      00004030
+                 CALL OVERFØR_EE_SP_MAP;   /* R001U806 OMR TIL MAP */   00004040
+              END;                                                      00004050
+           WHEN ('RU85')                                                00004060
+              DO;                                                       00004070
+                 CALL BLANK_EE_YP_MAP;             /* R001U809 */       00004080
+                 CALL OVERFØR_EE_YP_MAP; /* R001U806 OMR TIL MAP */     00004090
+              END;                                                      00004100
+           OTHERWISE;                                                   00004110
+        END;                                                            00004120
+                                                                        00004130
+      IF HENT_FRAM_MAP THEN                                             00004140
+         DO;                                                            00004150
+           IF TRANSKODE = 'RU80' !                                      00004160
+              TRANSKODE = 'RU81'   THEN                                 00004170
+              DO;                                                       00004180
+                 EXEC CICS SEND MAP('S001U81') MAPSET('S001U83')        00004190
+                                        ERASE CURSOR;                   00004200
+              END;                                                      00004210
+           ELSE                                                         00004220
+           IF TRANSKODE = 'RU82' !                                      00004230
+              TRANSKODE = 'RU83' THEN                                   00004240
+              DO;                                                       00004250
+                 EXEC CICS SEND MAP('S001U82') MAPSET('S001U83')        00004260
+                                        ERASE CURSOR;                   00004270
+             END;                                                       00004280
+           ELSE                                                         00004290
+           IF TRANSKODE = 'RU84' !                                      00004300
+              TRANSKODE = 'RU85' THEN                                   00004310
+              EXEC CICS SEND MAP('S001201') MAPSET('S001203') ERASE     00004320
+                                                                CURSOR; 00004330
+         END;                                                           00004340
+      ELSE                                                              00004350
+         DO;                                                            00004360
+           IF TRANSKODE = 'RU80' !                                      00004370
+              TRANSKODE = 'RU81'   THEN                                 00004380
+              EXEC CICS SEND MAP('S001U81') MAPSET('S001U83') ERASEAUP  00004390
+                                                     DATAONLY CURSOR;   00004400
+           ELSE                                                         00004410
+           IF TRANSKODE = 'RU82' !                                      00004420
+              TRANSKODE = 'RU83' THEN                                   00004430
+              EXEC CICS SEND MAP('S001U82') MAPSET('S001U83') ERASEAUP  00004440
+                                                     DATAONLY CURSOR;   00004450
+           ELSE                                                         00004460
+           IF TRANSKODE = 'RU84' !                                      00004470
+              TRANSKODE = 'RU85' THEN                                   00004480
+              EXEC CICS SEND MAP('S001201') MAPSET('S001203') ERASEAUP  00004490
+                                                       DATAONLY CURSOR; 00004500
+         END;                                                           00004510
+      HENT_FRAM_MAP = '0'B;                                             00004520
+                                                                        00004530
+      X_TRANSKODE  = TRANSKODE;  /*   TEST    */                        00004540
+                                                                        00004550
+      FEIL_MELD_NR  = 666; /*  => FEIL_FUNNET ER SATT. */               00004560
+                                                                        00004570
+      IF  FRA_CICS THEN                                                 00004580
+        EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);          00004590
+      ELSE                                                              00004600
+        GOTO RECEIVE_MAP;                                               00004610
+    END;                                                                00004620
+                                                                        00004630
+    ELSE                                                                00004640
+       DO;                                                              00004650
+                                                                        00004660
+           IF TRANSKODE = 'RU82' THEN                                   00004670
+              DO;                                                       00004680
+                ALLOCATE S001U82O;                                      00004690
+                S001U82O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;         00004700
+                S001U82I.STATSBORGERL = CURSOR_POS;                     00004710
+                                                                        00004720
+                /*----------------------------------------------------*/00004730
+                /* OVERFØRER DATA TIL MAP HVIS VENTETRANS-BEHANDLING  */00004740
+                /*----------------------------------------------------*/00004750
+                                                                        00004760
+                IF FUNKSJONSKODE     = 'V'    THEN                      00004770
+                      CALL OVERFØR_EE_SP_MAP;                           00004780
+                                                                        00004790
+                      EXEC CICS SEND MAP('S001U82') MAPSET('S001U83')   00004800
+                                        ERASE CURSOR;                   00004810
+                                                                        00004820
+                                                                        00004830
+                HENT_FRAM_MAP = '0'B;                                   00004840
+                                                                        00004850
+                FEIL_MELD_NR  = 666;      /* => FEIL_FUNNET ER SATT. */ 00004860
+                                                                        00004870
+                IF FRA_CICS THEN                                        00004880
+                   EXEC CICS RETURN TRANSID(TRANSKODE)                  00004890
+                                    COMMAREA(KOM_OMR);                  00004900
+                ELSE                                                    00004910
+                   GOTO RECEIVE_MAP;                                    00004920
+              END;                                                      00004930
+                                                                        00004940
+          IF TRANSKODE          = 'RU84'  &                             00004950
+             EES.YSKADE_TILLEGG  = 'J'     THEN                         00004960
+             DO;                                                        00004970
+                                                                        00004980
+                ALLOCATE S001201O;                                      00004990
+                S001201O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;         00005000
+                S001201O.FNRO  = F_FELT_PIC_CHAR11(EES.FNR);            00005010
+                S001201O.TKNRO = F_FELT_PIC_CHAR4(EES.TKNR);            00005020
+                S001201O.NAVNO = EES.NAVN;                              00005030
+                S001201O.VIRK_DATOO =                                   00005040
+                                   F_FELT_PIC_CHAR4(EES.VIRK_DATO_MÅ);  00005050
+                                                                        00005060
+            /*  S001201O.UFTO = F_FELT_PIC_CHAR4(EES.UFT_MÅ); */        00005070
+                                                                        00005080
+                /*----------------------------------------------------*/00005090
+                /* OVERFØRER DATA TIL MAP HVIS VENTETRANS-BEHANDLING  */00005100
+                /*----------------------------------------------------*/00005110
+                                                                        00005120
+                IF FUNKSJONSKODE     = 'V'    THEN                      00005130
+                   CALL OVERFØR_EE_YP_MAP;                              00005140
+                                                                        00005150
+                EXEC CICS SEND MAP('S001201') MAPSET('S001203')         00005160
+                                        ERASE CURSOR;                   00005170
+            /*  TRANSKODE     = 'RU85';   */                            00005180
+                                                                        00005190
+                HENT_FRAM_MAP = '0'B;                                   00005200
+                                                                        00005210
+                FEIL_MELD_NR  = 666;/* => FEIL_FUNNET ER SATT. */       00005220
+                                                                        00005230
+                IF FRA_CICS THEN                                        00005240
+                   EXEC CICS RETURN TRANSID(TRANSKODE)                  00005250
+                                    COMMAREA(KOM_OMR);                  00005260
+                ELSE                                                    00005270
+                   GOTO RECEIVE_MAP;                                    00005280
+             END;                                                       00005290
+                                                                        00005300
+          IF TRANSKODE = 'RU80' THEN                                    00005310
+             TRANS_RETURKODE = 'RU81';                                  00005320
+          ELSE                                                          00005330
+             TRANS_RETURKODE = TRANSKODE;                               00005340
+          IF FRA_CICS  THEN                                             00005350
+             DO;                                                        00005360
+                BLANKETTYPE = STYREKODE;                                00005370
+                TRANSKODE = 'R042';                                     00005380
+             END;                                                       00005390
+       END;                                                             00005400
+   END;                                                                 00005410
+                                                                        00005420
+   CALL UTGANG;                                                         00005430
+                                                                        00005440
+  UTGANG: PROC;                                                         00005450
+    IF  FRA_CICS THEN                                                   00005460
+        EXEC CICS XCTL PROGRAM('R0010401') COMMAREA(KOM_OMR);           00005470
+    ELSE                                                                00005480
+        EXEC CICS RETURN;                                               00005490
+  END UTGANG;                                                           00005500
+                                                                        00005510
+  FEILBEH:                                                              00005520
+                                                                        00005530
+     PROGRAM_ID = 'R001U801';                                           00005540
+     EXEC CICS HANDLE CONDITION ERROR(ABEND);                           00005550
+                                                                        00005560
+                                                                        00005570
+  FEILBEH2:                                                             00005580
+     ALLOCATE S001U81O;                                                 00005590
+     S001U81O.CICS_INFOO = DIV_PARAM_OMR.CICS_NAVN ;                    00005600
+                                                                        00005610
+     S001U81O.MELDING2O =                                               00005620
+              'F E I L  H A R  O P P S T Å T T ! ! !.';                 00005630
+                                                                        00005640
+     S001U81O.MELDING3O =                                               00005650
+              'EIBRCODE : ' !! UNSPEC(EIBRCODE);                        00005660
+                                                                        00005670
+     S001U81O.MELDING4O =                                               00005680
+          'EIBFN    : ' !! UNSPEC(EIBFN) !! '. FEILKODE : ' !! FEILKODE 00005690
+                                         !! '. DATASETT : ' !! DSNAVN;  00005700
+                                                                        00005710
+     S001U81O.MELDING5O =                                               00005720
+                   'PROGRAMNAVN :  ' !! PROGRAM_ID    !!                00005730
+                   '.INGEN OPPDATERING ER BLITT UTFØRT.';               00005740
+                                                                        00005750
+     S001U81O.MELDING6O =                                               00005760
+                   'TA UTSKRIFT!!!. TRYKK DERETTER "ENTER".';           00005770
+                                                                        00005780
+                                                                        00005790
+     EXEC CICS SEND MAP('S001U81')      MAPSET('S001U83')               00005800
+                                                 ERASE;                 00005810
+                                                                        00005820
+     EXEC CICS RECEIVE MAP('S001U81')                                   00005830
+                       MAPSET('S001U83') SET(BMSMAPBR);                 00005840
+                                                                        00005850
+                                                                        00005860
+     EXEC CICS SYNCPOINT ROLLBACK;                                      00005870
+                                                                        00005880
+                                                                        00005890
+     TERMINERINGS_IND = 'F';                                            00005900
+                                                                        00005910
+     TRANSKODE  = 'R041';                                               00005920
+                                                                        00005930
+     CALL UTGANG;                                                       00005940
+                                                                        00005950
+  ABEND:                                                                00005960
+     EXEC CICS ABEND ABCODE(FEIL);                                      00005970
+                                                                        00005980
+  PF1:                                                                  00005990
+                                                                        00006000
+ /* LEGGER UNDERKJENT TRANS UT PÅ VENTEDATABASE HVIS GYLDIG     */      00006010
+ /* FNR OG VIRKNINGSDATO,ELLERS FORKASTES TRANSAKSJONEN.        */      00006020
+                                                                        00006030
+     IF ^(EES.FNRNR = 1            !                                    00006040
+          EES.FNRNR = 200          !                                    00006050
+          EES.VIRK_DATO_MÅNR = 9   !                                    00006060
+          EES.VIRK_DATO_MÅNR = 200 )  THEN                              00006070
+        DO;                                                             00006080
+                                                                        00006090
+           IF FØDSNUMMER    = 0   THEN                                  00006100
+                                                                        00006110
+ /* SKRIVER MELDING OM AT TRANSAKSJONEN ER FORKASTET.           */      00006120
+                                                                        00006130
+              DO;                                                       00006140
+                 FEIL_MELD_NR  = 0;                                     00006150
+                 S001U81O.MELDING6O =                                   00006160
+                         'REGISTERINGEN ER IKKE AVSLUTTET MED "ENTER"'!!00006170
+                         '.TRANSAKSJONEN ER FORKASTET.';                00006180
+                                                                        00006190
+              END;                                                      00006200
+           ELSE                                                         00006210
+              DO;                                                       00006220
+                                                                        00006230
+                 SEARCH_FNR  = TRANS_OPPL_OMR.FØDSNUMMER;               00006240
+                 IF FRA_CICS THEN                                       00006250
+                    BLANKETTYPE = 'EE';                                 00006260
+                                                                        00006270
+                                                                        00006280
+                 IF FEIL_MELD_NR = 666 &      /*BLANKETTKONTROLLFEIL*/  00006290
+                    ^FRA_MED_DIALOG     THEN  /*IKKE BASEKONTROLLFEIL*/ 00006300
+                    FUNKSJONSKODE = 'B';                                00006310
+                                                                        00006320
+                 CALL BLANK_EE_MELDNR;     /* R001U802 */               00006330
+                                                                        00006340
+                                                                        00006350
+                 IF EES.NORSK_BOSATT = 'N'     !                        00006360
+                    EES.NORSK_BOSATT_EK = 'N' THEN                      00006370
+                    CALL OVERFØR_EE_SP_MAP;  /* R001U806 OMR TIL MAP */ 00006380
+                                                                        00006390
+                                                                        00006400
+                 EXEC CICS LINK PROGRAM('R0010490') COMMAREA(KOM_OMR);  00006410
+                                                                        00006420
+ /* SKRIVER MELDING OM AT TRANSAKSJONEN ER LAGT UT PÅ VENTEBASE.*/      00006430
+                                                                        00006440
+                 S001U81O.MELDING6O =                                   00006450
+                         'TRANSAKSJONEN ER LAGT UT PÅ VENTEREGISTER.';  00006460
+              END;                                                      00006470
+                                                                        00006480
+              IF TRANSKODE ^= 'RU85' THEN                               00006490
+                 DO;                                                    00006500
+                    EXEC CICS SEND MAP('S001U81') MAPSET('S001U83')     00006510
+                                                           DATAONLY;    00006520
+     /* DUMMY SEND-KALL.                              */                00006530
+                                                                        00006540
+                    EXEC CICS SEND MAP('S001U81')                       00006550
+                                 MAPSET('S001U83');                     00006560
+                 END;                                                   00006570
+              ELSE                                                      00006580
+                 DO;                                                    00006590
+                    S001201O.YMELDING6O  =  S001U81O.MELDING6O;         00006600
+                                                                        00006610
+                    EXEC CICS SEND MAP('S001201') MAPSET('S001203')     00006620
+                                                           DATAONLY;    00006630
+             /* DUMMY SEND-KALL.                      */                00006640
+                                                                        00006650
+                    EXEC CICS SEND MAP('S001201')                       00006660
+                                                  MAPSET('S001203');    00006670
+                 END;                                                   00006680
+           EXEC CICS DELAY INTERVAL(005);                               00006690
+                                                                        00006700
+           TERMINERINGS_IND = 'F';                                      00006710
+                                                                        00006720
+           TRANSKODE        = 'R041';                                   00006730
+                                                                        00006740
+           CALL UTGANG;                                                 00006750
+                                                                        00006760
+        END;                                                            00006770
+     ELSE                                                               00006780
+        DO;                                                             00006790
+           TERMINERINGS_IND = 'F';                                      00006800
+                                                                        00006810
+           TRANSKODE = 'R041';                                          00006820
+                                                                        00006830
+           S001U81O.MELDING6O =                                         00006840
+                                                                        00006850
+   'NB** TRANSAKSJONEN ER FORKASTET P.G.A. UGYLDIG FNR EL. VDATO **NB'; 00006860
+                                                                        00006870
+                                                                        00006880
+                                                                        00006890
+           IF TRANSKODE ^= 'RU85' THEN                                  00006900
+              DO;                                                       00006910
+                 EXEC CICS SEND MAP('S001U81') MAPSET('S001U83')        00006920
+                                                        DATAONLY;       00006930
+     /* DUMMY SEND-KALL.                              */                00006940
+                                                                        00006950
+                 EXEC CICS SEND MAP('S001U81')                          00006960
+                                 MAPSET('S001U83');                     00006970
+              END;                                                      00006980
+           ELSE                                                         00006990
+              DO;                                                       00007000
+                 S001201O.YMELDING6O  =  S001U81O.MELDING6O;            00007010
+                                                                        00007020
+                 EXEC CICS SEND MAP('S001201') MAPSET('S001203')        00007030
+                                                        DATAONLY;       00007040
+           /* DUMMY SEND-KALL.                      */                  00007050
+                                                                        00007060
+                 EXEC CICS SEND MAP('S001201')                          00007070
+                                               MAPSET('S001203');       00007080
+              END;                                                      00007090
+                                                                        00007100
+           EXEC CICS DELAY INTERVAL(005);                               00007110
+           CALL UTGANG;                                                 00007120
+        END;                                                            00007130
+                                                                        00007140
+                                                                        00007150
+  PF2:                                                                  00007160
+     TERMINERINGS_IND   = 'F';                                          00007170
+                                                                        00007180
+     S001U81O.MELDING6O =                                               00007190
+      'NBNBNBNBNB***    TRANSAKSJONEN ER FORKASTET.    ***NBNBNBNBNB';  00007200
+                                                                        00007210
+       IF TRANSKODE ^= 'RU85' THEN                                      00007220
+        DO;                                                             00007230
+           EXEC CICS SEND MAP('S001U81') MAPSET('S001U83')              00007240
+                                                        DATAONLY;       00007250
+     /* DUMMY SEND-KALL.                              */                00007260
+                                                                        00007270
+           EXEC CICS SEND MAP('S001U81')                                00007280
+                           MAPSET('S001U83');                           00007290
+        END;                                                            00007300
+       ELSE                                                             00007310
+        DO;                                                             00007320
+           S001201O.YMELDING6O  =  S001U81O.MELDING6O;                  00007330
+           EXEC CICS SEND MAP('S001201') MAPSET('S001203')              00007340
+                                                        DATAONLY;       00007350
+           /* DUMMY SEND-KALL.                      */                  00007360
+                                                                        00007370
+           EXEC CICS SEND MAP('S001201')                                00007380
+                                         MAPSET('S001203');             00007390
+        END;                                                            00007400
+                                                                        00007410
+     EXEC CICS DELAY INTERVAL(005);                                     00007420
+                                                                        00007430
+                                                                        00007440
+     TRANSKODE = 'R041';                                                00007450
+     CALL UTGANG;                                                       00007460
+                                                                        00007470
+  %PAGE;                                                                00007480
+       %INCLUDE R001U802;               /* BLANK  ARBEIDSOMRÅDE */      00007490
+  %PAGE;                                                                00007500
+       %INCLUDE R001U803;             /*   KONTROLL AV SØKERDELEN */    00007510
+  %PAGE;                                                                00007520
+       %INCLUDE R001U805;             /*   KONTROLL AV SPESIELLE        00007530
+                                        OPPLYSNINGER */                 00007540
+  %PAGE;                                                                00007550
+       %INCLUDE R001U806;               /* ARBEIDSOMRÅDE -> MAP */      00007560
+  %PAGE;                                                                00007570
+       %INCLUDE R0010508;               /* BEREGN TT AF */              00007580
+  %PAGE;                                                                00007590
+       %INCLUDE R0010608;               /* BEREGN TT UP */              00007600
+  %PAGE;                                                                00007610
+       %INCLUDE R001U809;               /* MAP -> ARBEIDSOMRÅDE */      00007620
+  %PAGE;                                                                00007630
+       %INCLUDE R0019901;               /*  TESTER OM DATO ER GYLDIG */ 00007640
+  %PAGE;                                                                00007650
+       %INCLUDE R0019902;               /*  FINNE KJØNN     */          00007660
+  %PAGE;                                                                00007670
+       %INCLUDE R0019903;               /* EKTEFELLES ALDER GYLDIG */   00007680
+  %PAGE;                                                                00007690
+       %INCLUDE R0019904;               /* FØDSELSNUMMERKONTROLL */     00007700
+  %PAGE;                                                                00007710
+       %INCLUDE R0019905;               /* BEREGNER ALDER */            00007720
+  %PAGE;                                                                00007730
+       %INCLUDE R0019953;               /* DAGENS DATO PLUSS 40    */   00007740
+       %INCLUDE R0019964;               /* DAGENS DATO PLUSS 6 MDR */   00007750
+  %PAGE;                                                                00007760
+       %INCLUDE R0019909;               /* KONTROLL TRYGDETID */        00007770
+  %PAGE;                                                                00007780
+       %INCLUDE R0019910;               /* NUMERISK KONTROLL */         00007790
+  %PAGE;                                                                00007800
+       %INCLUDE R0019911;               /*  DATO KONTROLL  */           00007810
+ %PAGE;                                                                 00007820
+      %INCLUDE R0019913;               /* F_SNU_DATO                */  00007830
+  %PAGE;                                                                00007840
+       %INCLUDE R0019912;/* KONVERTERING CHAR ==> PIC / PIC ==> CHAR */ 00007850
+  %PAGE;                                                                00007860
+       %INCLUDE R0019944;               /* SKRIV_FEIL       */          00007870
+  %PAGE;                                                                00007880
+       %INCLUDE R0019963;               /* SKRIV_FEIL_YP    */          00007890
+  %PAGE;                                                                00007900
+       %INCLUDE R0019969;               /* SKRIV_FEIL_SP    */          00007910
+    END R001U8;                                                         00007920
+                                                                        00007930

@@ -1,0 +1,343 @@
+ /*       SIST ENDRET 14/05-96 15.14.00 AV   HLB0310                  */00000000
+ /*       SIST ENDRET 28/07-92 10.07.08 AV   DYBVIK                   */00000010
+ /*       SIST ENDRET 23/04-91 10.56.09 AV   DYBVIK                   */00000020
+ /*       SIST ENDRET 14/04-89 13.36.27 AV   HERMAN                   */00000030
+ /*       SIST ENDRET 22/12-86 08.38.41 AV   DYBVIK                   */00000040
+ /*       SIST ENDRET 01/04-86 12.57.29 AV   HERMAN                   */00000050
+ /*       SIST ENDRET 27/02-85 08.29.47 AV   OLAV                     */00000060
+ /*       SIST ENDRET 21/01-85 11.00.52 AV   OLAV                     */00000070
+ /*       SIST ENDRET 17/08-84 09.55.37 AV   OLAV                     */00000080
+ /*       SIST ENDRET 19/06-84 09.53.49 AV   OLAV                     */00000090
+ /*       SIST ENDRET 16/11-83 15.05.53 AV   OLAV                     */00000100
+ /*       SIST ENDRET 31/05-83 11.59.37 AV   OLAV                     */00000110
+ /*       SIST ENDRET 26/05-83 13.39.55 AV   OLAV                     */00000120
+ /*                                                                   */00000130
+ /*IDENTIFIKASJON:                                                    */00000140
+ /*    R0014154 - SUBRUTINE I PLI                                     */00000150
+ /*    PROGRAMMERER: PER F. BERGESTAD, JUNI 1982                      */00000160
+ /*HENSIKT:                                                           */00000170
+ /*    RUTINEN BEREGNER BUP/FPP PÅ GRUNNLAG AV GODSKREVET POENG       */00000180
+ /*    FOR ÅR FØR UFØREÅRET.                                          */00000190
+ /*BRUK   :                                                           */00000200
+ /*    CALL BEREGN_BUP_FPP_ALTERNATIV(   );                           */00000210
+ /*ENDRING:                                                           */00000220
+ /*    INNLAGT TEST PÅ 19-6 KRITETIER.                                */00000230
+ /*                                    17.8.84 OLAV                   */00000240
+ /*                                                                   */00000250
+ /*ENDRING:                                                           */00000260
+ /*    NÅR POENG BLE OVER 9,99 MISTET VI ET SIFFER SLIK AT            */00000270
+ /*    POENGET BLE GALT.                                              */00000280
+ /*                                    21.1.85 OLAV                   */00000290
+ /*                                                                   */00000300
+ /*    ENDRING PÅ JUSTERINGEN AV INNTEKT_START_ÅR VED FLERE           */00000310
+ /*    PERIODER NÅR FØRSTE PERIODE HAR INNTEKT_START_ÅR FØR 1967      */00000320
+ /*                                    27.2.85 OLAV                   */00000330
+ /* ***************************************************************** */00000340
+ /*ENDRING:                                                           */00000350
+ /*    DEN 1.4.86 BLE DET LAGT INN EN TILLEGGSTEST :                  */00000360
+ /*        'IF TAB.UFØR_PERIODE(I) = 'D'      '                       */00000370
+ /*    FOR Å FINNE SISTE_START_ÅR.                                    */00000380
+ /*    FØLGEN BLE AT GJENLEVENDE FIKK BEREGNET NY POENGREKKE FRA      */00000390
+ /*    DØDSFALLET, SELV OM DET VILLE LØNNE SEG Å BEHOLDE AVDØDES      */00000400
+ /*    GAMLE POENGREKKE.                                              */00000410
+ /*    TESTEN BLE FJERNET IGJEN 23.12.86.                             */00000420
+ /*                                       HERMAN                      */00000430
+ /* ***************************************************************** */00000440
+  BEREGN_BUP_FPP_ALTERNATIV:                                            00000450
+    PROC(IND,W_FNR);                                                    00000460
+ %SKIP(2);                                                              00000470
+    DCL                                                                 00000480
+       I                   FIXED BIN(15),                               00000490
+       J                   FIXED BIN(15),                               00000500
+       IND                 FIXED BIN(15);                               00000510
+    DCL                                                                 00000520
+       W_POENG_ALTERNATIV  FIXED(5,2)         INIT(0),                  00000530
+       W_POENG_HJELP       FIXED(5,2)         INIT(0),                  00000540
+       TIDLIGSTE_START     PIC'999' INIT(0),                            00000550
+       START_ÅR            PIC'999' INIT(0),                            00000560
+       STOPP_ÅR            PIC'999' INIT(0),                            00000570
+       SEKSTISEKSÅR        PIC'999' INIT(0),                            00000580
+       SISTE_START_ÅR      PIC'999' INIT(0),                            00000590
+       KRIT_19_6           FIXED(1) INIT(0),                            00000600
+       OVERFØRT_ÅR         FIXED DEC (3) INIT(0),                       00000610
+       INNTEKT_3_AV_4_ÅR   PIC'999' INIT(0);                            00000620
+    DCL                                                                 00000630
+       1 W_FNR             PIC '(11)9';                                 00000640
+    DCL                                                                 00000650
+       1 W_FNR_R  DEF W_FNR,                                            00000660
+         2 DAG             PIC'99',                                     00000670
+         2 MND             PIC'99',                                     00000680
+         2 ÅR              PIC'99',                                     00000690
+         2 REST            PIC'(5)9';                                   00000700
+ %PAGE;                                                                 00000710
+  DO I = 67 TO 70;                                                      00000720
+ /*                                                                   */00000730
+ /*  HER FINNER VI FRAM TIL TIDLIGSTE STARTÅR UTEN Å TA HENSYN TIL    */00000740
+ /*  ALDEREN TIL PERSONEN. TIDLIGSTE STARTÅR ER NORMALT 1967, MEN I   */00000750
+ /*  DE TILFELLER HVOR UFØREÅRET/DØDSÅRET ER 1967/70, ER TIDLIGSTE    */00000760
+ /*  STARTÅR 4 ÅR FØR UFØREÅRET/DØDSÅRET.                             */00000770
+ /*                                                                   */00000780
+     IF TAB.UFØR_START_MND(I) > 0 THEN                                  00000790
+        DO;                                                             00000800
+           TIDLIGSTE_START = I - 4;                                     00000810
+           I = 70;                                                      00000820
+        END;                                                            00000830
+     ELSE                                                               00000840
+        TIDLIGSTE_START = 67;                                           00000850
+  END;                                                                  00000860
+                                                                        00000870
+  START_ÅR = W_FNR_R.ÅR + 17;                                           00000880
+                                                                        00000890
+  IF W_FNR_R.ÅRHUNDRE > 4       THEN                                    00000900
+     START_ÅR = START_ÅR - 100;                                         00000910
+                                                                        00000920
+  IF START_ÅR < TIDLIGSTE_START THEN                                    00000930
+                                                                        00000940
+ /*                                                                   */00000950
+ /*  STARTÅR KAN VÆRE DET ÅRET PERSONEN FYLLER 16 ÅR, MEN IKKE        */00000960
+ /*  TIDLIGERE ENN TIDLIGSTE STARTÅR.                                 */00000970
+ /*                                                                   */00000980
+                                                                        00000990
+     START_ÅR = TIDLIGSTE_START;                                        00001000
+                                                                        00001010
+  DO I = 72 TO 67 BY -1;                                                00001020
+                                                                        00001030
+ /* ENDRET 1.4.86 HL - DET SKAL OGSÅ TESTES PÅ 'D' :      */            00001040
+ /* ENDRET TILBAKE 23.12.86 HL - SE KOMMENTAR FORAN I PROGRAMMET */     00001050
+                                                                        00001060
+     IF TAB.UFØR_PERIODE(I) = 'S'              THEN                     00001070
+ /* !   TAB.UFØR_PERIODE(I) = 'D'              THEN  */                 00001080
+                                                                        00001090
+ /* LINJEN OVENFOR FJERNET 23.12.86 - HL JF FRAPP 451    */             00001100
+                                                                        00001110
+        DO;                                                             00001120
+           SISTE_START_ÅR = I;                                          00001130
+           I              = 67;                                         00001140
+        END;                                                            00001150
+  END;                                                                  00001160
+                                                                        00001170
+  IF W_FNR_R.ÅRHUNDRE < 5         THEN                                  00001180
+                                                                        00001190
+     DO;                                                                00001200
+        STOPP_ÅR      = W_FNR_R.ÅR + 69;                                00001210
+        SEKSTISEKSÅR  = W_FNR_R.ÅR + 66;                                00001220
+     END;                                                               00001230
+                                                                        00001240
+        ELSE                                                            00001250
+                                                                        00001260
+           DO;                                                          00001270
+              STOPP_ÅR      = W_FNR_R.ÅR + 69 - 100;                    00001280
+              SEKSTISEKSÅR  = W_FNR_R.ÅR + 66 - 100;                    00001290
+          END;                                                          00001300
+                                                                        00001310
+  IF SEKSTISEKSÅR  < 72       THEN                                      00001320
+                                                                        00001330
+     SEKSTISEKSÅR  = 72;                                                00001340
+                                                                        00001350
+  DO I = START_ÅR TO SISTE_START_ÅR;                                    00001360
+                                                                        00001370
+ /*                                                                   */00001380
+ /*  HER BEHANDLES HVERT ENKELT ÅR FRA STARTÅR TIL SISTE STARTÅR      */00001390
+ /*                                                                   */00001400
+                                                                        00001410
+     IF TAB.UFØR_START_MND(I) > 0 & I > 66 THEN                         00001420
+                                                                        00001430
+        DO;                                                             00001440
+ /*                                                                   */00001450
+ /*        PERIODE STARTET ETTER 1966, BUP/FPP SKAL BEREGNES.         */00001460
+ /*                                                                   */00001470
+                                                                        00001480
+ /* 6.3.86 HL CALL PÅ 4162 TAS HERFRA. FEILRAPP 40/88                 */00001490
+                                                                        00001500
+           IF I < 71                                  THEN              00001510
+                                                                        00001520
+              DO;                                                       00001530
+                                                                        00001540
+                 OVERFØRT_ÅR = I;                                       00001550
+                                                                        00001560
+ /*4162*/        CALL LEGG_INNT_FØR_67_I_TAB(IND,OVERFØRT_ÅR);          00001570
+ /*4162  CALL LEGG_INNT_FØR_67_I_TAB(IND,TAB,OVERFØRT_ÅR);    */        00001580
+ /*   ENDRET AV SATISH 21.4.91                                */        00001590
+                                                                        00001600
+              END;                                                      00001610
+                                                                        00001620
+           KRIT_19_6         = 0;                                       00001630
+                                                                        00001640
+           DO J = 67 TO I;                                              00001650
+              IF TAB.POENG_ANVENDT(J) > 0             THEN              00001660
+                 KRIT_19_6 =1;                                          00001670
+           END;                                                         00001680
+                                                                        00001690
+           INNTEKT_3_AV_4_ÅR = 0;                                       00001700
+                                                                        00001710
+           IF KRIT_19_6 = 0    THEN                                     00001720
+                                                                        00001730
+              DO J = (I - 4) TO (I - 1);                                00001740
+                 IF TAB.POENG_ANVENDT(J) > 0 & J > 66    THEN           00001750
+                    INNTEKT_3_AV_4_ÅR = INNTEKT_3_AV_4_ÅR + 1;          00001760
+              END;                                                      00001770
+                                                                        00001780
+           ELSE                                                         00001790
+                                                                        00001800
+              DO J = (I - 4) TO (I - 1);                                00001810
+                 IF TAB.POENG_ANVENDT(J) > 0             THEN           00001820
+                    INNTEKT_3_AV_4_ÅR = INNTEKT_3_AV_4_ÅR + 1;          00001830
+              END;                                                      00001840
+                                                                        00001850
+           IF START_ÅR       < 67        THEN                           00001860
+              DO;                                                       00001870
+                 IF (I - 4)  > 66        THEN                           00001880
+                    START_ÅR = 67;                                      00001890
+              END;                                                      00001900
+                                                                        00001910
+           IF TAB.UFØR_KRIT(I) > 1 !                                    00001920
+              (TAB.POENG_ALTERNATIV(I - 1) > 0 & (I - 1) > 66) !        00001930
+              INNTEKT_3_AV_4_ÅR > 2 THEN                                00001940
+ /*                                                                   */00001950
+ /*           BUP BEREGNES HVIS EN AV BETINGELSENE NEDENFOR ER OPPFYLT*/00001960
+ /*               - UFØR_KRIT > 0  (DVS. 8-4, NR.3A = JA)             */00001970
+ /*               - INNTEKT I ÅRET FØR UFØREÅRET > 0                  */00001980
+ /*               - INNTEKT I 3 AV 4 ÅR FØR UFØREÅRET                 */00001990
+ /*               - YRKESSKADE                                        */00002000
+ /*                                                                   */00002010
+              CALL REGN_BUP_FPP(START_ÅR,I);                            00002020
+                                                                        00002030
+           ELSE                                                         00002040
+                                                                        00002050
+              TAB.BUP_FPP(I) = 0;                                       00002060
+                                                                        00002070
+           IF I = SISTE_START_ÅR                              THEN      00002080
+                                                                        00002090
+              DO;                                                       00002100
+                 TAB.POENG_ALTERNATIV(I)      = TAB.BUP_FPP(I);         00002110
+                 TAB.POENG_ALTERNATIV_KODE(I) = 'U54';                  00002120
+              END;                                                      00002130
+                                                                        00002140
+           ELSE                                                         00002150
+                                                                        00002160
+              IF TAB.BUP_FPP(I) > TAB.INNT_POENG(I) THEN                00002170
+                                                                        00002180
+ /*                                                                   */00002190
+ /*           FOR STARTÅRET FÅR EN GODSKREVET DET POENG SOM ER BEST,  */00002200
+ /*           BUP ELLER POENG_ANVENDT                                 */00002210
+ /*                                                                   */00002220
+                                                                        00002230
+                 TAB.POENG_ALTERNATIV(I) = TAB.BUP_FPP(I);              00002240
+                                                                        00002250
+              ELSE                                                      00002260
+                                                                        00002270
+                 DO;                                                    00002280
+                                                                        00002290
+ /*                                                                   */00002300
+ /*              NÅR BUP ER MINDRE ENN POENG_ANVENDT LEGGES BUP I     */00002310
+ /*              NESTE ÅRS POENG_ANVENDT NÅR FLERE PERIODER.          */00002320
+ /*                                                                   */00002330
+                                                                        00002340
+                    TAB.POENG_ALTERNATIV(I + 1) = TAB.BUP_FPP(I);       00002350
+                    TAB.POENG_ALTERNATIV(I) = TAB.INNT_POENG(I) + 0.005;00002360
+                 END;                                                   00002370
+                                                                        00002380
+           DO J = (I + 1) TO STOPP_ÅR UNTIL (TAB.UFØR_PERIODE(J) = 'S');00002390
+                                                                        00002400
+              TAB.BUP_FPP(J)               = TAB.BUP_FPP(I);            00002410
+                                                                        00002420
+                                                                        00002430
+              TAB.POENG_ALTERNATIV(J)      = TAB.BUP_FPP(I);            00002440
+                                                                        00002450
+           END;                                                         00002460
+                                                                        00002470
+           IF TAB.UFØR_SLUTT_MND(J) = 01 THEN                           00002480
+                                                                        00002490
+              DO;                                                       00002500
+                 TAB.BUP_FPP(J)            = 0;                         00002510
+                 TAB.POENG_ALTERNATIV(J)   = 0;                         00002520
+              END;                                                      00002530
+        END;                                                            00002540
+ %PAGE;                                                                 00002550
+     ELSE                                                               00002560
+        DO;                                                             00002570
+ /*                                                                   */00002580
+ /*        BEHANDLING AV HVERT ENKELT ÅR FØR EN PERIODESTART          */00002590
+ /*                                                                   */00002600
+           IF TAB.VERNEPL_POENG(I) > TAB.INNT_POENG(I) THEN             00002610
+                                                                        00002620
+              DO;                                                       00002630
+ /*                                                                   */00002640
+ /*              NÅR VERNEPLIKTSPOENG ER STØRRE ENN INNTEKTSPOENG     */00002650
+ /*              BRUKES VERNEPLIKTSPOENGET TIL BEREGNING AV BUP.      */00002660
+ /*                                                                   */00002670
+                                                                        00002680
+                 TAB.POENG_ALTERNATIV(I) = TAB.VERNEPL_POENG(I);        00002690
+                                                                        00002700
+                 IF TAB.VERNEPL_POENG(I) = 2.00 THEN                    00002710
+                                                                        00002720
+                    TAB.POENG_ALTERNATIV_KODE(I) = 'U56';               00002730
+                                                                        00002740
+                 ELSE                                                   00002750
+                                                                        00002760
+                    TAB.POENG_ALTERNATIV_KODE(I) = 'U55';               00002770
+              END;                                                      00002780
+                                                                        00002790
+           ELSE                                                         00002800
+                                                                        00002810
+              TAB.POENG_ALTERNATIV(I) = TAB.INNT_POENG(I) + 0.005;      00002820
+                                                                        00002830
+           IF TAB.UFØR_PERIODE(I) = 'S' ! TAB.UFØR_PERIODE(I) = 'J' THEN00002840
+                                                                        00002850
+              DO;                                                       00002860
+                 IF TAB.POENG_ALTERNATIV(I) < TAB.BUP_FPP(I) THEN       00002870
+                                                                        00002880
+ /*                                                                   */00002890
+ /*                 FOR START OG OPPHØRSÅR FÅR EN GODSKREVET DET      */00002900
+ /*                 BESTE AV BUP/FPP ELLER FAKTISK INNTEKTSPOENG.     */00002910
+ /*                                                                   */00002920
+                                                                        00002930
+                    TAB.POENG_ALTERNATIV(I)        = TAB.BUP_FPP(I);    00002940
+              END;                                                      00002950
+                                                                        00002960
+           ELSE                                                         00002970
+                                                                        00002980
+              IF TAB.UFØR_PERIODE(I) = 'M' THEN                         00002990
+                                                                        00003000
+                 DO;                                                    00003010
+                                                                        00003020
+ /*                                                                   */00003030
+ /*                 FOR MELLOMLIGGENDE ÅR I EN UFØREPERIODE FÅR EN    */00003040
+ /*                 GODSKREVET FAKTISK INNTEKTSPOENG OG EN FORHOLDS-  */00003050
+ /*                 MESSIG DEL AV BUP REGNET UT FRA UFØREGRADEN.      */00003060
+ /*                                                                   */00003070
+                                                                        00003080
+ /* ENDRET 26.6.86 HL - JFR FEILRAPP 335                             */ 00003090
+                                                                        00003100
+                    W_POENG_HJELP  = TAB.INNT_POENG(I)   + 0.005;       00003110
+                    W_POENG_ALTERNATIV = W_POENG_HJELP        +         00003120
+                      ((TAB.BUP_FPP(I) * TAB.UFØR_GRAD(I)) / 100) +     00003130
+                                                              0.005;    00003140
+                                                                        00003150
+ /* HIT 26.6.86 HL      */                                              00003160
+                                                                        00003170
+                    IF I > 70     THEN                                  00003180
+                       IF W_POENG_ALTERNATIV > 8.33    THEN             00003190
+                          W_POENG_ALTERNATIV = 8.33;                    00003200
+                       ELSE;                                            00003210
+                                                                        00003220
+                    ELSE                                                00003230
+                                                                        00003240
+                       IF W_POENG_ALTERNATIV > 7.00    THEN             00003250
+                          W_POENG_ALTERNATIV = 7.00;                    00003260
+                       ELSE;                                            00003270
+                                                                        00003280
+                    TAB.POENG_ALTERNATIV(I) = W_POENG_ALTERNATIV;       00003290
+                    IF TAB.UFØR_KRIT(I) = 5          THEN               00003300
+                       TAB.POENG_ALTERNATIV_KODE(I) = 'U42';            00003310
+                    ELSE                                                00003320
+ /*TILBAKE0596 HL*/ IF TAB.UFØR_KRIT(I)     = 6        THEN             00003330
+ /*JD 7.92          IF B02.PENSJONSTYPE1(IND) = 'K'    THEN   */        00003340
+                       TAB.POENG_ALTERNATIV_KODE(I) = 'U57';            00003350
+                    ELSE                                                00003360
+                       TAB.POENG_ALTERNATIV_KODE(I) = 'U59';            00003370
+                 END;                                                   00003380
+        END;                                                            00003390
+  END;                                                                  00003400
+ %SKIP(2);                                                              00003410
+  END BEREGN_BUP_FPP_ALTERNATIV;                                        00003420

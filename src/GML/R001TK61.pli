@@ -1,0 +1,374 @@
+ /*       SIST ENDRET 19/06-91 10.19.44 AV   HERMAN                   */00000000
+ /*       SIST ENDRET 14/06-91 09.40.05 AV   DYBVIK                   */00000010
+ /*       SIST ENDRET 08/05-91 13.26.21 AV   DYBVIK                   */00000020
+ /******************************************************************* */00000030
+ /*IDENTIFIKASJON:                                                    */00000040
+ /************************                                            */00000050
+ /*  PROGRAM-IDENT : R001TK61 - HOVEDPROGRAM.                         */00000060
+ /*  PROGRAM-SPRÅK : PLI/CICS                                         */00000070
+ /*  PROGRAMMERER  : TUYEN                                            */00000080
+ /*  PROGRAM LAGET : FEB 91                                           */00000090
+ /*                                                                   */00000100
+ /******************************************************************* */00000110
+ /*HENSIKT:                                                           */00000120
+ /************                                                        */00000130
+ /*  BLANKETTKONTROLL FOR REGISTRERING SPLITTING-HISTORIKK.           */00000140
+ /******************************************************************* */00000150
+ /*PROGRAMTILKNYTTING:                                                */00000160
+ /**********************                                              */00000170
+ /*  PROGRAMMET BLIR AKTIVISERT FRA CICS MED TRANSKODE RT61.          */00000180
+ /*                                                                   */00000190
+ /******************************************************************* */00000200
+ /*DATASETTOPPLYSNINGER:                                              */00000210
+ /*************************                                           */00000220
+ /*  DET BLIR IKKE BRUKT NOEN DATASETT I DETTE PROGRAMMET             */00000230
+ /*                                                                   */00000240
+ /******************************************************************* */00000250
+ /*FEILMELDINGER:                                                     */00000260
+ /*********************                                               */00000270
+ /*                                                                   */00000280
+ /*                                                                   */00000290
+ /* ***************************************************************** */00000300
+ R001T61:                                                               00000310
+   PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                  00000320
+                                                                        00000330
+ %PAGE;                                                                 00000340
+      %INCLUDE S001T2;             /* HISTORIKK-MAPSETTET   */          00000350
+ %PAGE;                                                                 00000360
+      %INCLUDE S001T3;                                                  00000370
+ %PAGE;                                                                 00000380
+      %INCLUDE P001TK03;           /* KOM_OMR */                        00000390
+ %PAGE;                                                                 00000400
+      %INCLUDE DFHBMSCA;                                                00000410
+ %PAGE;                                                                 00000420
+                                                                        00000430
+   DCL                                                                  00000440
+      (BMSMAPBR, COMMAREA_PEKER) PTR;                                   00000450
+   DCL                                                                  00000460
+      (CSTG,                                                            00000470
+      ADDR,                                                             00000480
+      VERIFY,                                                           00000490
+      UNSPEC,                                                           00000500
+      LOW,                                                              00000510
+      NULL,                                                             00000520
+      ONCODE,                                                           00000530
+      DATE,                                                             00000540
+      SUBSTR) BUILTIN;                                                  00000550
+                                                                        00000560
+ /* HJELPE-VARIABLE */                                                  00000570
+ /*-----------------*/                                                  00000580
+                                                                        00000590
+   DCL                                                                  00000600
+      ONKODE                      PIC'9999',                            00000610
+      CURSOR_POS                  FIXED BIN(15) INIT(-1),               00000620
+      ONK DEF ONKODE              CHAR(4),                              00000630
+      FEIL                        FIXED BIN(15) INIT(0),                00000640
+      FEILKODE                    CHAR(4),                              00000650
+      TELLER                      FIXED DEC (3) INIT(0),                00000660
+      FATAL_FEIL                  BIT (1) INIT ('0'B),                  00000670
+      TK_FINNES                   BIT (1) INIT ('0'B),                  00000680
+      DSNAVN                      CHAR(8),                              00000690
+      IN_RBA                      POINTER,                              00000700
+      LENGDE                      FIXED BIN(15) INIT(0);                00000710
+                                                                        00000720
+   DCL 1 SPLITT,                                                        00000730
+         5 KODE               CHAR ( 1),                                00000740
+         5 ANTALL_TIL         PIC '( 2)9',                              00000750
+         5 FRA_TKNR           PIC '( 4)9',                              00000760
+         5 FRA_TKNAVN         CHAR (35),                                00000770
+         5 FRA_TKNR_DATO      CHAR ( 6),                                00000780
+         5 TIL(1:20),                                                   00000790
+           10 TIL_TKNR        PIC '( 4)9',                              00000800
+           10 TIL_TKNAVN      CHAR (35),                                00000810
+           10 TIL_TKNR_DATO   CHAR ( 6);                                00000820
+                                                                        00000830
+   DCL 1 FEIL_STRUC,                                                    00000840
+         5 FEIL_NR      FIXED DEC ( 5),                                 00000850
+         5 FEIL_MELDING      CHAR (78),                                 00000860
+         5 KOM_OMR_PEKER  POINTER;                                      00000870
+ %PAGE;                                                                 00000880
+                                                                        00000890
+ /* SLUTT PÅ DEKLARASJONER */                                           00000900
+ /**************************/                                           00000910
+                                                                        00000920
+ ON ERROR SNAP BEGIN       ;                                            00000930
+    ON ERROR SYSTEM        ;                                            00000940
+    ONKODE=ONCODE          ;                                            00000950
+    FEILKODE = 'FEIL'      ;                                            00000960
+    DSNAVN   = EIBDS       ;                                            00000970
+    GO TO FEILBEH          ;                                            00000980
+ END;                                                                   00000990
+                                                                        00001000
+ FEILKODE        = 'FEIL'   ;                                           00001010
+ DSNAVN          = '       ';                                           00001020
+ PROGRAM_ID      = 'R001TK60';                                          00001030
+                                                                        00001040
+ EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                             00001050
+ EXEC CICS IGNORE CONDITION MAPFAIL       ;                             00001060
+                                                                        00001070
+ FUNKSJONSKODE = ' ';                                                   00001080
+ STYREKODE     = ' ';                                                   00001090
+                                                                        00001100
+ SPLITT      = '';                                                      00001110
+ SPLITT.KODE = 'D';                                                     00001120
+                                                                        00001130
+ IF SEND_MAP THEN                                                       00001140
+    DO;                                                                 00001150
+       SEND_MAP = '0'B;                                                 00001160
+                                                                        00001170
+       ALLOCATE S001020O;                                               00001180
+       S001020I.FRA_TKNRL = CURSOR_POS;                                 00001190
+                                                                        00001200
+       EXEC CICS SEND MAP('S001020')                                    00001210
+                MAPSET('S001T23') ERASE CURSOR;                         00001220
+    END;                                                                00001230
+                                                                        00001240
+ EXEC CICS RECEIVE MAP('S001020')                                       00001250
+        MAPSET('S001T23') SET(BMSMAPBR) ASIS;                           00001260
+                                                                        00001270
+ IF S001020I.FUNKSJONSKODEL > 0 THEN                                    00001280
+     FUNKSJONSKODE = S001020I.FUNKSJONSKODEI;                           00001290
+ ELSE                                                                   00001300
+     IF S001020I.STYREKODEL > 0 THEN                                    00001310
+          STYREKODE = S001020I.STYREKODEI;                              00001320
+                                                                        00001330
+ DO WHILE ((FUNKSJONSKODE = ' ') &                                      00001340
+           (STYREKODE = ' '));                                          00001350
+                                                                        00001360
+    TELLER = TELLER + 1;                                                00001370
+                                                                        00001380
+    IF S001020I.FRA_TKNRL > 0 THEN                                      00001390
+       SPLITT.FRA_TKNR      = S001020I.FRA_TKNRI;                       00001400
+                                                                        00001410
+    IF S001020I.FRA_TKNAVNL > 0 THEN                                    00001420
+       SPLITT.FRA_TKNAVN    = S001020I.FRA_TKNAVNI;                     00001430
+                                                                        00001440
+    IF S001020I.FRA_TKNR_DATOL > 0 THEN                                 00001450
+       SPLITT.FRA_TKNR_DATO = S001020I.FRA_TKNR_DATOI;                  00001460
+                                                                        00001470
+    DO WHILE (S001020I.TIL_TKNRL(TELLER) > 0);                          00001480
+       SPLITT.TIL_TKNR(TELLER)      = S001020I.TIL_TKNRI(TELLER);       00001490
+                                                                        00001500
+       IF S001020I.TIL_TKNAVNL(TELLER) > 0 THEN                         00001510
+          SPLITT.TIL_TKNAVN(TELLER)    = S001020I.TIL_TKNAVNI(TELLER);  00001520
+                                                                        00001530
+       IF S001020I.TIL_TKNR_DATOL(TELLER) > 0 THEN                      00001540
+          SPLITT.TIL_TKNR_DATO(TELLER) =                                00001550
+                             S001020I.TIL_TKNR_DATOI(TELLER);           00001560
+                                                                        00001570
+       TELLER = TELLER + 1;                                             00001580
+    END;                                                                00001590
+                                                                        00001600
+    TELLER            = TELLER - 1;                                     00001610
+    SPLITT.ANTALL_TIL = TELLER;                                         00001620
+                                                                        00001630
+    IF SPLITT.FRA_TKNR ^= 0 & SPLITT.TIL_TKNR(1) ^= 0 THEN              00001640
+       DO;                                                              00001650
+          LENGDE            = 48 + 45 * TELLER;                         00001660
+                                                                        00001670
+          EXEC CICS WRITE DATASET ('HISTOR')                            00001680
+                          FROM    (SPLITT)                              00001690
+                          RIDFLD  (IN_RBA) RBA                          00001700
+                          LENGTH  (LENGDE);                             00001710
+       END;                                                             00001720
+    ELSE                                                                00001730
+       S001020O.MELDING1O = 'MER DATA MÅ GIS!';                         00001740
+                                                                        00001750
+    SPLITT      = '';                                                   00001760
+    SPLITT.KODE = 'D';                                                  00001770
+    TELLER      = 0;                                                    00001780
+                                                                        00001790
+    S001020I.FRA_TKNRL = CURSOR_POS;                                    00001800
+                                                                        00001810
+    EXEC CICS SEND MAP('S001020')                                       00001820
+                   MAPSET('S001T23')  ERASE CURSOR;                     00001830
+                                                                        00001840
+    EXEC CICS RECEIVE MAP('S001020')                                    00001850
+           MAPSET('S001T23') SET(BMSMAPBR) ASIS;                        00001860
+                                                                        00001870
+    IF S001020I.FUNKSJONSKODEL > 0 THEN                                 00001880
+        FUNKSJONSKODE = S001020I.FUNKSJONSKODEI;                        00001890
+    ELSE                                                                00001900
+        IF S001020I.STYREKODEL > 0 THEN                                 00001910
+             STYREKODE = S001020I.STYREKODEI;                           00001920
+                                                                        00001930
+ END; /* WHILE */                                                       00001940
+                                                                        00001950
+ IF FUNKSJONSKODE ^= ' ' THEN                                           00001960
+    IF (VERIFY(FUNKSJONSKODE, 'Rr') = 0) THEN                           00001970
+      DO;                                                               00001980
+         PROGRAM_ID = 'R001TK04';                                       00001990
+         TRANSKODE = 'RT04';                                            00002000
+      END;                                                              00002010
+                                                                        00002020
+    ELSE                                                                00002030
+      IF (VERIFY(FUNKSJONSKODE, 'Hh') = 0) THEN                         00002040
+         DO;                                                            00002050
+            TRANSKODE = 'RT08';                                         00002060
+            PROGRAM_ID = 'R001TK08';                                    00002070
+         END;                                                           00002080
+                                                                        00002090
+      ELSE                                                              00002100
+         IF (VERIFY(FUNKSJONSKODE, 'Ff') = 0) THEN                      00002110
+            DO;                                                         00002120
+               PROGRAM_ID = 'R001TK09';                                 00002130
+               TRANSKODE = 'RT09';                                      00002140
+            END;                                                        00002150
+                                                                        00002160
+         ELSE                                                           00002170
+            DO;                                                         00002180
+               PROGRAM_ID = 'R001TK03';                                 00002190
+               TRANSKODE = 'RT03';                                      00002200
+            END;                                                        00002210
+                                                                        00002220
+ ELSE                                                                   00002230
+   IF (VERIFY(STYREKODE, 'Aa') = 0) THEN                                00002240
+      DO;                                                               00002250
+         IF SUBSTR(FUNKSJON,3,1) = '' THEN                              00002260
+            DO;                                                         00002270
+                PROGRAM_ID = 'R001TK04';                                00002280
+                TRANSKODE = 'RT04';                                     00002290
+            END;                                                        00002300
+         ELSE                                                           00002310
+            DO;                                                         00002320
+               PROGRAM_ID = 'R001TK07';                                 00002330
+               TRANSKODE = 'RT07';                                      00002340
+            END;                                                        00002350
+      END;                                                              00002360
+                                                                        00002370
+   ELSE                                                                 00002380
+      IF (VERIFY(STYREKODE, 'Kk') = 0) THEN                             00002390
+         DO;                                                            00002400
+            IF SUBSTR(FUNKSJON,6,1) = '' THEN                           00002410
+               DO;                                                      00002420
+                   PROGRAM_ID = 'R001TK04';                             00002430
+                   TRANSKODE = 'RT04';                                  00002440
+               END;                                                     00002450
+            ELSE                                                        00002460
+               DO;                                                      00002470
+                  PROGRAM_ID = 'R001TK06';                              00002480
+                  TRANSKODE = 'RT06';                                   00002490
+               END;                                                     00002500
+         END;                                                           00002510
+      ELSE                                                              00002520
+         IF (VERIFY(STYREKODE, 'Ss') = 0) THEN                          00002530
+            DO;                                                         00002540
+               PROGRAM_ID = 'R001TK60';                                 00002550
+               TRANSKODE = 'RT60';                                      00002560
+            END;                                                        00002570
+         ELSE                                                           00002580
+            IF (VERIFY(STYREKODE, 'Dd') = 0) THEN                       00002590
+               DO;                                                      00002600
+                  PROGRAM_ID = 'R001TK61';                              00002610
+                  TRANSKODE = 'RT61';                                   00002620
+               END;                                                     00002630
+            ELSE                                                        00002640
+               IF (VERIFY(STYREKODE, 'Ff') = 0) THEN                    00002650
+                  DO;                                                   00002660
+                     PROGRAM_ID = 'R001TK62';                           00002670
+                     TRANSKODE = 'RT62';                                00002680
+                  END;                                                  00002690
+               ELSE                                                     00002700
+                  DO;                                                   00002710
+                     PROGRAM_ID = 'R001TK08';                           00002720
+                     TRANSKODE = 'RT08';                                00002730
+                  END;                                                  00002740
+                                                                        00002750
+ SEND_MAP      = '1'B;                                                  00002760
+ STYREKODE     = ' ';                                                   00002770
+ FUNKSJONSKODE = ' ';                                                   00002780
+                                                                        00002790
+ EXEC CICS XCTL PROGRAM(PROGRAM_ID) COMMAREA(KOM_OMR);                  00002800
+                                                                        00002810
+  FEILBEH:                                                              00002820
+                                                                        00002830
+                                                                        00002840
+     ALLOCATE S001020O;                                                 00002850
+                                                                        00002860
+     S001020O.MELDING1O =                                               00002870
+                                                                        00002880
+              'F E I L  H A R  O P P S T Å T T ! ! !.';                 00002890
+                                                                        00002900
+     S001020O.MELDING2O =                                               00002910
+              'EIBRCODE : ' !! UNSPEC(EIBRCODE);                        00002920
+                                                                        00002930
+     S001020O.MELDING3O =                                               00002940
+          'EIBFN    : ' !! UNSPEC(EIBFN) !! '. FEILKODE : ' !! FEILKODE 00002950
+                                         !! '. DATASETT : ' !! DSNAVN;  00002960
+                                                                        00002970
+     S001020O.MELDING4O =                                               00002980
+                   '.INGEN OPPDATERING ER BLITT UTFØRT.';               00002990
+                                                                        00003000
+     EXEC CICS SEND MAP('S001020') MAPSET('S001T23') ERASE;             00003010
+                                                                        00003020
+     EXEC CICS RECEIVE MAP('S001020')                                   00003030
+                       MAPSET('S001T23') SET(BMSMAPBR);                 00003040
+                                                                        00003050
+                                                                        00003060
+     EXEC CICS SYNCPOINT ROLLBACK;                                      00003070
+                                                                        00003080
+     EXEC CICS RETURN;                                                  00003090
+                                                                        00003100
+ SJEKK_UT: PROC;                                                        00003110
+                                                                        00003120
+    IF S001020I.FUNKSJONSKODEL > 0 THEN                                 00003130
+        FUNKSJONSKODE = S001020I.FUNKSJONSKODEI;                        00003140
+    ELSE                                                                00003150
+        IF S001020I.STYREKODEL > 0 THEN                                 00003160
+             STYREKODE = S001020I.STYREKODEI;                           00003170
+                                                                        00003180
+    IF FUNKSJONSKODE ^= ' ' THEN                                        00003190
+       IF (VERIFY(FUNKSJONSKODE, 'Rr') = 0) THEN                        00003200
+         DO;                                                            00003210
+            PROGRAM_ID = 'R001TK04';                                    00003220
+            TRANSKODE = 'RT04';                                         00003230
+         END;                                                           00003240
+                                                                        00003250
+       ELSE                                                             00003260
+         IF (VERIFY(FUNKSJONSKODE, 'Hh') = 0) THEN                      00003270
+            DO;                                                         00003280
+               TRANSKODE = 'RT08';                                      00003290
+               PROGRAM_ID = 'R001TK08';                                 00003300
+            END;                                                        00003310
+                                                                        00003320
+         ELSE                                                           00003330
+            IF (VERIFY(FUNKSJONSKODE, 'Ff') = 0) THEN                   00003340
+               DO;                                                      00003350
+                  PROGRAM_ID = 'R001TK09';                              00003360
+                  TRANSKODE = 'RT09';                                   00003370
+               END;                                                     00003380
+                                                                        00003390
+            ELSE                                                        00003400
+               DO;                                                      00003410
+                  PROGRAM_ID = 'R001TK03';                              00003420
+                  TRANSKODE = 'RT03';                                   00003430
+               END;                                                     00003440
+                                                                        00003450
+    ELSE                                                                00003460
+      IF (VERIFY(STYREKODE, 'Aa') = 0) THEN                             00003470
+         DO;                                                            00003480
+            PROGRAM_ID = 'R001TK07';                                    00003490
+            TRANSKODE = 'RT07';                                         00003500
+         END;                                                           00003510
+                                                                        00003520
+      ELSE                                                              00003530
+         IF (VERIFY(STYREKODE, 'Kk') = 0) THEN                          00003540
+            DO;                                                         00003550
+               PROGRAM_ID = 'R001TK06';                                 00003560
+               TRANSKODE = 'RT06';                                      00003570
+            END;                                                        00003580
+         ELSE                                                           00003590
+            DO;                                                         00003600
+               PROGRAM_ID = 'R001TK04';                                 00003610
+               TRANSKODE = 'RT04';                                      00003620
+            END;                                                        00003630
+                                                                        00003640
+    SEND_MAP      = '1'B;                                               00003650
+    STYREKODE     = ' ';                                                00003660
+    FUNKSJONSKODE = ' ';                                                00003670
+                                                                        00003680
+    EXEC CICS XCTL PROGRAM(PROGRAM_ID) COMMAREA(KOM_OMR);               00003690
+                                                                        00003700
+ END SJEKK_UT;                                                          00003710
+                                                                        00003720
+ END R001T61;                                                           00003730

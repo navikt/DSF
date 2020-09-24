@@ -1,0 +1,198 @@
+ /*       SIST ENDRET 09/02-88 13.27.42 AV   DYBVIK                   */00000000
+ R001NO5: PROC OPTIONS(MAIN);                                           00000010
+ %SKIP(3);                                                              00000020
+ /********************************************************************/ 00000030
+ /*IDENTIFIKASJON                                                    */ 00000040
+ /*     R001NO50            -           PROGRAM I PL1 - BATCH        */ 00000050
+ /*     BRITT FOSSUM        -           OKTOBER 1987                 */ 00000060
+ /*HENSIKT                                                           */ 00000070
+ /*     SPLITTER FEILMELDINGER FRA R001NO10 I EN FILE FOR NORTRYGD-  */ 00000080
+ /*     KONTORER OG FILER FOR HVER AV KD-SENTRALENE.                 */ 00000090
+ /*INPUT                                                             */ 00000100
+ /*     P001.NORFEIL SOM ER DANNET AV R001NO10                       */ 00000110
+ /*OUTPUT                                                            */ 00000120
+ /*     SEKVENSIELLE FILER:                                          */ 00000130
+ /*      NOR: GÅR INN I NORTRYGD TRANSPORTSYSTEM                     */ 00000140
+ /*      KDØ: OVERFØRES TIL KDØ                                      */ 00000150
+ /*      VES: OVERFØRES TIL VESTVIKEN DATASENTRAL                    */ 00000160
+ /*      RTV: OVERFØRES TIL OSLO TRYGDEKONTOR                        */ 00000170
+ /*      ADS: OVERFØRES TIL AGDERDATA                                */ 00000180
+ /*      RDS: OVERFØRES TIL ROGALANDSDATA                            */ 00000190
+ /*      KDV: OVERFØRES TIL KOMMUNDATA VEST-NORGE                    */ 00000200
+ /*      KDM: OVERFØRES TIL KOMMUNDATA MIDT-NORGE                    */ 00000210
+ /*      KDN: OVERFØRES TIL KOMMUNDATA NORD-NORGE                    */ 00000220
+ /********************************************************************/ 00000230
+ %SKIP(2);                                                              00000240
+                                                                        00000250
+ /*  FILER    */                                                        00000260
+                                                                        00000270
+     DCL TKNRFIL         FILE RECORD SEQUENTIAL INPUT    ENV(VSAM);     00000280
+     DCL NORFEIL         FILE RECORD SEQUENTIAL INPUT    ENV(VSAM);     00000290
+                                                                        00000300
+     DCL NOR             FILE RECORD OUTPUT;                            00000310
+     DCL KDØ             FILE RECORD OUTPUT;                            00000320
+     DCL VES             FILE RECORD OUTPUT;                            00000330
+     DCL RTV             FILE RECORD OUTPUT;                            00000340
+     DCL ADS             FILE RECORD OUTPUT;                            00000350
+     DCL RDS             FILE RECORD OUTPUT;                            00000360
+     DCL KDV             FILE RECORD OUTPUT;                            00000370
+     DCL KDM             FILE RECORD OUTPUT;                            00000380
+     DCL KDN             FILE RECORD OUTPUT;                            00000390
+                                                                        00000400
+     DCL SYSPRINT        FILE PRINT;                                    00000410
+                                                                        00000420
+ /*  TELLERE, BRYTERE, INDEKSER, INNEBYGDE FUNKSJONER   */              00000430
+                                                                        00000440
+     DCL TKNR_IND        BINARY FIXED(15);                              00000450
+                                                                        00000460
+     DCL EOF             BIT(1)           INIT ('0'B);                  00000470
+     DCL EOF_TKNRTAB     BIT(1)           INIT ('0'B);                  00000480
+                                                                        00000490
+     DCL (ONCODE, PLIRETC)                  BUILTIN;                    00000500
+     DCL RETCODE         BINARY FIXED(31)   INIT (0);                   00000510
+                                                                        00000520
+ /*  INPUT/OUTPUT   */                                                  00000530
+                                                                        00000540
+     DCL 01 FEIL_REC,                                                   00000550
+            05 TKNR      PIC '(4)9',                                    00000560
+            05 REST      CHAR (316);                                    00000570
+                                                                        00000580
+ /*  TABELL OVER TRYGDEKONTORENE       */                               00000590
+                                                                        00000600
+     DCL 01 TK_TAB(0101:2101),                                          00000610
+            05 KD_SENTRAL     CHAR (3);                                 00000620
+                                                                        00000630
+ /*  TRYGDEKONTOR_TABELL      */                                        00000640
+                                                                        00000650
+     %INCLUDE P0019953;                                                 00000660
+                                                                        00000670
+                                                                        00000680
+                                                                        00000690
+ %SKIP(2);                                                              00000700
+ /*------------------------------------------------------------------*/ 00000710
+ /*  SLUTT PÅ DEKLARASJONENE.                                        */ 00000720
+ /*------------------------------------------------------------------*/ 00000730
+                                                                        00000740
+                                                                        00000750
+          ON ERROR BEGIN;                                               00000760
+             ON ERROR SYSTEM;                                           00000770
+             PUT FILE (SYSPRINT) EDIT ('FEIL HAR OPPSTÅTT. ONCODE = ',  00000780
+                                        ONCODE)                         00000790
+                                      ( SKIP,COL(4),A,A(4));            00000800
+             RETCODE = 100;                                             00000810
+          END;                                                          00000820
+                                                                        00000830
+          ON ENDFILE (NORFEIL)                                          00000840
+             EOF = '1'B;                                                00000850
+                                                                        00000860
+          ON ENDFILE (TKNRFIL)                                          00000870
+             EOF_TKNRTAB = '1'B;                                        00000880
+                                                                        00000890
+          OPEN FILE(SYSPRINT),                                          00000900
+               FILE(TKNRFIL);                                           00000910
+                                                                        00000920
+ /*------------------------------------------------------------------*/ 00000930
+ /* LESER TKNRTAB INN I EN TABELL SOM SIER OM TRYGDEKONTORET HAR     */ 00000940
+ /* NORTRYGD ELLER INFOTRYGD, OG HVILKEN KD-SENTRAL INFOTRYGD-       */ 00000950
+ /* KONTORENE TILHØRER.                                              */ 00000960
+ /*------------------------------------------------------------------*/ 00000970
+                                                                        00000980
+                                                                        00000990
+          READ FILE(TKNRFIL) INTO ( TKNRTAB );                          00001000
+                                                                        00001010
+          DO WHILE (^EOF_TKNRTAB);                                      00001020
+                                                                        00001030
+             TKNR_IND = TKNRTAB.TKNR;                                   00001040
+                                                                        00001050
+             IF INFO_NOR    = 'I'    THEN                               00001060
+                KD_SENTRAL(TKNR_IND) = DATASENTRAL;                     00001070
+             ELSE                                                       00001080
+                KD_SENTRAL(TKNR_IND) = 'NOR';                           00001090
+                                                                        00001100
+             READ FILE(TKNRFIL) INTO ( TKNRTAB );                       00001110
+                                                                        00001120
+          END;                                                          00001130
+                                                                        00001140
+          CLOSE FILE(TKNRFIL);                                          00001150
+                                                                        00001160
+                                                                        00001170
+ /*------------------------------------------------------------------*/ 00001180
+ /* FEIL-RECORDENE LESES FRA NORFEIL, OG SKRIVES UT PÅ RIKTIG FIL.   */ 00001190
+ /*------------------------------------------------------------------*/ 00001200
+                                                                        00001210
+          OPEN FILE(NOR),                                               00001220
+               FILE(KDØ),                                               00001230
+               FILE(VES),                                               00001240
+               FILE(RTV),                                               00001250
+               FILE(ADS),                                               00001260
+               FILE(RDS),                                               00001270
+               FILE(KDV),                                               00001280
+               FILE(KDM),                                               00001290
+               FILE(KDN);                                               00001300
+                                                                        00001310
+          READ FILE (NORFEIL) INTO (FEIL_REC);                          00001320
+          IF FEIL_REC.TKNR = 0                 THEN      /* DUMMY_REC */00001330
+             READ FILE (NORFEIL) INTO (FEIL_REC);                       00001340
+                                                                        00001350
+          DO WHILE (^EOF);                                              00001360
+                                                                        00001370
+             TKNR_IND = FEIL_REC.TKNR;                                  00001380
+                                                                        00001390
+             SELECT (KD_SENTRAL(TKNR_IND));                             00001400
+                                                                        00001410
+                WHEN ('NOR')                                            00001420
+                   WRITE FILE (NOR) FROM (FEIL_REC);                    00001430
+                                                                        00001440
+                WHEN ('KDØ')                                            00001450
+                   WRITE FILE (KDØ) FROM (FEIL_REC);                    00001460
+                                                                        00001470
+                WHEN ('VES')                                            00001480
+                   WRITE FILE (VES) FROM (FEIL_REC);                    00001490
+                                                                        00001500
+                WHEN ('RTV')                                            00001510
+                   WRITE FILE (RTV) FROM (FEIL_REC);                    00001520
+                                                                        00001530
+                WHEN ('ADS')                                            00001540
+                   WRITE FILE (ADS) FROM (FEIL_REC);                    00001550
+                                                                        00001560
+                WHEN ('RDS')                                            00001570
+                   WRITE FILE (RDS) FROM (FEIL_REC);                    00001580
+                                                                        00001590
+                WHEN ('KDV')                                            00001600
+                   WRITE FILE (KDV) FROM (FEIL_REC);                    00001610
+                                                                        00001620
+                WHEN ('KDM')                                            00001630
+                   WRITE FILE (KDM) FROM (FEIL_REC);                    00001640
+                                                                        00001650
+                WHEN ('KDN')                                            00001660
+                   WRITE FILE (KDN) FROM (FEIL_REC);                    00001670
+                                                                        00001680
+                OTHERWISE                                               00001690
+                   DO;                                                  00001700
+                      PUT FILE (SYSPRINT) EDIT ('FEIL TRYGDEKONTORNR: ',00001710
+                                                 FEIL_REC.TKNR)         00001720
+                                               ( SKIP,COL(4),A,A(4));   00001730
+                      RETCODE = 100;                                    00001740
+                   END;                                                 00001750
+                                                                        00001760
+             END;                                                       00001770
+                                                                        00001780
+             READ FILE (NORFEIL) INTO (FEIL_REC);                       00001790
+                                                                        00001800
+          END;                                                          00001810
+                                                                        00001820
+          CLOSE FILE (NORFEIL),                                         00001830
+                FILE (SYSPRINT),                                        00001840
+                FILE (NOR),                                             00001850
+                FILE (KDØ),                                             00001860
+                FILE (VES),                                             00001870
+                FILE (RTV),                                             00001880
+                FILE (ADS),                                             00001890
+                FILE (RDS),                                             00001900
+                FILE (KDV),                                             00001910
+                FILE (KDM),                                             00001920
+                FILE (KDN);                                             00001930
+                                                                        00001940
+          CALL PLIRETC(RETCODE);                                        00001950
+                                                                        00001960
+   END R001NO5;                                                         00001970

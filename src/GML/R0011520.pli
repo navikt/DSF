@@ -1,0 +1,656 @@
+ /*       SIST ENDRET 13/10-87 08.36.55 AV   DYBVIK                   */00000000
+ /*       SIST ENDRET 22/12-86 08.42.26 AV   DYBVIK                   */00000010
+ /*       SIST ENDRET 27/03-85 15.34.11 AV   HERMAN                   */00000020
+ /*       SIST ENDRET 21/01-85 11.20.24 AV   LUNDEBY                  */00000030
+ /*       SIST ENDRET 19/01-83 12.30.28 AV   FARVIK                   */00000040
+                                                                        00000050
+ /* ***************************************************************** */00000060
+ /* IDENTIFIKASJON                                                    */00000070
+ /*     R0011520 - OPPDATER_TKNR_OG_TILLEGGSBLANKETT -                */00000080
+ /*                PROSEDYRE I PLI.                                   */00000090
+ /*     PROGRAMMERER: TOM JØRGENSEN, OKTOBER 1982.                    */00000100
+ /* HENSIKT                                                           */00000110
+ /*     OPPDATERER TKNR OG TILLEGGSBLANKETT.                          */00000120
+ /* PROGAMTILKNYTNING                                                 */00000130
+ /*    EKSTERN PROSEDYRE :                                            */00000140
+ /*     CALL R0019957 OVERFØRE DATA TIL NORDATA                       */00000150
+ /*                                                                   */00000160
+ /*    INTERNE PROSEDYRER:                                            */00000170
+ /*                                                                   */00000180
+ /*     CALL          OPPDATER_TKNR;                                  */00000190
+ /*     CALL          OPPDATER_TILLEGGSBLANKETT;                      */00000200
+ /*     CALL          OPPDATER_AI67;                                  */00000210
+ /* ***************************************************************** */00000220
+ /* ENDRET 18.01.85  AV   S. LUNDEBY  FRA  DATA-UTVIKLING A/S         */00000230
+ /*                                                                   */00000240
+ /* DET ER LAGT INN CALL MOT P900_NOR_DATA (FNR,TKNR) FOR Å GI        */00000250
+ /* BESKJED TIL NORTRYGD-KONTORENE HVIS DET ER EN AKT. PERSON         */00000260
+ /*                                                                   */00000270
+ /* ENDRET 25.9.87 - HERMAN : VED TKNR-ENDRING SKAL TKNR ENDRES       */00000280
+ /*                           I TRANHIST FOR ALLE TRANSAKSJONER       */00000290
+ /*                           - SE FEILRAPP 532                       */00000300
+ /*                                                                   */00000310
+ /* ***************************************************************** */00000320
+                                                                        00000330
+ R001152: PROC  (COMMAREA_PEKER)  OPTIONS (MAIN);                       00000340
+                                                                        00000350
+ %PAGE;                                                                 00000360
+ %INCLUDE P0019906;    /* TRANS_OPPL_OMR BASED(TRANS_OPPL_PEKER) */     00000370
+                                                                        00000380
+ %PAGE;                                                                 00000390
+ %INCLUDE P0019908;    /* KOM_OMR  BASED(COMMAREA_PEKER)         */     00000400
+                                                                        00000410
+ %PAGE;                                                                 00000420
+ %INCLUDE P0019912;    /* DIV_PARAM_OMR  BASED(DIV_PARAM_PEKER)  */     00000430
+                                                                        00000440
+ %PAGE;                                                                 00000450
+ %INCLUDE DLIUIB;                                                       00000460
+                                                                        00000470
+ %PAGE;                                                                 00000480
+    DCL UIB_RC_OK BIT(8) INIT (0);                                      00000490
+                                                                        00000500
+ %INCLUDE P0012002;                                                     00000510
+                                                                        00000520
+ %PAGE;                                                                 00000530
+    DCL PLITDLI ENTRY;                                                  00000540
+    DCL CSTG BUILTIN;                                                   00000550
+                                                                        00000560
+    DCL 1 RF0PERSN UNALIGNED,                                           00000570
+       %INCLUDE P0019927;                                               00000580
+                                                                        00000590
+    DCL 1 TILBERPO       UNALIGNED,                                     00000600
+       %INCLUDE P0019929;                                               00000610
+                                                                        00000620
+    DCL 1 TRANHIST       UNALIGNED,                                     00000630
+       %INCLUDE P0019940;                                               00000640
+                                                                        00000650
+    DCL COMMAREA_PEKER POINTER;                                         00000660
+                                                                        00000670
+    DCL 1 RF1 BASED (RF1_PCB_PEKER),                                    00000680
+       %INCLUDE P0012003;                                               00000690
+                                                                        00000700
+                                                                        00000710
+    DCL TRE  FIXED BIN (31) INIT (3);                                   00000720
+    DCL FIRE FIXED BIN (31) INIT (4);                                   00000730
+    DCL FEM  FIXED BIN (31) INIT (5);                                   00000740
+                                                                        00000750
+    DCL 1 SSA_ROTS,                                                     00000760
+           2 SSA_ROT_NAVN      CHAR(18) INIT ('RF0PERSN (FNR     '),    00000770
+           2 RELOOP1           CHAR(2) INIT (' ='),                     00000780
+           2 FKEY1             FIXED DEC (11) INIT (0),                 00000790
+           2 HP                CHAR(1) INIT (')');                      00000800
+                                                                        00000810
+    DCL 1 SSA_RF0PERSN,                                                 00000820
+           2 SSA_ROT_NAVN      CHAR(17) INIT ('RF0PERSN(FNR     '),     00000830
+           2 RELOOP1           CHAR(2) INIT (' ='),                     00000840
+           2 FKEY2             FIXED DEC (11) INIT (0),                 00000850
+           2 HP                CHAR(1) INIT (')');                      00000860
+                                                                        00000870
+    DCL 1 SSA_UQUALIC,                                                  00000880
+           2 NAVN              CHAR(9) INIT ('TILBERPO ');              00000890
+                                                                        00000900
+    DCL 1 SSA_TRANHIST,                                                 00000910
+           2 NAVN              CHAR(9) INIT ('TRANHIST ');              00000920
+ %PAGE;                                                                 00000930
+    DCL W_FNR(2)           FIXED DEC (11);                              00000940
+    DCL W_NAVN(2)          CHAR(25);                                    00000950
+    DCL W_TKNR             FIXED DEC (5);                               00000960
+    DCL W_AI67             FIXED DEC (5);    /* TILLEGG 25.3.85 HL */   00000970
+    DCL W_AI63(2)          FIXED DEC (5);                               00000980
+    DCL W_AI64(2)          FIXED DEC (5);                               00000990
+    DCL W_AI65(2)          FIXED DEC (5);                               00001000
+    DCL W_AI66(2)          FIXED DEC (5);                               00001010
+    DCL W_PI66(2)          FIXED DEC (5);                               00001020
+ %PAGE;                                                                 00001030
+    DCL ROTSWITCH BIT(1) INIT ('1'B);                                   00001040
+    DCL MER_TRANHIST BIT(1) INIT ('1'B);                                00001050
+    DCL JA           BIT(1) INIT ('1'B);                                00001060
+    DCL NEI          BIT(1) INIT ('0'B);                                00001070
+    DCL J         FIXED DEC (3);                                        00001080
+                                                                        00001090
+    DCL W01_GHU   CHAR(4) INIT ('GHU ');                                00001100
+    DCL W01_GNP   CHAR(4) INIT ('GNP ');                                00001110
+    DCL W01_GU    CHAR(4) INIT ('GU  ');                                00001120
+    DCL W01_REPL  CHAR(4) INIT ('REPL');                                00001130
+    DCL W01_ISRT  CHAR(4) INIT ('ISRT');                                00001140
+ %PAGE;                                                                 00001150
+ /* ***************************************************************** */00001160
+ /*  EKSEKVERING...........                                           */00001170
+ /* ***************************************************************** */00001180
+                                                                        00001190
+    PROGRAM_ID    = 'R0011520';                                         00001200
+    UIBPTR        = UIB_PEKER;                                          00001210
+    RF0PERSN      = '';                                                 00001220
+    TILBERPO      = '';                                                 00001230
+                                                                        00001240
+    IF TRANS_OPPL_OMR.BLANKETTYPE = 'E2' THEN                           00001250
+       CALL OPPDATER_TKNR;                                              00001260
+    ELSE                                                                00001270
+       CALL OPPDATER_TILLEGGSBLANKETT;                                  00001280
+                                                                        00001290
+                                                                        00001300
+                                                                        00001310
+ %PAGE;                                                                 00001320
+ OPPDATER_TKNR: PROC;                                                   00001330
+                                                                        00001340
+ /* ***************************************************************** */00001350
+ /* PROCEDUREN ENDRER TKNR.                                           */00001360
+ /* ENDRINGSBLANKETT E2.                                              */00001370
+ /* ***************************************************************** */00001380
+                                                                        00001390
+ %INCLUDE P0011501;                                                     00001400
+                                                                        00001410
+    SEARCH_FNR = E2S.FNR;                                               00001420
+    FKEY2      = E2S.FNR;                                               00001430
+                                                                        00001440
+                                                                        00001450
+    /*----------------------------------------------------------*/      00001460
+    /* GHU RF0PERSN KVALIFISERT MED E2S.FNR                     */      00001470
+    /*----------------------------------------------------------*/      00001480
+                                                                        00001490
+    CALL PLITDLI (FIRE,W01_GHU,RF1,RF0PERSN,SSA_RF0PERSN);              00001500
+                                                                        00001510
+                                                                        00001520
+    IF UIBFCTR          ^=  UIB_RC_OK                        THEN       00001530
+       DO;                                                              00001540
+ L100:    FEIL_VED_LABEL = 'L100';                                      00001550
+          FEIL_MELD_NR   =  500  ;                                      00001560
+          GO TO L999;                                                   00001570
+       END;                                                             00001580
+                                                                        00001590
+    /*----------------------------------------------------------*/      00001600
+    /* PERSON IKKE FUNNET  :                                    */      00001610
+    /*----------------------------------------------------------*/      00001620
+                                                                        00001630
+    IF RF1.STATUS_KODE = 'GE' THEN                                      00001640
+       DO;                                                              00001650
+                                                                        00001660
+ L150:    FEIL_VED_LABEL = 'L150';                                      00001670
+          FEIL_MELD_NR   =  1713 ;   /* 25.3.85 HL  */                  00001680
+          GO TO L999;                                                   00001690
+       /*   SETT FEIL_MELD_NR = PERSONEN FINNES IKKE I BASEN*/ ;        00001700
+                                                                        00001710
+       END;                                                             00001720
+    ELSE                                                                00001730
+       IF RF1.STATUS_KODE         = '  '                     THEN       00001740
+          DO;                                                           00001750
+             RF0PERSN.TKNR        =  E2S.TKNR_TIL;                      00001760
+                                                                        00001770
+             /*-------------------------------------------------*/      00001780
+             /* REPLACE ROTSEGM                                 */      00001790
+             /*-------------------------------------------------*/      00001800
+                                                                        00001810
+             CALL PLITDLI (TRE,W01_REPL,RF1,RF0PERSN);                  00001820
+                                                                        00001830
+             IF RF1.STATUS_KODE  ^= '  '                  !             00001840
+                UIBFCTR          ^=  UIB_RC_OK               THEN       00001850
+                DO;                                                     00001860
+ L200:             FEIL_VED_LABEL = 'L200';                             00001870
+                   FEIL_MELD_NR   =  500;                               00001880
+                   GO TO L999;                                          00001890
+                END;                                                    00001900
+                                                                        00001910
+                                                                        00001920
+ /*ENDRET 25.9.87 HL: TKNR SKAL ENDRES I ALLE TRANHISTER - FRAPP 532*/  00001930
+                                                                        00001940
+             DO WHILE (MER_TRANHIST);                                   00001950
+                                                                        00001960
+                CALL PLITDLI (FIRE,'GHNP',RF1,TRANHIST,SSA_TRANHIST);   00001970
+                                                                        00001980
+                IF UIBFCTR          ^=  UIB_RC_OK               THEN    00001990
+                   DO;                                                  00002000
+ L210:                FEIL_VED_LABEL = 'L210';                          00002010
+                      FEIL_MELD_NR   =  500;                            00002020
+                      GO TO L999;                                       00002030
+                   END;                                                 00002040
+                                                                        00002050
+                IF RF1.STATUS_KODE = ' '                        THEN    00002060
+                                                                        00002070
+                   DO;                                                  00002080
+                                                                        00002090
+                      TRANHIST.TKNR = E2S.TKNR_TIL;                     00002100
+                                                                        00002110
+                      CALL PLITDLI (TRE,'REPL',RF1,TRANHIST);           00002120
+                                                                        00002130
+                      IF RF1.STATUS_KODE  ^= '  '                  !    00002140
+                         UIBFCTR          ^=  UIB_RC_OK        THEN     00002150
+                         DO;                                            00002160
+ L220:                      FEIL_VED_LABEL = 'L220';                    00002170
+                            FEIL_MELD_NR   =  500;                      00002180
+                            GO TO L999;                                 00002190
+                         END;                                           00002200
+                   END;                                                 00002210
+                                                                        00002220
+                ELSE MER_TRANHIST = NEI;                                00002230
+                                                                        00002240
+             END;                                                       00002250
+                                                                        00002260
+ /*HIT 25.9.87 HL */                                                    00002270
+                                                                        00002280
+             /*-------------------------------------------------*/      00002290
+             /* GIR DATA TIL NORTRYGD HVIS DET ER ET NORKONTOR  */      00002300
+             /*-------------------------------------------------*/      00002310
+                                                                        00002320
+             CALL P900_NOR_DATA ( RF0PERSN.FNR , RF0PERSN.TKNR);        00002330
+                                                                        00002340
+             IF FEIL_MELD_NR      >  0                    THEN          00002350
+                GOTO L999;                                              00002360
+             ELSE                                                       00002370
+                PROGRAM_ID        = 'R0011520';                         00002380
+          END;                                                          00002390
+                                                                        00002400
+ END OPPDATER_TKNR;                                                     00002410
+                                                                        00002420
+                                                                        00002430
+                                                                        00002440
+ %PAGE;                                                                 00002450
+ OPPDATER_TILLEGGSBLANKETT: PROC;                                       00002460
+                                                                        00002470
+ /* ***************************************************************** */00002480
+ /* PROCEDUREN ENDRER ELLER INNLEGGER INNTEKTER FØR 1967.             */00002490
+ /* ANTATT INNTEKT FOR 1967 OPPDATERES I EGEN RUTINE                  */00002500
+ /* ***************************************************************** */00002510
+                                                                        00002520
+ %INCLUDE P0011301;                                                     00002530
+                                                                        00002540
+    W_TKNR  = 0;                                                        00002550
+                                                                        00002560
+    DO J = 1 TO 2;                                                      00002570
+                                                                        00002580
+       W_FNR  (J) = 0;                                                  00002590
+       W_NAVN (J) = '                         ';                        00002600
+       W_AI63 (J) = 0;                                                  00002610
+       W_AI64 (J) = 0;                                                  00002620
+       W_AI65 (J) = 0;                                                  00002630
+       W_AI66 (J) = 0;                                                  00002640
+       W_PI66 (J) = 0;                                                  00002650
+                                                                        00002660
+    END;                                                                00002670
+                                                                        00002680
+    IF TGUF.FNR > 0 THEN                                                00002690
+                                                                        00002700
+       DO;                                                              00002710
+                                                                        00002720
+          SEARCH_FNR = TGUF.FNR;                                        00002730
+          W_TKNR     = TGUF.TKNR;                                       00002740
+          W_FNR  (1) = TGUF.FNR;                                        00002750
+          W_NAVN (1) = TGUF.NAVN;                                       00002760
+          W_AI63 (1) = TGUF.AI63;                                       00002770
+          W_AI64 (1) = TGUF.AI64;                                       00002780
+          W_AI65 (1) = TGUF.AI65;                                       00002790
+          W_AI66 (1) = TGUF.AI66;                                       00002800
+          W_PI66 (1) = TGUF.PI_66;                                      00002810
+                                                                        00002820
+       END;                                                             00002830
+                                                                        00002840
+    ELSE                                                                00002850
+                                                                        00002860
+       IF TGEP.FNR_EK > 0 THEN                                          00002870
+                                                                        00002880
+          DO;                                                           00002890
+                                                                        00002900
+             SEARCH_FNR = TGEP.FNR_EK;                                  00002910
+             W_TKNR     = TGEP.TKNR_EK;                                 00002920
+             W_FNR  (1) = TGEP.FNR_EK;                                  00002930
+             W_NAVN (1) = TGEP.NAVN_EK;                                 00002940
+             W_AI63 (1) = TGEP.AI63_EK;                                 00002950
+             W_AI64 (1) = TGEP.AI64_EK;                                 00002960
+             W_AI65 (1) = TGEP.AI65_EK;                                 00002970
+             W_AI66 (1) = TGEP.AI66_EK;                                 00002980
+             W_PI66 (1) = TGEP.PI_66_EK;                                00002990
+                                                                        00003000
+          END;                                                          00003010
+                                                                        00003020
+       ELSE                                                             00003030
+                                                                        00003040
+          IF TGB.FNR_MOR > 0 THEN                                       00003050
+                                                                        00003060
+             DO;                                                        00003070
+                                                                        00003080
+                SEARCH_FNR = TGB.FNR_MOR;                               00003090
+                W_TKNR     = TGB.TKNR;                                  00003100
+                W_FNR  (1) = TGB.FNR_MOR;                               00003110
+                W_NAVN (1) = TGB.NAVN_MOR;                              00003120
+                W_AI63 (1) = TGB.AI63_MOR;                              00003130
+                W_AI64 (1) = TGB.AI64_MOR;                              00003140
+                W_AI65 (1) = TGB.AI65_MOR;                              00003150
+                W_AI66 (1) = TGB.AI66_MOR;                              00003160
+                W_PI66 (1) = TGB.PI_66_MOR;                             00003170
+                                                                        00003180
+             END;                                                       00003190
+                                                                        00003200
+          ELSE                                                          00003210
+                                                                        00003220
+             IF TGB.FNR_FAR > 0 THEN                                    00003230
+                                                                        00003240
+                DO;                                                     00003250
+                                                                        00003260
+                   SEARCH_FNR = TGB.FNR_FAR;                            00003270
+                   W_TKNR     = TGB.TKNR;                               00003280
+                   W_FNR  (2) = TGB.FNR_FAR;                            00003290
+                   W_NAVN (2) = TGB.NAVN_FAR;                           00003300
+                   W_AI63 (2) = TGB.AI63_FAR;                           00003310
+                   W_AI64 (2) = TGB.AI64_FAR;                           00003320
+                   W_AI65 (2) = TGB.AI65_FAR;                           00003330
+                   W_AI66 (2) = TGB.AI66_FAR;                           00003340
+                   W_PI66 (2) = TGB.PI_66_FAR;                          00003350
+                                                                        00003360
+                END;                                                    00003370
+                                                                        00003380
+  /* TILLEGG 27.3.85  HL                             */                 00003390
+                                                                        00003400
+              ELSE                                                      00003410
+                                                                        00003420
+                 IF TGAI.FNR > 0 THEN                                   00003430
+                                                                        00003440
+                    DO;                                                 00003450
+                                                                        00003460
+                       CALL OPPDATER_AI67; /* INTERN PROSEDYRE */       00003470
+                                                                        00003480
+                       GO TO L999;         /* UT AV PROGRAMMET */       00003490
+                                                                        00003500
+                    END;                                                00003510
+                                                                        00003520
+  /* HIT 27.3.85  HL                                  */                00003530
+                                                                        00003540
+    DO J = 1 TO 2;                                                      00003550
+                                                                        00003560
+       IF W_FNR(J) > 0 THEN                                             00003570
+                                                                        00003580
+          DO;                                                           00003590
+                                                                        00003600
+             FKEY1              = W_FNR(J);                             00003610
+             FKEY2              = W_FNR(J);                             00003620
+                                                                        00003630
+             RF0PERSN.FNR        = W_FNR(J);                            00003640
+             RF0PERSN.NAVN       = W_NAVN(J);                           00003650
+             RF0PERSN.TKNR       = W_TKNR;                              00003660
+                                                                        00003670
+                                                                        00003680
+             CALL PLITDLI (FIRE,W01_ISRT,RF1,RF0PERSN,SSA_ROTS);        00003690
+        /*   INSERT ROT-SEGMENT  */                                     00003700
+                                                                        00003710
+                                                                        00003720
+             IF UIBFCTR = UIB_RC_OK THEN                                00003730
+                                                                        00003740
+                DO;                                                     00003750
+                                                                        00003760
+                   IF RF1.STATUS_KODE = '  ' THEN                       00003770
+                                                                        00003780
+                      DO;                                               00003790
+                                                                        00003800
+                   /*    INSERTEN GIKK OK    */                         00003810
+                                                                        00003820
+                         ROTSWITCH = '0'B;                              00003830
+                                                                        00003840
+                      END;                                              00003850
+                                                                        00003860
+                   ELSE                                                 00003870
+                                                                        00003880
+                      IF RF1.STATUS_KODE = 'II' THEN                    00003890
+                                                                        00003900
+                         DO;                                            00003910
+                                                                        00003920
+                      /*    RF0PERSNSEGMENTET LÅ DER FRA FØR    */      00003930
+                                                                        00003940
+                            ROTSWITCH = '1'B;                           00003950
+                                                                        00003960
+                         END;                                           00003970
+                                                                        00003980
+                      ELSE                                              00003990
+                                                                        00004000
+                         DO;                                            00004010
+                                                                        00004020
+                      /*    UGYLDIG RETURKODE, MEN OK UIB  */           00004030
+                                                                        00004040
+                            GO TO L999;                                 00004050
+                                                                        00004060
+                         END;                                           00004070
+                                                                        00004080
+                END;                                                    00004090
+                                                                        00004100
+             ELSE                                                       00004110
+                                                                        00004120
+                DO;                                                     00004130
+                                                                        00004140
+             /*    FEIL    */                                           00004150
+                                                                        00004160
+ L300:             FEIL_VED_LABEL = 'L300';                             00004170
+                   FEIL_MELD_NR   = 500;                                00004180
+                                                                        00004190
+                   GO TO L999;                                          00004200
+                                                                        00004210
+                END;                                                    00004220
+                                                                        00004230
+             IF ROTSWITCH THEN                                          00004240
+                                                                        00004250
+                DO;                                                     00004260
+                                                                        00004270
+                                                                        00004280
+                   CALL PLITDLI (FEM,W01_GHU,RF1,TILBERPO,              00004290
+                                            SSA_RF0PERSN,SSA_UQUALIC);  00004300
+             /*    GHU TILBERPO-SEGMENT KVALIFISERT MED W_FNR(I)*/      00004310
+                                                                        00004320
+                                                                        00004330
+                   TILBERPO.AI63 = W_AI63(J);                           00004340
+                   TILBERPO.AI64 = W_AI64(J);                           00004350
+                   TILBERPO.AI65 = W_AI65(J);                           00004360
+                   TILBERPO.AI66 = W_AI66(J);                           00004370
+                   TILBERPO.PI66 = W_PI66(J);                           00004380
+                                                                        00004390
+                   IF UIBFCTR ^= UIB_RC_OK THEN                         00004400
+                                                                        00004410
+                      DO;                                               00004420
+                                                                        00004430
+             /*          FEIL    */                                     00004440
+                                                                        00004450
+ L400:                   FEIL_VED_LABEL = 'L400';                       00004460
+                         FEIL_MELD_NR   = 500;                          00004470
+                                                                        00004480
+                         GO TO L999;                                    00004490
+                                                                        00004500
+                      END;                                              00004510
+                                                                        00004520
+                   ELSE                                                 00004530
+                                                                        00004540
+                      DO;  /* UIBFCTR = UIB_RC_OK */                    00004550
+                                                                        00004560
+                         IF RF1.STATUS_KODE = 'GE' THEN /*IKKE FUNNET*/ 00004570
+                                                                        00004580
+                            DO;                                         00004590
+                                                                        00004600
+                                                                        00004610
+                               CALL PLITDLI (FIRE,W01_ISRT,RF1,         00004620
+                                             TILBERPO,SSA_UQUALIC);     00004630
+                           /*  INSERT TILBERPO-SEGMENT */               00004640
+                                                                        00004650
+                                                                        00004660
+                               IF RF1.STATUS_KODE ^= '  ' !             00004670
+                                  UIBFCTR ^= UIB_RC_OK THEN             00004680
+                                                                        00004690
+                                  DO;                                   00004700
+                                                                        00004710
+                                /*   FEIL   */                          00004720
+                                                                        00004730
+ L500:                               FEIL_VED_LABEL = 'L500';           00004740
+                                     FEIL_MELD_NR   = 500;              00004750
+                                                                        00004760
+                                     GO TO L999;                        00004770
+                                                                        00004780
+                                  END;                                  00004790
+                            END;                                        00004800
+                                                                        00004810
+                         ELSE                                           00004820
+                                                                        00004830
+                            IF RF1.STATUS_KODE = '  ' THEN              00004840
+                                                                        00004850
+                               DO;                                      00004860
+                                                                        00004870
+                                                                        00004880
+                                  CALL PLITDLI (TRE,W01_REPL,RF1,       00004890
+                                                    TILBERPO);          00004900
+                              /*  REPLACE TILBERPO-SEGMENT*/            00004910
+                                                                        00004920
+                                                                        00004930
+                                  IF RF1.STATUS_KODE ^= '  ' !          00004940
+                                     UIBFCTR ^= UIB_RC_OK THEN          00004950
+                                                                        00004960
+                                     DO;                                00004970
+                                                                        00004980
+                                   /*   FEIL   */                       00004990
+                                                                        00005000
+ L600:                                  FEIL_VED_LABEL = 'L600';        00005010
+                                        FEIL_MELD_NR   = 500;           00005020
+                                                                        00005030
+                                        GO TO L999;                     00005040
+                                                                        00005050
+                                     END;                               00005060
+                                                                        00005070
+                               END;                                     00005080
+                                                                        00005090
+                         ELSE                                           00005100
+                                                                        00005110
+                            DO;                                         00005120
+                                                                        00005130
+                         /*    FEIL RETURKODE, MEN GYLDIG UIB  */       00005140
+                                                                        00005150
+                               GO TO L999;                              00005160
+                                                                        00005170
+                            END;                                        00005180
+                                                                        00005190
+                      END; /* IF :  UIBFCTR = UIB_RC_OK       */        00005200
+                                                                        00005210
+                END;       /* IF :  ROTSWITCH                 */        00005220
+                                                                        00005230
+             ELSE                                                       00005240
+                                                                        00005250
+                DO;        /* IF :  ^ROTSWITCH                */        00005260
+                                                                        00005270
+                   TILBERPO.AI63 = W_AI63(J);                           00005280
+                   TILBERPO.AI64 = W_AI64(J);                           00005290
+                   TILBERPO.AI65 = W_AI65(J);                           00005300
+                   TILBERPO.AI66 = W_AI66(J);                           00005310
+                   TILBERPO.PI66 = W_PI66(J);                           00005320
+                                                                        00005330
+                                                                        00005340
+                   CALL PLITDLI (FIRE,W01_ISRT,RF1,TILBERPO,            00005350
+                                                   SSA_UQUALIC);        00005360
+                                                                        00005370
+                                                                        00005380
+                   IF RF1.STATUS_KODE ^= '  ' !                         00005390
+                      UIBFCTR ^= UIB_RC_OK THEN                         00005400
+                                                                        00005410
+                      DO;                                               00005420
+                                                                        00005430
+                    /*   FEIL   */                                      00005440
+                                                                        00005450
+ L700:                   FEIL_VED_LABEL = 'L700';                       00005460
+                         FEIL_MELD_NR   = 500;                          00005470
+                                                                        00005480
+                         GO TO L999;                                    00005490
+                                                                        00005500
+                      END;                                              00005510
+                                                                        00005520
+                END;                                                    00005530
+                                                                        00005540
+          END;       /* IF :  W_FNR (J) > 0             */              00005550
+                                                                        00005560
+    END;             /* DO :  I = 1 TO 2                */              00005570
+                                                                        00005580
+                                                                        00005590
+ /* ********************************************************* */        00005600
+ /* RUTINEN NEDENFOR ER LAGT INN 27.3.85 - DEN SKAL OPPDATERE */        00005610
+ /* ANTATT INNTEKT FOR 1967 I ROTSEGMENTET           HL       */        00005620
+ /* ********************************************************* */        00005630
+                                                                        00005640
+ OPPDATER_AI67: PROC;                                                   00005650
+                                                                        00005660
+   SEARCH_FNR = TGAI.FNR;                                               00005670
+   FKEY2      = TGAI.FNR;                                               00005680
+                                                                        00005690
+    /*----------------------------------------------------------*/      00005700
+    /* GHU RF0PERSN KVALIFISERT MED TGAI.FNR :                  */      00005710
+    /*----------------------------------------------------------*/      00005720
+                                                                        00005730
+    CALL PLITDLI (FIRE,W01_GHU,RF1,RF0PERSN,SSA_RF0PERSN);              00005740
+                                                                        00005750
+                                                                        00005760
+    IF UIBFCTR          ^=  UIB_RC_OK                        THEN       00005770
+       DO;                                                              00005780
+ L800:    FEIL_VED_LABEL = 'L800';                                      00005790
+          FEIL_MELD_NR   =  500  ;                                      00005800
+          GO TO L999;                                                   00005810
+       END;                                                             00005820
+                                                                        00005830
+    /*----------------------------------------------------------*/      00005840
+    /* PERSON IKKE FUNNET  :                                    */      00005850
+    /*----------------------------------------------------------*/      00005860
+                                                                        00005870
+    IF RF1.STATUS_KODE = 'GE' THEN                                      00005880
+       DO;                                                              00005890
+                                                                        00005900
+ L850:    FEIL_VED_LABEL = 'L850';                                      00005910
+          FEIL_MELD_NR   =  1713 ;                                      00005920
+          GO TO L999;                                                   00005930
+       /*   SETT FEIL_MELD_NR = PERSONEN FINNES IKKE I BASEN*/ ;        00005940
+                                                                        00005950
+       END;                                                             00005960
+    ELSE                                                                00005970
+       IF RF1.STATUS_KODE         = '  '                     THEN       00005980
+          DO;                                                           00005990
+             RF0PERSN.AI67       = TGAI.AI67;                           00006000
+                                                                        00006010
+             /*-------------------------------------------------*/      00006020
+             /* REPLACE ROTSEGM                                 */      00006030
+             /*-------------------------------------------------*/      00006040
+                                                                        00006050
+             CALL PLITDLI (TRE,W01_REPL,RF1,RF0PERSN);                  00006060
+                                                                        00006070
+             IF RF1.STATUS_KODE  ^= '  '                  !             00006080
+                UIBFCTR          ^=  UIB_RC_OK               THEN       00006090
+                DO;                                                     00006100
+ L900:             FEIL_VED_LABEL = 'L900';                             00006110
+                   FEIL_MELD_NR   =  500;                               00006120
+                   GO TO L999;                                          00006130
+                END;                                                    00006140
+                                                                        00006150
+             /*-------------------------------------------------*/      00006160
+             /* GIR DATA TIL NORTRYGD HVIS DET ER ET NORKONTOR  */      00006170
+             /*-------------------------------------------------*/      00006180
+                                                                        00006190
+             CALL P900_NOR_DATA ( RF0PERSN.FNR , RF0PERSN.TKNR);        00006200
+                                                                        00006210
+             IF FEIL_MELD_NR      >  0                    THEN          00006220
+                GOTO L999;                                              00006230
+             ELSE                                                       00006240
+                PROGRAM_ID        = 'R0011520';                         00006250
+                                                                        00006260
+          END;                                                          00006270
+    END OPPDATER_AI67;                                                  00006280
+                                                                        00006290
+ END OPPDATER_TILLEGGSBLANKETT;                                         00006300
+                                                                        00006310
+                                                                        00006320
+    %INCLUDE R0019957;   /*  P900_NOR_DATA ( FNR , TKNR )        */     00006330
+                                                                        00006340
+                                                                        00006350
+ L999:                                                                  00006360
+                                                                        00006370
+       /* ENDRET 101286 BF: LAGT INN FEILUTGANG                  */     00006380
+       /* ENDRET 250887 BF: 3301 SKAL IKKE LINKES NÅR            */     00006390
+       /*                   KJØRINGS_TYPE = 'N'                  */     00006400
+                                                                        00006410
+       IF FEIL_MELD_NR   >  0  &                                        00006420
+          KJØRINGS_TYPE ^= 'N' THEN                                     00006430
+          DO;                                                           00006440
+             DIV_PARAM_OMR.FRA_CICS        = '0'B;                      00006450
+             DIV_PARAM_OMR.HENT_FRAM_MAP   = '1'B;                      00006460
+             DIV_PARAM_OMR.FRA_UTEN_DIALOG = '1'B;                      00006470
+             DIV_PARAM_OMR.FRA_MED_DIALOG  = '0'B;                      00006480
+             EXEC CICS LINK PROGRAM ('R0013301')                        00006490
+                            COMMAREA(KOM_OMR);                          00006500
+          END;                                                          00006510
+                                                                        00006520
+       /* HIT    101286 BF                                       */     00006530
+                                                                        00006540
+ END R001152;                                                           00006550

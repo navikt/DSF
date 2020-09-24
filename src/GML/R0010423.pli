@@ -1,0 +1,343 @@
+ /*       SIST ENDRET 08/09-87 12.05.54 AV   DYBVIK                   */00000000
+ /*       SIST ENDRET 07/03-86 10.02.51 AV   ANNE                     */00000010
+ /*       SIST ENDRET 02/09-83 12.02.29 AV   JANKR                    */00000020
+ /* ***************************************************************** */00000030
+ /* IDENTIFIKASJON                                                    */00000040
+ /*     R0010423 - PROGRAM SOM FORETAR  OPPDATERING AV LIGNINGSKONTOR-*/00000050
+ /*                TABELLEN UNDER ADMINISTRASJONSDELEN AV SYSTEMET.   */00000060
+ /*                HOVEDPROGRAM I CICS/PLI.                           */00000070
+ /*     PROGRAMMERER: JAN - H. KRISTENSEN SETTEMBER 1983.             */00000080
+ /* HENSIKT                                                           */00000090
+ /*     PROGRAMMET SKAL SENDE UT EN MAP FØRST FOR AT EN SKAL KUNNE    */00000100
+ /*     VELGE KODE FOR DET EN ØNSKER UTFØRT.                          */00000110
+ /*     DERETTER SKAL DENNE MAPPEN RECEIVES SLIK AT DETTE PROGRAMMET  */00000120
+ /*     KAN GI KONTROLL TIL DEN AKTUELLE PROGRAMDELEN SOM UTFØRER     */00000130
+ /*     AKSJONEN.                                                     */00000140
+ /* PROGRAMTILKNYTNING                                                */00000150
+ /*     BLIR GITT KONTROLL FRA PROGRAM R0010420 SOM ER STYREPROGRAM   */00000160
+ /*     UNDER ADMINISTRASJONSDELEN.                                   */00000170
+ /*                                                                   */00000180
+ /* ***************************************************************** */00000190
+                                                                        00000200
+ R001B1: PROC(COMMAREA_PEKER)                  OPTIONS (MAIN);          00000210
+                                                                        00000220
+    %INCLUDE P0019908;            /* KOM_OMR                          */00000230
+    %INCLUDE P0019912;            /* DIV_PARAM_OMR                    */00000240
+    %INCLUDE P0019910;            /* STYRINGS_OMR                     */00000250
+    %INCLUDE P0019906;            /* TRANS_OPPL_OMR                   */00000260
+    %INCLUDE S001A3;              /* MAP TIL LKNR ENDRING FOR         */00000270
+                                  /* ADMINISTRASJON.                  */00000280
+    %INCLUDE DFHBMSCA;            /* HJELPE STRUKTUR FOR ATTRIBUTTER  */00000290
+                                                                        00000300
+    DCL                                                                 00000310
+      1 ADM_OMR                  BASED(B01_PEKER), /* DETTE SIDEN B01 */00000320
+        2 FORRIGE_AKSJON         CHAR(2),          /* IKKE BRUKES HER */00000330
+                                                                        00000340
+      1 LKNR_REC                 BASED(LKNR_PEKER),                     00000350
+        2 LKNR                   PIC '(4)9',                            00000360
+        2 NAVN                   CHAR (25),                             00000370
+        2 ADRESSE1               CHAR (35),                             00000380
+        2 ADRESSE2               CHAR (35),                             00000390
+                                                                        00000400
+      CSTG                       BUILTIN,                               00000410
+      ADDR                       BUILTIN,                               00000420
+      LENGTH                     BUILTIN,                               00000430
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),             00000440
+      KEY_PEKER                  POINTER,                               00000450
+      LKNR_PEKER                 POINTER,                               00000460
+      BMSMAPBR                   POINTER,                               00000470
+      COMMAREA_PEKER             POINTER;                               00000480
+                                                                        00000490
+                                                                        00000500
+    KOM_OMR.STYRINGS_PEKER  = ADDR(KOM_OMR.STYRINGS_OMR);               00000510
+    KOM_OMR.TRANS_OPPL_PEKER= ADDR(KOM_OMR.TRANS_OPPL_OMR);             00000520
+    KOM_OMR.DIV_PARAM_PEKER = ADDR(KOM_OMR.DIV_PARAM_OMR);              00000530
+    TRANSKODE               = 'RA23';        /* DETTE PROGRAM  */       00000540
+                                                                        00000550
+                                                                        00000560
+    IF PROGRAM_ID = 'R0010420' THEN         /* KOMMER IN FØRSTE GANG */ 00000570
+                                                                        00000580
+       DO;                                                              00000590
+          EXEC CICS SEND MAP('S001A3') MAPSET('S001A33') MAPONLY ERASE; 00000600
+                                                                        00000610
+       END;                                                             00000620
+                                                                        00000630
+                                                                        00000640
+    ELSE IF PROGRAM_ID = 'R0010423' THEN       /*   DETTE PROGRAM   */  00000650
+                                                                        00000660
+       DO;                                                              00000670
+          EXEC CICS RECEIVE MAP('S001A3')MAPSET('S001A33')              00000680
+                                         SET  (BMSMAPBR);               00000690
+          S001A3O.MELDINGO  = ' ';                                      00000700
+          KEY_PEKER         = ADDR(S001A3I.LKNRI);                      00000710
+                                                                        00000720
+ /* ENDRET 18.02.86   AL                                       */       00000730
+                                                                        00000740
+          IF S001A3I.FUNKSJONSKODEL > 0 &                               00000750
+             VERIFY(S001A3I.FUNKSJONSKODEI,'RVEFIAX') = 0 THEN          00000760
+                                                                        00000770
+ /* HIT    18.02.86   AL                                       */       00000780
+                                                                        00000790
+             DO;                                                        00000800
+                FUNKSJONSKODE = S001A3I.FUNKSJONSKODEI;                 00000810
+                EXEC CICS XCTL PROGRAM ('R0010301') COMMAREA (KOM_OMR); 00000820
+             END;                                                       00000830
+                                                                        00000840
+          IF S001A3I.STYRE_KODEL > 0 &                                  00000850
+             S001A3I.STYRE_KODEI ^= 'LB' THEN                           00000860
+             DO;                                                        00000870
+                STYREKODE  = S001A3I.STYRE_KODEI;                       00000880
+                EXEC CICS XCTL PROGRAM ('R0010420') COMMAREA (KOM_OMR); 00000890
+             END;                                                       00000900
+                                                                        00000910
+          SELECT(S001A3I.AKSJONI);                                      00000920
+             WHEN('VL')                                                 00000930
+                DO;                                                     00000940
+                   CALL BLANK_TEKST;                                    00000950
+                   CALL TEKST_PROT;                                     00000960
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VL);        00000970
+                   EXEC CICS READ DATASET ('KOMTAB') RIDFLD(KEY_BIT)    00000980
+                                                    SET(LKNR_PEKER);    00000990
+                   CALL OVERFØR_TIL_MAP;                                00001000
+                   FORRIGE_AKSJON = 'VL';                               00001010
+                                                                        00001020
+                END;                                                    00001030
+             WHEN('VN')                                                 00001040
+                DO;                                                     00001050
+                   CALL BLANK_TEKST;                                    00001060
+                   CALL TEKST_PROT;                                     00001070
+                   S001A3O.LKNRO = S001A3O.LKNRO + 1;                   00001080
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VN);        00001090
+                   EXEC CICS READ DATASET ('KOMTAB') RIDFLD(KEY_BIT)    00001100
+                                            GTEQ    SET(LKNR_PEKER);    00001110
+                   CALL OVERFØR_TIL_MAP;                                00001120
+                   FORRIGE_AKSJON = 'VN';                               00001130
+                                                                        00001140
+                END;                                                    00001150
+             WHEN('VF')                                                 00001160
+                DO;                                                     00001170
+                   CALL BLANK_TEKST;                                    00001180
+                   CALL TEKST_PROT;                                     00001190
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VL);        00001200
+                   EXEC CICS STARTBR DATASET ('KOMTAB') EQUAL           00001210
+                                        RIDFLD(KEY_BIT);                00001220
+                   EXEC CICS HANDLE CONDITION ENDFILE(NOTFND_VN);       00001230
+                   EXEC CICS READPREV DATASET ('KOMTAB')RIDFLD(KEY_BIT) 00001240
+                                                    SET(LKNR_PEKER);    00001250
+                   EXEC CICS READPREV DATASET ('KOMTAB')RIDFLD(KEY_BIT) 00001260
+                                                    SET(LKNR_PEKER);    00001270
+                   CALL OVERFØR_TIL_MAP;                                00001280
+                   FORRIGE_AKSJON = 'VF';                               00001290
+                                                                        00001300
+                END;                                                    00001310
+          /* WHEN('RL')                                                 00001320
+                DO;                                                     00001330
+                   CALL BLANK_TEKST;                                    00001340
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_RL);        00001350
+                   EXEC CICS READ DATASET ('KOMTAB') RIDFLD(KEY_BIT)    00001360
+                                                    SET(LKNR_PEKER);    00001370
+                   S001A3O.MELDINGO =                                   00001380
+                       'DETTE LIGNIGSKONTORNUMMER FINNES FRA FØR';      00001390
+                   CALL TEKST_PROT;                                     00001400
+                   CALL SEND_MAP;                                       00001410
+                                                                        00001420
+                END;                                                    00001430
+             WHEN('EL')                                                 00001440
+                DO;                                                     00001450
+                   CALL BLANK_TEKST;                                    00001460
+                   CALL TEKST_PROT;                                     00001470
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VL);        00001480
+                   EXEC CICS READ DATASET ('KOMTAB') RIDFLD(KEY_BIT)    00001490
+                                                    SET(LKNR_PEKER);    00001500
+                   CALL TEKST_UNP;                                      00001510
+                   CALL OVERFØR_TIL_MAP;                                00001520
+                   FORRIGE_AKSJON = 'EL';                               00001530
+                                                                        00001540
+                END;                                                    00001550
+             WHEN('SL')                                                 00001560
+                DO;                                                     00001570
+                                                                        00001580
+                   SELECT (FORRIGE_AKSJON);                             00001590
+                      WHEN('RL')                                        00001600
+                         DO;                                            00001610
+                            CALL OVERFØR_FRA_MAP;                       00001620
+                            CALL KONTROLL_AV_INPUT;                     00001630
+                            EXEC CICS WRITE DATASET ('KOMTAB')          00001640
+                                FROM (LKNR_REC)  RIDFLD(KEY_BIT);       00001650
+                            S001A3O.MELDINGO =                          00001660
+                            'TEKSTEN TIL DETTE LIGNINSKONTOR ER NÅ'     00001670
+                            !! ' SKREVET TIL SYSTEMET';                 00001680
+                         END;                                           00001690
+                      WHEN('EL')                                        00001700
+                         DO;                                            00001710
+                            EXEC CICS READ DATASET ('KOMTAB') UPDATE    00001720
+                                 RIDFLD(KEY_BIT) SET(LKNR_PEKER);       00001730
+                            CALL OVERFØR_FRA_MAP;                       00001740
+                            CALL KONTROLL_AV_INPUT;                     00001750
+                            EXEC CICS REWRITE DATASET ('KOMTAB')        00001760
+                                                  FROM (LKNR_REC);      00001770
+                            S001A3O.MELDINGO =                          00001780
+                            'TEKSTEN TIL DETTE LIGNINSKONTOR ER'        00001790
+                            !! ' NÅ ENDRET';                            00001800
+                         END;                                           00001810
+                      OTHERWISE                                         00001820
+                         DO;                                            00001830
+                            S001A3O.MELDINGO =                          00001840
+                            'GAL KODE FØR SL, BARE RL ELLER EL TILLATT';00001850
+                         END;                                           00001860
+                                                                        00001870
+                   END;                                                 00001880
+                                                                        00001890
+                   CALL TEKST_PROT;                                     00001900
+                   FORRIGE_AKSJON = 'SL';                               00001910
+                END;                                                    00001920
+             WHEN('FL')                                                 00001930
+                DO;                                                     00001940
+                   CALL BLANK_TEKST;                                    00001950
+                   CALL TEKST_PROT;                                     00001960
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VL);        00001970
+                   EXEC CICS READ DATASET ('KOMTAB') RIDFLD(KEY_BIT)    00001980
+                                                      SET(LKNR_PEKER);  00001990
+                   EXEC CICS DELETE DATASET ('KOMTAB') RIDFLD(KEY_BIT); 00002000
+                   S001A3O.MELDINGO ='DETTE LIGNINGSKNTORET ER FJERNET';00002010
+                   CALL OVERFØR_TIL_MAP;                                00002020
+                   FORRIGE_AKSJON = 'FL';                               00002030
+                                                                        00002040
+                END; */                                                 00002050
+             WHEN('XX')                                                 00002060
+                DO;                                                     00002070
+                   PROGRAM_ID = 'R0010301';    /* LITT JUKS !!!!     */ 00002080
+                   EXEC CICS XCTL PROGRAM ('R0010420')                  00002090
+                                  COMMAREA (KOM_OMR);                   00002100
+                END;                                                    00002110
+             OTHERWISE                                                  00002120
+                DO;                                                     00002130
+                   S001A3O.MELDINGO = 'UGYLDIG KODE';                   00002140
+                   CALL TEKST_PROT;                                     00002150
+                   S001A3I.AKSJONL = -1;     /* CURSOR */               00002160
+                   S001A3I.LKNRL   = 0;                                 00002170
+                END;                                                    00002180
+                                                                        00002190
+                                                                        00002200
+          END;      /* SELECT  */                                       00002210
+                                                                        00002220
+          CALL SEND_MAP;                                                00002230
+                                                                        00002240
+                                                                        00002250
+       END;                                                             00002260
+                                                                        00002270
+                                                                        00002280
+  UT:                                                                   00002290
+    PROGRAM_ID = 'R0010423';                                            00002300
+    EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);              00002310
+                                                                        00002320
+                                                                        00002330
+  NOTFND_VL:                                                            00002340
+    S001A3O.MELDINGO =                                                  00002350
+           'DETTE LIGNINGSKONTORNUMMER FINNES IKKE I SYSTEMET';         00002360
+    CALL SEND_MAP;                                                      00002370
+    GOTO UT;                                                            00002380
+                                                                        00002390
+                                                                        00002400
+  NOTFND_VN:                                                            00002410
+    S001A3O.MELDINGO =                                                  00002420
+           'INGEN FLERE LIGNINGSKONTORNUMMER I DENNE RETNING';          00002430
+    CALL SEND_MAP;                                                      00002440
+    GOTO UT;                                                            00002450
+                                                                        00002460
+                                                                        00002470
+  NOTFND_RL:                                                            00002480
+    CALL TEKST_UNP;                                                     00002490
+    FORRIGE_AKSJON = 'RL';                                              00002500
+    CALL SEND_MAP;                                                      00002510
+    GOTO UT;                                                            00002520
+                                                                        00002530
+                                                                        00002540
+  SEND_MAP: PROC;                                                       00002550
+     EXEC CICS SEND MAP ('S001A3') MAPSET ('S001A33')                   00002560
+                                 CURSOR     DATAONLY ;                  00002570
+  END SEND_MAP;                                                         00002580
+                                                                        00002590
+                                                                        00002600
+  BLANK_TEKST: PROC;                                                    00002610
+     S001A3O.NAVNO          = ' ';                                      00002620
+     S001A3O.ADRESSE1O      = ' ';                                      00002630
+     S001A3O.ADRESSE2O      = ' ';                                      00002640
+  END BLANK_TEKST;                                                      00002650
+                                                                        00002660
+                                                                        00002670
+  TEKST_UNP: PROC;                                                      00002680
+     S001A3I.NAVNL          = -1;   /* CURSOR   */                      00002690
+     S001A3I.LKNRL          = 0;                                        00002700
+     S001A3O.LKNRA          = '9';  /* ASKIP + BRIGHT + MDT */          00002710
+     S001A3O.NAVNA          = 'I';  /* UNP + BRI + MDT      */          00002720
+     S001A3O.ADRESSE1A      = 'I';  /* UNP + BRI + MDT      */          00002730
+     S001A3O.ADRESSE2A      = 'I';  /* UNP + BRI + MDT      */          00002740
+  END TEKST_UNP;                                                        00002750
+                                                                        00002760
+                                                                        00002770
+  TEKST_PROT: PROC;                                                     00002780
+     S001A3I.NAVNL          = 0;                                        00002790
+     S001A3I.LKNRL          = -1;  /* CURSOR   */                       00002800
+     S001A3O.LKNRA          = 'P'; /* BRIGHT + NUM + UNP + MDT */       00002810
+     S001A3O.NAVNA          = DFHBMASB;                                 00002820
+     S001A3O.ADRESSE1A      = DFHBMASB;                                 00002830
+     S001A3O.ADRESSE2A      = DFHBMASB;                                 00002840
+  END TEKST_PROT;                                                       00002850
+                                                                        00002860
+                                                                        00002870
+  OVERFØR_TIL_MAP: PROC;                                                00002880
+     S001A3O.LKNRO          = LKNR_REC.LKNR;                            00002890
+     S001A3O.NAVNO          = LKNR_REC.NAVN;                            00002900
+     S001A3O.ADRESSE1O      = LKNR_REC.ADRESSE1;                        00002910
+     S001A3O.ADRESSE2O      = LKNR_REC.ADRESSE2;                        00002920
+  END OVERFØR_TIL_MAP;                                                  00002930
+                                                                        00002940
+                                                                        00002950
+  OVERFØR_FRA_MAP: PROC;                                                00002960
+                                                                        00002970
+     ALLOCATE LKNR_REC;                                                 00002980
+     LKNR_REC                 = '';                                     00002990
+     LKNR_REC.LKNR            = S001A3O.LKNRO;                          00003000
+     IF S001A3I.NAVNL         > 0 THEN                                  00003010
+        LKNR_REC.NAVN         = S001A3I.NAVNI;                          00003020
+     IF S001A3I.ADRESSE1L     > 0 THEN                                  00003030
+        LKNR_REC.ADRESSE1     = S001A3I.ADRESSE1I;                      00003040
+     IF S001A3I.ADRESSE2L     > 0 THEN                                  00003050
+        LKNR_REC.ADRESSE2     = S001A3I.ADRESSE2I;                      00003060
+                                                                        00003070
+  END OVERFØR_FRA_MAP;                                                  00003080
+                                                                        00003090
+                                                                        00003100
+                                                                        00003110
+                                                                        00003120
+  KONTROLL_AV_INPUT:  PROC;                                             00003130
+                                                                        00003140
+     IF LKNR_REC. NAVN = ' ' THEN                                       00003150
+        DO;                                                             00003160
+           S001A3O.MELDINGO = 'NAVN ER IKKE UTFYLLT';                   00003170
+           S001A3I.NAVNL     = -1;      /* CURSOR      */               00003180
+        END;                                                            00003190
+                                                                        00003200
+     ELSE IF LKNR_REC.ADRESSE1  = ' ' &                                 00003210
+             LKNR_REC.ADRESSE2  = ' ' THEN                              00003220
+        DO;                                                             00003230
+           S001A3O.MELDINGO  = 'INGEN ADRESSER ER UTFYLLT';             00003240
+           S001A3I.ADRESSE1L = -1;      /* CURSOR      */               00003250
+        END;                                                            00003260
+                                                                        00003270
+     ELSE                                                               00003280
+        RETURN;            /*  RETURNERER UTEN Å HA FUNNET FEIL  */     00003290
+                                                                        00003300
+                                                                        00003310
+    /* HIT KOMMER EN BARE DERSOM DET ER FEIL, DA BLIR DET EN    */      00003320
+    /* ANNEN UTGANG                                             */      00003330
+                                                                        00003340
+    CALL SEND_MAP;                                                      00003350
+    GOTO UT;                                                            00003360
+                                                                        00003370
+                                                                        00003380
+  END KONTROLL_AV_INPUT;                                                00003390
+                                                                        00003400
+                                                                        00003410
+ END R001B1;                                                            00003420

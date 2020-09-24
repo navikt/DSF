@@ -1,0 +1,331 @@
+ /*       SIST ENDRET 19/10-87 12.14.18 AV   DYBVIK                   */00000000
+ /*       SIST ENDRET 08/09-87 12.05.26 AV   DYBVIK                   */00000010
+ /*       SIST ENDRET 07/03-86 10.02.14 AV   ANNE                     */00000020
+ /*       SIST ENDRET 02/09-83 10.52.11 AV   JANKR                    */00000030
+ /* ***************************************************************** */00000040
+ /* IDENTIFIKASJON                                                    */00000050
+ /*     R0010422 - PROGRAM SOM FORETAR  OPPDATERING AV TRYGDEKONTOR - */00000060
+ /*                TABELLEN UNDER ADMINISTRASJONSDELEN AV SYSTEMET.   */00000070
+ /*                HOVEDPROGRAM I CICS/PLI.                           */00000080
+ /*     PROGRAMMERER: JAN - H. KRISTENSEN AUGUST 1983.                */00000090
+ /* HENSIKT                                                           */00000100
+ /*     PROGRAMMET SKAL SENDE UT EN MAP FØRST FOR AT EN SKAL KUNNE    */00000110
+ /*     VELGE KODE FOR DET EN ØNSKER UTFØRT.                          */00000120
+ /*     DERETTER SKAL DENNE MAPPEN RECEIVES SLIK AT DETTE PROGRAMMET  */00000130
+ /*     KAN GI KONTROLL TIL DEN AKTUELLE PROGRAMDELEN SOM UTFØRER     */00000140
+ /*     AKSJONEN.                                                     */00000150
+ /* PROGRAMTILKNYTNING                                                */00000160
+ /*     BLIR GITT KONTROLL FRA PROGRAM R0010420 SOM ER STYREPROGRAM   */00000170
+ /*     UNDER ADMINISTRASJONSDELEN.                                   */00000180
+ /*                                                                   */00000190
+ /* ***************************************************************** */00000200
+                                                                        00000210
+ R001B1: PROC(COMMAREA_PEKER)                  OPTIONS (MAIN);          00000220
+                                                                        00000230
+    %INCLUDE P0019908;            /* KOM_OMR                          */00000240
+    %INCLUDE P0019912;            /* DIV_PARAM_OMR                    */00000250
+    %INCLUDE P0019910;            /* STYRINGS_OMR                     */00000260
+    %INCLUDE P0019906;            /* TRANS_OPPL_OMR                   */00000270
+    %INCLUDE S001A2;              /* MAP TIL TKNR ENDRING FOR         */00000280
+                                  /* ADMINISTRASJON.                  */00000290
+    %INCLUDE DFHBMSCA;            /* HJELPE STRUKTUR FOR ATTRIBUTTER  */00000300
+                                                                        00000310
+    DCL                                                                 00000320
+      1 ADM_OMR                  BASED(B01_PEKER), /* DETTE SIDEN B01 */00000330
+        2 FORRIGE_AKSJON         CHAR(2),          /* IKKE BRUKES HER */00000340
+                                                                        00000350
+      1 TKNR_REC                 BASED(TKNR_PEKER),                     00000360
+        2 TKNR                   PIC '(4)9',                            00000370
+        2 NAVN                   CHAR (25),                             00000380
+        2 ADRESSE1               CHAR (35),                             00000390
+        2 ADRESSE2               CHAR (30),                             00000400
+        2 SORT_KRIT              CHAR (1),                              00000410
+        2 SPRÅKKODE              CHAR (1),                              00000420
+        2 DATA_SENTRAL           CHAR (3),                              00000430
+        2 EDB_SYSTEM             CHAR (1),                              00000440
+                                                                        00000450
+      CSTG                       BUILTIN,                               00000460
+      ADDR                       BUILTIN,                               00000470
+      LENGTH                     BUILTIN,                               00000480
+      KEY_BIT                    BIT(32) BASED (KEY_PEKER),             00000490
+      KEY_PEKER                  POINTER,                               00000500
+      TKNR_PEKER                 POINTER,                               00000510
+      BMSMAPBR                   POINTER,                               00000520
+      COMMAREA_PEKER             POINTER;                               00000530
+                                                                        00000540
+                                                                        00000550
+    KOM_OMR.STYRINGS_PEKER  = ADDR(KOM_OMR.STYRINGS_OMR);               00000560
+    KOM_OMR.TRANS_OPPL_PEKER= ADDR(KOM_OMR.TRANS_OPPL_OMR);             00000570
+    KOM_OMR.DIV_PARAM_PEKER = ADDR(KOM_OMR.DIV_PARAM_OMR);              00000580
+    TRANSKODE               = 'RA22';        /* DETTE PROGRAM  */       00000590
+                                                                        00000600
+                                                                        00000610
+    IF PROGRAM_ID = 'R0010420' THEN         /* KOMMER IN FØRSTE GANG */ 00000620
+                                                                        00000630
+       DO;                                                              00000640
+          EXEC CICS SEND MAP('S001A2') MAPSET('S001A23') MAPONLY ERASE; 00000650
+                                                                        00000660
+       END;                                                             00000670
+                                                                        00000680
+                                                                        00000690
+    ELSE IF PROGRAM_ID = 'R0010422' THEN       /*   DETTE PROGRAM   */  00000700
+                                                                        00000710
+       DO;                                                              00000720
+          EXEC CICS RECEIVE MAP('S001A2')MAPSET('S001A23')              00000730
+                                         SET  (BMSMAPBR);               00000740
+          S001A2O.MELDINGO  = ' ';                                      00000750
+          KEY_PEKER         = ADDR(S001A2I.TKNRI);                      00000760
+                                                                        00000770
+ /* ENDRET 13.02.86   AL                                       */       00000780
+                                                                        00000790
+          IF S001A2I.FUNKSJONSKODEL > 0 &                               00000800
+             VERIFY(S001A2I.FUNKSJONSKODEI,'RVEFIAX') = 0 THEN          00000810
+                                                                        00000820
+ /* HIT    13.02.86   AL                                       */       00000830
+                                                                        00000840
+             DO;                                                        00000850
+                FUNKSJONSKODE = S001A2I.FUNKSJONSKODEI;                 00000860
+                EXEC CICS XCTL PROGRAM ('R0010301') COMMAREA (KOM_OMR); 00000870
+             END;                                                       00000880
+                                                                        00000890
+          IF S001A2I.STYRE_KODEL > 0 &                                  00000900
+             S001A2I.STYRE_KODEI ^= 'TB' THEN                           00000910
+             DO;                                                        00000920
+                STYREKODE  = S001A2I.STYRE_KODEI;                       00000930
+                EXEC CICS XCTL PROGRAM ('R0010420') COMMAREA (KOM_OMR); 00000940
+             END;                                                       00000950
+   EXEC CICS ENTER TRACEID(01) FROM (S001A2I.AKSJONI);                  00000960
+          SELECT(S001A2I.AKSJONI);                                      00000970
+             WHEN('VT')                                                 00000980
+                DO;                                                     00000990
+                   CALL BLANK_TEKST;                                    00001000
+                   CALL TEKST_PROT;                                     00001010
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VT);        00001020
+                   EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)   00001030
+                                                    SET(TKNR_PEKER);    00001040
+                   CALL OVERFØR_TIL_MAP;                                00001050
+                   FORRIGE_AKSJON = 'VT';                               00001060
+                                                                        00001070
+                END;                                                    00001080
+             WHEN('VN')                                                 00001090
+                DO;                                                     00001100
+                   CALL BLANK_TEKST;                                    00001110
+                   CALL TEKST_PROT;                                     00001120
+                   S001A2O.TKNRO = S001A2O.TKNRO + 1;                   00001130
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VN);        00001140
+                   EXEC CICS READ DATASET ('TKNRTAB') RIDFLD(KEY_BIT)   00001150
+                                            GTEQ    SET(TKNR_PEKER);    00001160
+                   CALL OVERFØR_TIL_MAP;                                00001170
+                   FORRIGE_AKSJON = 'VN';                               00001180
+                                                                        00001190
+                END;                                                    00001200
+             WHEN('VF')                                                 00001210
+                DO;                                                     00001220
+                   CALL BLANK_TEKST;                                    00001230
+                   CALL TEKST_PROT;                                     00001240
+                   EXEC CICS HANDLE CONDITION NOTFND(NOTFND_VT);        00001250
+                   EXEC CICS STARTBR DATASET ('TKNRTAB') EQUAL          00001260
+                                        RIDFLD(KEY_BIT);                00001270
+                   EXEC CICS HANDLE CONDITION ENDFILE(NOTFND_VN);       00001280
+                   EXEC CICS READPREV DATASET ('TKNRTAB')RIDFLD(KEY_BIT)00001290
+                                                    SET(TKNR_PEKER);    00001300
+                   EXEC CICS READPREV DATASET ('TKNRTAB')RIDFLD(KEY_BIT)00001310
+                                                    SET(TKNR_PEKER);    00001320
+                   CALL OVERFØR_TIL_MAP;                                00001330
+                   FORRIGE_AKSJON = 'VF';                               00001340
+                                                                        00001350
+                END;                                                    00001360
+             WHEN('XX')                                                 00001370
+                DO;                                                     00001380
+                   PROGRAM_ID = 'R0010301';    /* LITT JUKS !!!!     */ 00001390
+                   EXEC CICS XCTL PROGRAM ('R0010420')                  00001400
+                                  COMMAREA (KOM_OMR);                   00001410
+                END;                                                    00001420
+             OTHERWISE                                                  00001430
+                DO;                                                     00001440
+                   S001A2O.MELDINGO = 'UGYLDIG KODE';                   00001450
+                   CALL TEKST_PROT;                                     00001460
+                   S001A2I.AKSJONL = -1;     /* CURSOR */               00001470
+                   S001A2I.TKNRL   = 0;                                 00001480
+                END;                                                    00001490
+                                                                        00001500
+                                                                        00001510
+          END;      /* SELECT  */                                       00001520
+                                                                        00001530
+          CALL SEND_MAP;                                                00001540
+                                                                        00001550
+                                                                        00001560
+       END;                                                             00001570
+                                                                        00001580
+                                                                        00001590
+  UT:                                                                   00001600
+    PROGRAM_ID = 'R0010422';                                            00001610
+    EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);              00001620
+                                                                        00001630
+                                                                        00001640
+  NOTFND_VT:                                                            00001650
+    S001A2O.MELDINGO =                                                  00001660
+           'DETTE TRYGDEKONTORNUMMER FINNES IKKE I SYSTEMET';           00001670
+    CALL SEND_MAP;                                                      00001680
+    GOTO UT;                                                            00001690
+                                                                        00001700
+                                                                        00001710
+  NOTFND_VN:                                                            00001720
+    S001A2O.MELDINGO =                                                  00001730
+           'INGEN FLERE TRYGDEKONTORNUMMER I DENNE RETNING';            00001740
+    CALL SEND_MAP;                                                      00001750
+    GOTO UT;                                                            00001760
+                                                                        00001770
+                                                                        00001780
+                                                                        00001790
+                                                                        00001800
+  SEND_MAP: PROC;                                                       00001810
+     EXEC CICS SEND MAP ('S001A2') MAPSET ('S001A23')                   00001820
+                                 CURSOR     DATAONLY ;                  00001830
+  END SEND_MAP;                                                         00001840
+                                                                        00001850
+                                                                        00001860
+  BLANK_TEKST: PROC;                                                    00001870
+     S001A2O.NAVNO          = ' ';                                      00001880
+     S001A2O.ADRESSE1O      = ' ';                                      00001890
+     S001A2O.ADRESSE2O      = ' ';                                      00001900
+     S001A2O.SORT_KRITO     = ' ';                                      00001910
+     S001A2O.SPRÅKKODEO     = ' ';                                      00001920
+     S001A2O.DATA_SENTRALO  = ' ';                                      00001930
+     S001A2O.SYSTEMO        = ' ';                                      00001940
+  END BLANK_TEKST;                                                      00001950
+                                                                        00001960
+                                                                        00001970
+  TEKST_UNP: PROC;                                                      00001980
+     S001A2I.NAVNL          = -1;   /* CURSOR   */                      00001990
+     S001A2I.TKNRL          = 0;                                        00002000
+     S001A2O.TKNRA          = '9';  /* ASKIP + BRIGHT + MDT */          00002010
+     S001A2O.NAVNA          = 'I';  /* UNP + BRI + MDT      */          00002020
+     S001A2O.ADRESSE1A      = 'I';  /* UNP + BRI + MDT      */          00002030
+     S001A2O.ADRESSE2A      = 'I';  /* UNP + BRI + MDT      */          00002040
+     S001A2O.SORT_KRITA     = 'I';                                      00002050
+     S001A2O.SPRÅKKODEA     = 'I';                                      00002060
+     S001A2O.DATA_SENTRALA  = 'I';                                      00002070
+     S001A2O.SYSTEMA        = 'I';                                      00002080
+  END TEKST_UNP;                                                        00002090
+                                                                        00002100
+                                                                        00002110
+  TEKST_PROT: PROC;                                                     00002120
+     S001A2I.NAVNL          = 0;                                        00002130
+     S001A2I.TKNRL          = -1;  /* CURSOR   */                       00002140
+     S001A2O.TKNRA          = 'P'; /* BRIGHT + NUM + UNP + MDT */       00002150
+     S001A2O.NAVNA          = DFHBMASB;                                 00002160
+     S001A2O.ADRESSE1A      = DFHBMASB;                                 00002170
+     S001A2O.ADRESSE2A      = DFHBMASB;                                 00002180
+     S001A2O.SORT_KRITA     = DFHBMASB;                                 00002190
+     S001A2O.SPRÅKKODEA     = DFHBMASB;                                 00002200
+     S001A2O.DATA_SENTRALA  = DFHBMASB;                                 00002210
+     S001A2O.SYSTEMA        = DFHBMASB;                                 00002220
+  END TEKST_PROT;                                                       00002230
+                                                                        00002240
+                                                                        00002250
+  OVERFØR_TIL_MAP: PROC;                                                00002260
+     S001A2O.TKNRO          = TKNR_REC.TKNR;                            00002270
+     S001A2O.NAVNO          = TKNR_REC.NAVN;                            00002280
+     S001A2O.ADRESSE1O      = TKNR_REC.ADRESSE1;                        00002290
+     S001A2O.ADRESSE2O      = TKNR_REC.ADRESSE2;                        00002300
+     S001A2O.SORT_KRITO     = TKNR_REC.SORT_KRIT;                       00002310
+     S001A2O.SPRÅKKODEO     = TKNR_REC.SPRÅKKODE;                       00002320
+     S001A2O.DATA_SENTRALO  = TKNR_REC.DATA_SENTRAL;                    00002330
+     IF TKNR_REC.EDB_SYSTEM = 'I' THEN                                  00002340
+        S001A2O.SYSTEMO     = 'INFOTRYGD';                              00002350
+     ELSE                                                               00002360
+        S001A2O.SYSTEMO     = 'NORTRYGD ';                              00002370
+  END OVERFØR_TIL_MAP;                                                  00002380
+                                                                        00002390
+                                                                        00002400
+  OVERFØR_FRA_MAP: PROC;                                                00002410
+                                                                        00002420
+     ALLOCATE TKNR_REC;                                                 00002430
+     TKNR_REC                 = '';                                     00002440
+     TKNR_REC.TKNR            = S001A2O.TKNRO;                          00002450
+     IF S001A2I.NAVNL         > 0 THEN                                  00002460
+        TKNR_REC.NAVN         = S001A2I.NAVNI;                          00002470
+     IF S001A2I.ADRESSE1L     > 0 THEN                                  00002480
+        TKNR_REC.ADRESSE1     = S001A2I.ADRESSE1I;                      00002490
+     IF S001A2I.ADRESSE2L     > 0 THEN                                  00002500
+        TKNR_REC.ADRESSE2     = S001A2I.ADRESSE2I;                      00002510
+     IF S001A2I.SORT_KRITL    > 0 THEN                                  00002520
+        TKNR_REC.SORT_KRIT    = S001A2I.SORT_KRITI;                     00002530
+     IF S001A2I.SPRÅKKODEL    > 0 THEN                                  00002540
+        TKNR_REC.SPRÅKKODE    = S001A2I.SPRÅKKODEI;                     00002550
+     IF S001A2I.DATA_SENTRALL > 0 THEN                                  00002560
+        TKNR_REC.DATA_SENTRAL = S001A2I.DATA_SENTRALI;                  00002570
+     IF S001A2I.SYSTEML       > 0 THEN                                  00002580
+        TKNR_REC.EDB_SYSTEM   = S001A2I.SYSTEMI;                        00002590
+                                                                        00002600
+  END OVERFØR_FRA_MAP;                                                  00002610
+                                                                        00002620
+                                                                        00002630
+                                                                        00002640
+                                                                        00002650
+  KONTROLL_AV_INPUT:  PROC;                                             00002660
+                                                                        00002670
+     IF TKNR_REC. NAVN = ' ' THEN                                       00002680
+        DO;                                                             00002690
+           S001A2O.MELDINGO = 'NAVN ER IKKE UTFYLLT';                   00002700
+           S001A2I.NAVNL     = -1;      /* CURSOR      */               00002710
+        END;                                                            00002720
+                                                                        00002730
+     ELSE IF TKNR_REC.ADRESSE1  = ' ' &                                 00002740
+             TKNR_REC.ADRESSE2  = ' ' THEN                              00002750
+        DO;                                                             00002760
+           S001A2O.MELDINGO  = 'INGEN ADRESSER ER UTFYLLT';             00002770
+           S001A2I.ADRESSE1L = -1;      /* CURSOR      */               00002780
+        END;                                                            00002790
+                                                                        00002800
+     ELSE IF ^ (TKNR_REC.SORT_KRIT  = 'A' !                             00002810
+                TKNR_REC.SORT_KRIT  = 'F') THEN                         00002820
+        DO;                                                             00002830
+           S001A2O.MELDINGO   = 'URIKTIGE SORTERINGS - KRITERIER';      00002840
+           S001A2I.SORT_KRITL = -1;      /* CURSOR      */              00002850
+        END;                                                            00002860
+                                                                        00002870
+     ELSE IF ^ (TKNR_REC.SPRÅKKODE = 'B' !                              00002880
+                TKNR_REC.SPRÅKKODE = 'N') THEN                          00002890
+        DO;                                                             00002900
+           S001A2O.MELDINGO   = 'URIKTIG SPRÅKKODE';                    00002910
+           S001A2I.SPRÅKKODEL = -1;      /* CURSOR      */              00002920
+        END;                                                            00002930
+                                                                        00002940
+     ELSE IF ^ (TKNR_REC.DATA_SENTRAL = 'KDØ' !                         00002950
+                TKNR_REC.DATA_SENTRAL = 'VES' !                         00002960
+                TKNR_REC.DATA_SENTRAL = 'RTV' !                         00002970
+                TKNR_REC.DATA_SENTRAL = 'ADS' !                         00002980
+                TKNR_REC.DATA_SENTRAL = 'RDS' !                         00002990
+                TKNR_REC.DATA_SENTRAL = 'KDV' !                         00003000
+                TKNR_REC.DATA_SENTRAL = 'KDM' !                         00003010
+                TKNR_REC.DATA_SENTRAL = 'NDS' !                         00003020
+                TKNR_REC.DATA_SENTRAL = 'KDN') THEN                     00003030
+        DO;                                                             00003040
+           S001A2O.MELDINGO   = 'URIKTIG KODE FOR DATASENTRAL, KDØ '    00003050
+                              !!'VES RTV ADS RDS KDV KDM NDS KND';      00003060
+           S001A2I.DATA_SENTRALL = -1;      /* CURSOR      */           00003070
+        END;                                                            00003080
+                                                                        00003090
+     ELSE IF ^ (TKNR_REC.EDB_SYSTEM = 'I' !                             00003100
+                TKNR_REC.EDB_SYSTEM = ' ') THEN                         00003110
+        DO;                                                             00003120
+           S001A2O.MELDINGO   = 'URIKTIG KODE FOR EDB-SYSTEM';          00003130
+           S001A2I.SYSTEML    = -1;      /* CURSOR      */              00003140
+        END;                                                            00003150
+     ELSE                                                               00003160
+        RETURN;            /*  RETURNERER UTEN Å HA FUNNET FEIL  */     00003170
+                                                                        00003180
+                                                                        00003190
+    /* HIT KOMMER EN BARE DERSOM DET ER FEIL, DA BLIR DET EN    */      00003200
+    /* ANNEN UTGANG                                             */      00003210
+                                                                        00003220
+    CALL SEND_MAP;                                                      00003230
+    GOTO UT;                                                            00003240
+                                                                        00003250
+                                                                        00003260
+  END KONTROLL_AV_INPUT;                                                00003270
+                                                                        00003280
+                                                                        00003290
+ END R001B1;                                                            00003300

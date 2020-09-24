@@ -1,0 +1,313 @@
+ /*       SIST ENDRET 22/01-96 13.55.14 AV   JDA0310                  */00000000
+ /* ********************************************* */                    00000010
+ /* OPPDATE ADRESS IN TKNR BASE  -- INPUT FRA FRA P431.TK.LISTE */      00000020
+ /* ********************************************* */                    00000030
+ /* INPUT P431.TK.LISTE                           */                    00000040
+ /* OUTPUT P001.TKMAIN ( DATA BASE  )   ********* */                    00000050
+ /* --------------------------------------------- */                    00000060
+ /* PROGRAM UPDATE ADRESS AV TRYGDEKONTOR      ** */                    00000070
+ /*  - TKNR MUST BE IN THE DATABSAE OTHERWISE**** */                    00000080
+ /*    MESSAGE WILL BE PRINTED ****************** */                    00000090
+ /* ********************************************* */                    00000100
+                                                                        00000110
+ R01TK50: PROC (RF1_PCB_PEKER) OPTIONS (MAIN);                          00000120
+                                                                        00000130
+                                                                        00000140
+    DCL RF1_PCB_PEKER POINTER;                                          00000150
+                                                                        00000160
+    %INCLUDE P001TK51;             /* ROT-SEGMENT                     */00000170
+    %INCLUDE P001TK55;             /* TLF-SEGMENT                     */00000180
+                                                                        00000190
+    DCL PLITDLI              EXTERNAL  ENTRY;                           00000200
+                                                                        00000210
+    DCL                                                                 00000220
+        GHN                  CHAR      ( 4)   INIT ('GHN '     )       ,00000230
+        GHNP                 CHAR      ( 4)   INIT ('GHNP'     )       ,00000240
+        GHU                  CHAR      ( 4)   INIT ('GHU '     )       ,00000250
+        GU                   CHAR      ( 4)   INIT ('GU  '     )       ,00000260
+        GET                  CHAR      ( 4)   INIT ('    '     )       ,00000270
+        ISRT                 CHAR      ( 4)   INIT ('ISRT'     )       ,00000280
+        REPL                 CHAR      ( 4)   INIT ('REPL'     )       ,00000290
+        TRE                  FIXED BIN (31)   INIT ( 3         )       ,00000300
+        FIRE                 FIXED BIN (31)   INIT ( 4         )       ,00000310
+        FEM                  FIXED BIN (31)   INIT ( 5         )       ,00000320
+        SSA_TLF_UQUAL        CHAR      ( 9)   INIT ('TELEFON  ')       ;00000330
+                                                                        00000340
+    DCL 1 SSA_TK               STATIC,                                  00000350
+          2    HDEL                        CHAR (17)    INIT            00000360
+             ('TK      (TKNR    '),                                     00000370
+          2    REL_OP                      CHAR (2)     INIT (' ='),    00000380
+          2    PKEY                        PIC '( 4)9'  INIT ( 0  ),    00000390
+          2    HP                          CHAR (1)     INIT (')' );    00000400
+                                                                        00000410
+ /*-------------------------------------------------------------------*/00000420
+ /*                                                                   */00000430
+ /* PCB-OMRÅDE                                                        */00000440
+ /*                                                                   */00000450
+ /*-------------------------------------------------------------------*/00000460
+                                                                        00000470
+    DCL 1  RF1     BASED    (RF1_PCB_PEKER),                            00000480
+    %INCLUDE P0012003;                                 /* PCB-OMRÅDE  */00000490
+                                                                        00000500
+ /*-------------------------------------------------------------------*/00000510
+ /*                                                                   */00000520
+ /*   HJELPE-VARIABLE                                                 */00000530
+ /*                                                                   */00000540
+ /*-------------------------------------------------------------------*/00000550
+                                                                        00000560
+    DCL END_OF_BASE          BIT          ( 1) INIT ('0'B)             ,00000570
+        FUNNET               BIT          ( 1) INIT ('0'B)             ,00000580
+        GML_TKNR             PIC        '(4)9' INIT ( 0  )             ,00000590
+        ANTALL_LES           PIC        '(3)9' INIT ( 0  )             ,00000600
+        ANTALL_SKRIV         PIC        '(3)9' INIT ( 0  )             ;00000610
+                                                                        00000620
+    DCL (VERIFY , SUBSTR , MAX , INDEX , ADDR , DATE, UNSPEC) BUILTIN;  00000630
+                                                                        00000640
+ /*-------------------------------------------------------------------*/00000650
+ /*                                                                   */00000660
+ /*   FILER                                                           */00000670
+ /*                                                                   */00000680
+ /*-------------------------------------------------------------------*/00000690
+    DCL INFILE FILE RECORD INPUT;                                       00000700
+                                                                        00000710
+    DCL 01 IN_REC,                                                      00000720
+           5 TKNR            PIC '( 4)9',                               00000730
+           5 TKNAVN          CHAR (23),                                 00000740
+           5 ADR             CHAR (20),                                 00000750
+           5 POSTNR          PIC '( 4)9',                               00000760
+           5 POSTNAVN        CHAR (17),                                 00000770
+           5 TKSJEF          CHAR (25),                                 00000780
+           5 TLFNR           CHAR (12),                                 00000790
+           5 TELEFAX         CHAR (13),                                 00000800
+           5 ANT_INNBYGG     PIC '( 6)9',                               00000810
+           5 MÅLFORM         CHAR ( 1);                                 00000820
+                                                                        00000830
+    DCL EOF                 BIT  ( 1) INIT ('0'B);                      00000840
+                                                                        00000850
+ /*-------------------------------------------------------------------*/00000860
+ /*                                                                   */00000870
+ /*   START PROGRAM                                                   */00000880
+ /*                                                                   */00000890
+ /*-------------------------------------------------------------------*/00000900
+                                                                        00000910
+    ON ERROR BEGIN;                                                     00000920
+       ON ERROR SYSTEM;                                                 00000930
+          PUT SKIP LIST('FEIL I BEHANDLING TK: ', IN_REC.TKNR);         00000940
+       END;                                                             00000950
+                                                                        00000960
+    ON ENDFILE (INFILE)                                                 00000970
+       EOF = '1'B;                                                      00000980
+                                                                        00000990
+    OPEN FILE (INFILE);                                                 00001000
+                                                                        00001010
+    IN_REC = '';                                                        00001020
+                                                                        00001030
+    READ FILE (INFILE) INTO (IN_REC);                                   00001040
+                                                                        00001050
+    DO WHILE (^EOF);                                                    00001060
+                                                                        00001070
+       ANTALL_LES = ANTALL_LES + 1;                                     00001080
+       TK         = '';                                                 00001090
+                                                                        00001100
+       PKEY       = IN_REC.TKNR;                                        00001110
+                                                                        00001120
+       CALL PLITDLI      (FIRE,                                         00001130
+                          GHU,                                          00001140
+                          RF1,                                          00001150
+                          TK,                                           00001160
+                          SSA_TK);                                      00001170
+                                                                        00001180
+       IF RF1.STATUS_KODE ^= '  ' THEN                                  00001190
+          DO;                                                           00001200
+             PUT SKIP LIST ('FEIL LES TK , RF1 ',                       00001210
+                             PKEY, RF1.STATUS_KODE);                    00001220
+                                                                        00001230
+             GOTO LES;                                                  00001240
+          END;                                                          00001250
+                                                                        00001260
+       ELSE                                                             00001270
+          DO;                                                           00001280
+ /*          SELECT (IN_REC.TKNR);                                      00001290
+                WHEN (3001)                                             00001300
+                   TK.TKNAVN = 'ØSTFOLD FYLKE';                         00001310
+                                                                        00001320
+                WHEN (3002)                                             00001330
+                   TK.TKNAVN = 'AKERSHUS FYLKE';                        00001340
+                                                                        00001350
+                WHEN (3003)                                             00001360
+                   TK.TKNAVN = 'OSLO FYLKE';                            00001370
+                                                                        00001380
+                WHEN (3004)                                             00001390
+                   TK.TKNAVN = 'HEDMARK FYLKE';                         00001400
+                                                                        00001410
+                WHEN (3005)                                             00001420
+                   TK.TKNAVN = 'OPPLAND FYLKE';                         00001430
+                                                                        00001440
+                WHEN (3006)                                             00001450
+                   TK.TKNAVN = 'BUSKERUD FYLKE';                        00001460
+                                                                        00001470
+                WHEN (3007)                                             00001480
+                   TK.TKNAVN = 'VESTFOLD FYLKE';                        00001490
+                                                                        00001500
+                WHEN (3008)                                             00001510
+                   TK.TKNAVN = 'TELEMARK FYLKE';                        00001520
+                                                                        00001530
+                WHEN (3009)                                             00001540
+                   TK.TKNAVN = 'AUST-AGDER FYLKE';                      00001550
+                                                                        00001560
+                WHEN (3010)                                             00001570
+                   TK.TKNAVN = 'VEST-AGDER FYLKE';                      00001580
+                                                                        00001590
+                WHEN (3011)                                             00001600
+                   TK.TKNAVN = 'ROGALAND FYLKE';                        00001610
+                                                                        00001620
+                WHEN (3012)                                             00001630
+                   TK.TKNAVN = 'HORDALAND FYLKE';                       00001640
+                                                                        00001650
+                WHEN (3014)                                             00001660
+                   TK.TKNAVN = 'SOGN OG FJORDANE FYLKE';                00001670
+                                                                        00001680
+                WHEN (3015)                                             00001690
+                   TK.TKNAVN = 'MØRE OG ROMSDAL FYLKE';                 00001700
+                                                                        00001710
+                WHEN (3016)                                             00001720
+                   TK.TKNAVN = 'SØR-TRØNDELAG FYLKE';                   00001730
+                                                                        00001740
+                WHEN (3017)                                             00001750
+                   TK.TKNAVN = 'NORD-TRØNDELAG FYLKE';                  00001760
+                                                                        00001770
+                WHEN (3018)                                             00001780
+                   TK.TKNAVN = 'NORDLAND FYLKE';                        00001790
+                                                                        00001800
+                WHEN (3019)                                             00001810
+                   TK.TKNAVN = 'TROMS FYLKE';                           00001820
+                                                                        00001830
+                WHEN (3020)                                             00001840
+                   TK.TKNAVN = 'FINNMARK FYLKE';                        00001850
+                                                                        00001860
+                OTHERWISE                                               00001870
+                   TK.TKNAVN = IN_REC.TKNAVN;                           00001880
+ */                                                                     00001890
+ /*          END;*/ /* SELECT */                                        00001900
+                                                                        00001910
+             IF IN_REC.ADR = '' THEN                                    00001920
+                DO;                                                     00001930
+                   TK.PPOSTNR   = IN_REC.POSTNR;                        00001940
+                   TK.PPOSTNAVN = IN_REC.POSTNAVN;                      00001950
+                END;                                                    00001960
+             ELSE                                                       00001970
+                IF (SUBSTR(IN_REC.ADR,1,8) = 'Postboks') !              00001980
+                   (SUBSTR(IN_REC.ADR,1,4) = 'P.b.')     !              00001990
+                   (SUBSTR(IN_REC.ADR,1,4) = 'P.B.')       THEN         00002000
+                                                                        00002010
+                   DO;                                                  00002020
+                      TK.POSTADR    = IN_REC.ADR;                       00002030
+                      TK.PPOSTNR    = IN_REC.POSTNR;                    00002040
+                      TK.PPOSTNAVN  = IN_REC.POSTNAVN;                  00002050
+                   END;                                                 00002060
+                ELSE                                                    00002070
+                   DO;                                                  00002080
+                      TK.BESØKADR   = IN_REC.ADR;                       00002090
+                      TK.BPOSTNR    = IN_REC.POSTNR;                    00002100
+                      TK.BPOSTNAVN  = IN_REC.POSTNAVN;                  00002110
+                   END;                                                 00002120
+                                                                        00002130
+ /*          TK.TKSJEF  = IN_REC.TKSJEF;  */                            00002140
+                                                                        00002150
+             IF IN_REC.TKNR = 0544 THEN                                 00002160
+                TK.SJEFTLF = '(063) 40 555';                            00002170
+                                                                        00002180
+             IF IN_REC.TELEFAX ^= '' THEN                               00002190
+                DO;                                                     00002200
+                   IF SUBSTR(IN_REC.TELEFAX,1,6) ^= 'tr.sj.' THEN       00002210
+                      DO;                                               00002220
+                         IF SUBSTR(IN_REC.TELEFAX,3,1) = ' ' THEN       00002230
+                            TK.TELEFAX =    '('                         00002240
+                                         !! SUBSTR(IN_REC.TELEFAX,1,2)  00002250
+                                         !! ') '                        00002260
+                                         !! SUBSTR(IN_REC.TELEFAX,4,8); 00002270
+                         ELSE                                           00002280
+                            TK.TELEFAX =    '('                         00002290
+                                         !! SUBSTR(IN_REC.TELEFAX,1,3)  00002300
+                                         !! ') '                        00002310
+                                         !! SUBSTR(IN_REC.TELEFAX,5,6); 00002320
+                      END;                                              00002330
+                END;                                                    00002340
+                                                                        00002350
+             TK.MÅLFORM = IN_REC.MÅLFORM;                               00002360
+                                                                        00002370
+             CALL PLITDLI      (TRE,                                    00002380
+                                REPL,                                   00002390
+                                RF1,                                    00002400
+                                TK);                                    00002410
+                                                                        00002420
+             IF RF1.STATUS_KODE ^= '  ' THEN                            00002430
+                DO;                                                     00002440
+                   PUT SKIP LIST ('FEIL REP TK , RF1 ',                 00002450
+                                   PKEY, RF1.STATUS_KODE);              00002460
+                                                                        00002470
+                   GOTO SLUTT;                                          00002480
+                END;                                                    00002490
+             ELSE                                                       00002500
+                ANTALL_SKRIV = ANTALL_SKRIV + 1;                        00002510
+                                                                        00002520
+             TLF  = '';                                                 00002530
+             PKEY = IN_REC.TKNR;                                        00002540
+                                                                        00002550
+             CALL PLITDLI      (FEM,                                    00002560
+                                GHU,                                    00002570
+                                RF1,                                    00002580
+                                TLF,                                    00002590
+                                SSA_TK,                                 00002600
+                                SSA_TLF_UQUAL);                         00002610
+                                                                        00002620
+             IF RF1.STATUS_KODE ^= '  ' THEN                            00002630
+                DO;                                                     00002640
+                   PUT SKIP LIST ('FEIL LES TLF, RF1 ',                 00002650
+                                   PKEY, RF1.STATUS_KODE);              00002660
+                                                                        00002670
+                   GOTO LES;                                            00002680
+                END;                                                    00002690
+                                                                        00002700
+             ELSE                                                       00002710
+                DO;                                                     00002720
+                   IF SUBSTR(IN_REC.TLFNR,3,1) = ' ' THEN               00002730
+                      TLF.TLFNR =     '('                               00002740
+                                   !! SUBSTR(IN_REC.TLFNR,1,2)          00002750
+                                   !! ') '                              00002760
+                                   !! SUBSTR(IN_REC.TLFNR,4,8);         00002770
+                   ELSE                                                 00002780
+                      TLF.TLFNR =     '('                               00002790
+                                   !! SUBSTR(IN_REC.TLFNR,1,3)          00002800
+                                   !! ') '                              00002810
+                                   !! SUBSTR(IN_REC.TLFNR,5,6);         00002820
+                                                                        00002830
+                      CALL PLITDLI      (TRE,                           00002840
+                                         REPL,                          00002850
+                                         RF1,                           00002860
+                                         TLF);                          00002870
+                                                                        00002880
+                      IF RF1.STATUS_KODE ^= '  ' THEN                   00002890
+                         DO;                                            00002900
+                            PUT SKIP LIST ('FEIL REP TLF, RF1 ',        00002910
+                                            PKEY, RF1.STATUS_KODE);     00002920
+                                                                        00002930
+                            GOTO SLUTT;                                 00002940
+                         END;                                           00002950
+                END;                                                    00002960
+          END;                                                          00002970
+    LES:                                                                00002980
+       IN_REC = '';                                                     00002990
+                                                                        00003000
+       READ FILE (INFILE) INTO (IN_REC);                                00003010
+                                                                        00003020
+    END; /* WHILE ^EOF */                                               00003030
+                                                                        00003040
+                                                                        00003050
+    SLUTT:                                                              00003060
+       CLOSE FILE (INFILE);                                             00003070
+                                                                        00003080
+       PUT SKIP LIST ('ANT LES ', ANTALL_LES);                          00003090
+       PUT SKIP LIST ('ANT SKRIV ', ANTALL_SKRIV);                      00003100
+                                                                        00003110
+ END;  /* OF PROGRAM R01TK50 */                                         00003120

@@ -1,0 +1,679 @@
+ /*       SIST ENDRET 28/06-91 11.36.13 AV   DYBVIK                   */00000000
+ /*       SIST ENDRET 19/06-91 10.20.19 AV   HERMAN                   */00000010
+ /*       SIST ENDRET 14/06-91 09.40.35 AV   DYBVIK                   */00000020
+ /******************************************************************* */00000030
+ /*IDENTIFIKASJON:                                                    */00000040
+ /************************                                            */00000050
+ /*  PROGRAM-IDENT : R001TK70 - utskrift                              */00000060
+ /*  PROGRAM-SPRÅK : PLI/CICS - HOVEDPROGRAM                          */00000070
+ /*  PROGRAMMERER  : TUYEN                                            */00000080
+ /*  PROGRAM LAGET : mai 91                                           */00000090
+ /******************************************************************* */00000100
+ /*HENSIKT:                                                           */00000110
+ /************                                                        */00000120
+ /*  PROGRAMMET ER MED I STYRINGEN AV MENYEN TIL TK-REGISTER.         */00000130
+ /*  PROGRAMMETS TRANSKODE ER RT70.                                   */00000140
+ /*  PROGRAMMET BLIR AKTIVISERT NÅR OPERATØREN TASTER INN 'U' I       */00000150
+ /*  FUNKSJONSKODE, MAP S001013 MAPSET S001TK3.                       */00000160
+ /*  PROGRAMMET LESER INN UTSKRIFT-VALG, KONTROLLERER DEN             */00000170
+ /*  OG SKRIVER UT.                                                   */00000180
+ /*     1 ---> MAP S001001 MAPSET S001T73 -                           */00000190
+ /*     X ---> MAP S001013 MAPSET S001TK3 - INNHENTING FUNKSJONSKODE  */00000200
+ /*                                                                   */00000210
+ /******************************************************************* */00000220
+ /*PROGRAMTILKNYTTING:*/                                                00000230
+ /**********************                                              */00000240
+ /*  PROGRAMMET BLIR AKTIVISERT FRA CICS MED TRANSID = RT70.          */00000250
+ /******************************************************************* */00000260
+ /*DATASETTOPPLYSNINGER:                                              */00000270
+ /*************************                                           */00000280
+ /*  DET BLIR IKKE BRUKT NOEN DATASETT I DETTE PROGRAMMET             */00000290
+ /******************************************************************* */00000300
+ /*FEILMELDINGER:*/                                                     00000310
+ /*********************                                               */00000320
+ /* 'UGYLDIG VALG'      BLIR SKREVET PÅ SKJERMBILDET NÅR VALG         */00000330
+ /*  IKKE HAR GYLDIG VERDI                                            */00000340
+ /* ***************************************************************** */00000350
+ R01TK70:                                                               00000360
+   PROC(COMMAREA_PEKER) OPTIONS(MAIN);                                  00000370
+                                                                        00000380
+ %PAGE;                                                                 00000390
+      %INCLUDE S001TK;     /*  MENY MAPSETTET  */                       00000400
+ %PAGE;                                                                 00000410
+      %INCLUDE S001T7;     /*  UTSKRIFT-MAPSETTET  */                   00000420
+ %PAGE;                                                                 00000430
+      %INCLUDE P001TK03;   /*  KOM_OMRÅDE (BASED) */                    00000440
+ %PAGE;                                                                 00000450
+      %INCLUDE DFHBMSCA;   /*  MAP HJELPEFELT           */              00000460
+ %PAGE;                                                                 00000470
+                                                                        00000480
+   DCL                                                                  00000490
+      (COMMAREA_PEKER,IDENT_PEKER,                                      00000500
+       BMSMAPBR)                       POINTER;                         00000510
+   DCL                                                                  00000520
+      (DATE,NULL,CSTG,ADDR,SUBSTR,STG,UNSPEC) BUILTIN;                  00000530
+                                                                        00000540
+   DCL CURSOR_POS FIXED BIN(15) INIT (-1),                              00000550
+       VALGSKODE      CHAR ( 1) INIT (''),                              00000560
+       TK_FINNES      BIT  ( 1) INIT ('0'B),                            00000570
+       INNB_FINNES    BIT  ( 1) INIT ('0'B),                            00000580
+       KONTI_FINNES   BIT  ( 1) INIT ('0'B),                            00000590
+       HJ_ANT_INNB    PIC '(6)9' INIT (0);                              00000600
+                                                                        00000610
+   DCL 1 IN1_SEGM,                                                      00000620
+         5 TKNAVN     CHAR (35)   INIT (''),                            00000630
+         5 TKNR       CHAR ( 4)   INIT (''),                            00000640
+         5 BL2        CHAR ( 2)   INIT (''),                            00000650
+         5 KONTONR    CHAR (13)   INIT (''),                            00000660
+         5 BL3        CHAR ( 1)   INIT (''),                            00000670
+         5 ID         CHAR ( 1)   INIT (''),                            00000680
+         5 BL4        CHAR ( 2)   INIT (''),                            00000690
+         5 AVTALEID   CHAR ( 9)   INIT (''),                            00000700
+         5 BL5        CHAR ( 4)   INIT (''),                            00000710
+         5 REG_DATO   CHAR ( 8)   INIT ('');                            00000720
+                                                                        00000730
+   DCL 1 IN2_SEGM,                                                      00000740
+         5 TKNAVN     CHAR (23)   INIT (''),                            00000750
+         5 TKNR       CHAR ( 4)   INIT (''),                            00000760
+         5 BL1        CHAR ( 1)   INIT (''),                            00000770
+         5 ADRESSE    CHAR (17)   INIT (''),                            00000780
+         5 BL2        CHAR ( 1)   INIT (''),                            00000790
+         5 POSTNR     CHAR ( 4)   INIT (''),                            00000800
+         5 BL3        CHAR ( 1)   INIT (''),                            00000810
+         5 POSTNAVN   CHAR (11)   INIT (''),                            00000820
+         5 BL         CHAR ( 1)   INIT (''),                            00000830
+         5 MÅLFORM    CHAR ( 1)   INIT (''),                            00000840
+         5 BL4        CHAR ( 1)   INIT (''),                            00000850
+         5 POSTGIRONR PIC '( 7)9' INIT (0 ),                            00000860
+         5 BL5        CHAR ( 1)   INIT (''),                            00000870
+         5 ANT_INNB   PIC '( 6)9' INIT (0 );                            00000880
+                                                                        00000890
+   DCL TEKST CHAR (79) INIT ('');                                       00000900
+                                                                        00000910
+                                                                        00000920
+   DCL 1 CHARLIST2,                                                     00000930
+         5 PRINTER,                                                     00000940
+           10 TERMID CHAR ( 4) INIT ('RRC5'),                           00000950
+           10 RESERV CHAR (12) INIT (''),                               00000960
+         5 SISTE,                                                       00000970
+           10 SLUTT FIXED BIN (15) INIT (-1),                           00000980
+           10 RESERV     CHAR (14) INIT ('');                           00000990
+                                                                        00001000
+                                                                        00001010
+ /* PCB-OMRÅDER */                                                      00001020
+ /*-------------*/                                                      00001030
+                                                                        00001040
+   DCL 1 TK_PCB_PEKER BASED (UIBPCBAL),                                 00001050
+         2 TK1_PCB_PEKER POINTER,                                       00001060
+         2 TK2_PCB_PEKER POINTER;                                       00001070
+                                                                        00001080
+   DCL 1 TK1 BASED (TK1_PCB_PEKER),                                     00001090
+      %INCLUDE P0012003;                                                00001100
+                                                                        00001110
+   DCL 1 TK2 BASED (TK2_PCB_PEKER),                                     00001120
+      %INCLUDE P0012003;                                                00001130
+                                                                        00001140
+ %PAGE;                                                                 00001150
+                                                                        00001160
+ /* SSA */                                                              00001170
+ /*-----*/                                                              00001180
+                                                                        00001190
+   DCL 1 SSA1_TK STATIC,                                                00001200
+         5 HDEL     CHAR (17)   INIT ('TK      (TKNR    '),             00001210
+         5 REL_OP   CHAR ( 2)   INIT (' ='),                            00001220
+         5 KEY      PIC '( 4)9' INIT (0),                               00001230
+         5 HP       CHAR ( 1)   INIT (')');                             00001240
+                                                                        00001250
+   DCL 1 SSA2_TK STATIC,                                                00001260
+         5 HDEL     CHAR (17)   INIT ('TK      (XTKNAVN '),             00001270
+         5 REL_OP   CHAR ( 2)   INIT ('=>'),                            00001280
+         5 KEY      CHAR (35)   INIT ('ÅFJORD'),                        00001290
+         5 HP       CHAR ( 1)   INIT (')');                             00001300
+                                                                        00001310
+ /* SEGMENTER */                                                        00001320
+ /*-----------*/                                                        00001330
+                                                                        00001340
+  %INCLUDE P001TK51;               /* TK-SEGMENT    */                  00001350
+  %INCLUDE P001TK52;               /* KONTI-SEGMENT    */               00001360
+  %INCLUDE P001TK53;               /* INNBYGG-SEGMENT    */             00001370
+                                                                        00001380
+ /* DLI PARAMETRE */                                                    00001390
+ /*---------------*/                                                    00001400
+                                                                        00001410
+   %INCLUDE DLIUIB;                                                     00001420
+                                                                        00001430
+   DCL PLITDLI           EXTERNAL ENTRY;                                00001440
+                                                                        00001450
+   DCL GU                CHAR      ( 4) INIT ('GU  '),                  00001460
+       GNP               CHAR      ( 4) INIT ('GNP '),                  00001470
+       GET               CHAR      ( 4) INIT ('    '),                  00001480
+       TRE               FIXED BIN (31) INIT (3)     ,                  00001490
+       FIRE              FIXED BIN (31) INIT (4)     ,                  00001500
+       FEM               FIXED BIN (31) INIT (5)     ,                  00001510
+       TK_OPEN           CHAR      ( 5) INIT ('OPEN '),                 00001520
+       TK_CLOSE          CHAR      ( 5) INIT ('CLOSE'),                 00001530
+       SSA_KONTI_UQUAL   CHAR      ( 9) INIT ('KONTI    '),             00001540
+       SSA_INNB_UQUAL    CHAR      ( 9) INIT ('INNBYGG  ');             00001550
+                                                                        00001560
+ /* SLUTT PÅ DEKLARASJON */                                             00001570
+ /************************/                                             00001580
+                                                                        00001590
+  EXEC CICS HANDLE CONDITION ERROR(FEILBEH);                            00001600
+  EXEC CICS IGNORE CONDITION MAPFAIL       ;                            00001610
+                                                                        00001620
+  IF SEND_MAP THEN                                                      00001630
+     DO;                                                                00001640
+        SEND_MAP = '0'B;                                                00001650
+                                                                        00001660
+        ALLOCATE S001001O;                                              00001670
+        S001001I.VALGL = CURSOR_POS;                                    00001680
+        EXEC CICS SEND MAP('S001001') MAPSET ('S001T73') ERASE;         00001690
+     END;                                                               00001700
+                                                                        00001710
+  EXEC CICS RECEIVE MAP('S001001') MAPSET ('S001T73')                   00001720
+           SET(BMSMAPBR);                                               00001730
+                                                                        00001740
+  /* LESER SKJERMBILDE MED VALGSKODE  */                                00001750
+                                                                        00001760
+  VALGSKODE = S001001I.VALGI;                                           00001770
+                                                                        00001780
+  CALL TK_DATABASE(TK_OPEN);                                            00001790
+                                                                        00001800
+  SELECT(VALGSKODE);                                                    00001810
+      WHEN('1')                                                         00001820
+        DO;                                                             00001830
+            EXEC CICS ROUTE LIST (CHARLIST2);                           00001840
+                                                                        00001850
+            TEKST = 'TRYGDEKONTOR                       TKNR  '!!       00001860
+                    'KONTONUMMER      ATALEID.     REG.DATO  ';         00001870
+                                                                        00001880
+            EXEC CICS SEND TEXT FROM (TEKST) ACCUM PAGING               00001890
+                   L80 PRINT ERASE;                                     00001900
+                                                                        00001910
+            TEKST = '';                                                 00001920
+                                                                        00001930
+            EXEC CICS SEND TEXT FROM (TEKST) ACCUM PAGING               00001940
+                   L80 PRINT ERASE;                                     00001950
+                                                                        00001960
+            GET = 'GU  ';                                               00001970
+            CALL LES_DB_ROT;                                            00001980
+                                                                        00001990
+            GET = 'GN  ';                                               00002000
+                                                                        00002010
+            DO WHILE (TK_FINNES);                                       00002020
+               CALL LES_DB_KONTI;                                       00002030
+                                                                        00002040
+               IF KONTI_FINNES THEN                                     00002050
+                  DO;                                                   00002060
+                     IN1_SEGM = '';                                     00002070
+                                                                        00002080
+                     IN1_SEGM.TKNR     = TK.TKNR;                       00002090
+                     IN1_SEGM.TKNAVN   = TK.TKNAVN;                     00002100
+                     IN1_SEGM.KONTONR  =                                00002110
+                               SUBSTR(KONTI.INTERIM_KONTO,1,4) !!       00002120
+                               '.'                             !!       00002130
+                               SUBSTR(KONTI.INTERIM_KONTO,5,2) !!       00002140
+                               '.'                             !!       00002150
+                               SUBSTR(KONTI.INTERIM_KONTO,7,5)   ;      00002160
+                     IN1_SEGM.ID       = 'I';                           00002170
+                                                                        00002180
+                     IF KONTI.INTERIM_AVTALEID ^= 0 THEN                00002190
+                        IN1_SEGM.AVTALEID = KONTI.INTERIM_AVTALEID;     00002200
+                                                                        00002210
+                     IF KONTI.INTERIM_ENDRET ^= '' THEN                 00002220
+                        IN1_SEGM.REG_DATO =                             00002230
+                                  SUBSTR(KONTI.INTERIM_ENDRET,5,2) !!   00002240
+                                  '.'                              !!   00002250
+                                  SUBSTR(KONTI.INTERIM_ENDRET,3,2) !!   00002260
+                                  '.'                              !!   00002270
+                                  SUBSTR(KONTI.INTERIM_ENDRET,1,2)   ;  00002280
+                                                                        00002290
+                                                                        00002300
+                     EXEC CICS SEND TEXT FROM (IN1_SEGM) ACCUM PAGING   00002310
+                            L80 PRINT ERASE;                            00002320
+                                                                        00002330
+                                                                        00002340
+                     IN1_SEGM = '';                                     00002350
+                                                                        00002360
+                     IN1_SEGM.KONTONR  =                                00002370
+                               SUBSTR(KONTI.DRIFTSKONTO,1,4) !!         00002380
+                               '.'                             !!       00002390
+                               SUBSTR(KONTI.DRIFTSKONTO,5,2) !!         00002400
+                               '.'                             !!       00002410
+                               SUBSTR(KONTI.DRIFTSKONTO,7,5)   ;        00002420
+                     IN1_SEGM.ID       = 'D';                           00002430
+                                                                        00002440
+                     IF KONTI.DKONTO_AVTALEID ^= 0 THEN                 00002450
+                        IN1_SEGM.AVTALEID = KONTI.DKONTO_AVTALEID;      00002460
+                                                                        00002470
+                     IF KONTI.DKONTO_ENDRET ^= '' THEN                  00002480
+                        IN1_SEGM.REG_DATO =                             00002490
+                                  SUBSTR(KONTI.DKONTO_ENDRET,5,2) !!    00002500
+                                  '.'                             !!    00002510
+                                  SUBSTR(KONTI.DKONTO_ENDRET,3,2) !!    00002520
+                                  '.'                             !!    00002530
+                                  SUBSTR(KONTI.DKONTO_ENDRET,1,2)    ;  00002540
+                                                                        00002550
+                                                                        00002560
+                     EXEC CICS SEND TEXT FROM (IN1_SEGM) ACCUM PAGING   00002570
+                            L80 PRINT ERASE;                            00002580
+                                                                        00002590
+                     EXEC CICS SEND TEXT FROM (TEKST) ACCUM PAGING      00002600
+                            L80 PRINT ERASE;                            00002610
+                  END;                                                  00002620
+                                                                        00002630
+               CALL LES_DB_ROT;                                         00002640
+            END;                                                        00002650
+                                                                        00002660
+            EXEC CICS SEND PAGE RELEASE;                                00002670
+                                                                        00002680
+            SEND_MAP      = '1'B;                                       00002690
+            PROGRAM_ID    = 'R001TK70';                                 00002700
+                                                                        00002710
+        END;                                                            00002720
+                                                                        00002730
+      WHEN('2')                                                         00002740
+        DO;                                                             00002750
+            EXEC CICS ROUTE LIST (CHARLIST2);                           00002760
+                                                                        00002770
+            TEKST = 'TRYGDEKONTOR            TKNR '!!                   00002780
+              'ADRESSE                   MÅLFORM POSTGIRO INNBYGG';     00002790
+                                                                        00002800
+            EXEC CICS SEND TEXT FROM (TEKST) ACCUM PAGING               00002810
+                   L80 PRINT ERASE;                                     00002820
+                                                                        00002830
+            TEKST = '';                                                 00002840
+                                                                        00002850
+            EXEC CICS SEND TEXT FROM (TEKST) ACCUM PAGING               00002860
+                   L80 PRINT ERASE;                                     00002870
+                                                                        00002880
+            GET = 'GU  ';                                               00002890
+            CALL LES_DB_ROT;                                            00002900
+                                                                        00002910
+            GET = 'GN  ';                                               00002920
+                                                                        00002930
+            DO WHILE (TK_FINNES);                                       00002940
+               IF (TK.TKNR >= 0101) & (TK.TKNR <= 2101) THEN            00002950
+                  DO;                                                   00002960
+                     IN2_SEGM = '';                                     00002970
+                                                                        00002980
+                     IN2_SEGM.TKNR     = TK.TKNR;                       00002990
+                     IN2_SEGM.TKNAVN   = TK.TKNAVN;                     00003000
+                     IN2_SEGM.MÅLFORM  = TK.MÅLFORM;                    00003010
+                                                                        00003020
+                     IN2_SEGM.ADRESSE  = TK.BESØKADR;                   00003030
+                                                                        00003040
+                     IF TK.BPOSTNR ^= 0 THEN                            00003050
+                        IN2_SEGM.POSTNR = TK.BPOSTNR;                   00003060
+                                                                        00003070
+                     IN2_SEGM.POSTNAVN = TK.BPOSTNAVN;                  00003080
+                                                                        00003090
+                     IF IN2_SEGM.ADRESSE = '' &                         00003100
+                        IN2_SEGM.POSTNR  = '' &                         00003110
+                        IN2_SEGM.POSTNR  = ''   THEN                    00003120
+                        DO;                                             00003130
+                           IN2_SEGM.ADRESSE = TK.POSTADR;               00003140
+                                                                        00003150
+                           IF TK.PPOSTNR ^= 0 THEN                      00003160
+                              IN2_SEGM.POSTNR = TK.PPOSTNR;             00003170
+                                                                        00003180
+                           IN2_SEGM.POSTNAVN = TK.PPOSTNAVN;            00003190
+                        END;                                            00003200
+                                                                        00003210
+                     CALL LES_DB_INNBYGG;                               00003220
+                                                                        00003230
+                     HJ_ANT_INNB = 0;                                   00003240
+                                                                        00003250
+                     IF INNB_FINNES THEN                                00003260
+                        DO;                                             00003270
+                           HJ_ANT_INNB =                                00003280
+                                   MANN_0  + MANN_1  + MANN_2  +        00003290
+                                   MANN_3  + MANN_4  + MANN_5  +        00003300
+                                   MANN_6  + MANN_7  + MANN_8  +        00003310
+                                   MANN_9  + MANN_10 + MANN_11 +        00003320
+                                   MANN_12 + MANN_13 + MANN_14 +        00003330
+                                   MANN_15 + MANN_16 + MANN_17 +        00003340
+                                   MANN_18 + MANN_19 + MANN_20 +        00003350
+                                   MANN_21 + MANN_22 + MANN_23 +        00003360
+                                   MANN_24 + MANN_25 + MANN_26 +        00003370
+                                   MANN_27 + MANN_28 + MANN_29 +        00003380
+                                   MANN_30 + MANN_31 + MANN_32 +        00003390
+                                   MANN_33 + MANN_34 + MANN_35 +        00003400
+                                   MANN_36 + MANN_37 + MANN_38 +        00003410
+                                   MANN_39 + MANN_40 + MANN_41 +        00003420
+                                   MANN_42 + MANN_43 + MANN_44 +        00003430
+                                   MANN_45 + MANN_46 + MANN_47 +        00003440
+                                   MANN_48 + MANN_49 + MANN_50 +        00003450
+                                   MANN_51 + MANN_52 + MANN_53 +        00003460
+                                   MANN_54 + MANN_55 + MANN_56 +        00003470
+                                   MANN_57 + MANN_58 + MANN_59 +        00003480
+                                   MANN_60 + MANN_61 + MANN_62 +        00003490
+                                   MANN_63 + MANN_64 + MANN_65 +        00003500
+                                   MANN_66 + MANN_67 + MANN_68 +        00003510
+                                   MANN_69 + MANN_70 + MANN_71 +        00003520
+                                   MANN_72 + MANN_73 + MANN_74 +        00003530
+                                   MANN_75 + MANN_76 + MANN_77 +        00003540
+                                   MANN_78 + MANN_79 + MANN_80 +        00003550
+                                   MANN_81 + MANN_82 + MANN_83 +        00003560
+                                   MANN_84 + MANN_85 + MANN_86 +        00003570
+                                   MANN_87 + MANN_88 + MANN_89 +        00003580
+                                   MANN_90 + MANN_91 + MANN_92 +        00003590
+                                   MANN_93 + MANN_94 + MANN_95 +        00003600
+                                   MANN_96 + MANN_97 + MANN_98 +        00003610
+                                   MANN_99 + MANN_100;                  00003620
+                                                                        00003630
+                           IN2_SEGM.ANT_INNB = HJ_ANT_INNB          +   00003640
+                                   KVINNE_0  + KVINNE_1  + KVINNE_2 +   00003650
+                                   KVINNE_3  + KVINNE_4  + KVINNE_5 +   00003660
+                                   KVINNE_6  + KVINNE_7  + KVINNE_8 +   00003670
+                                   KVINNE_9  + KVINNE_10 + KVINNE_11+   00003680
+                                   KVINNE_12 + KVINNE_13 + KVINNE_14+   00003690
+                                   KVINNE_15 + KVINNE_16 + KVINNE_17+   00003700
+                                   KVINNE_18 + KVINNE_19 + KVINNE_20+   00003710
+                                   KVINNE_21 + KVINNE_22 + KVINNE_23+   00003720
+                                   KVINNE_24 + KVINNE_25 + KVINNE_26+   00003730
+                                   KVINNE_27 + KVINNE_28 + KVINNE_29+   00003740
+                                   KVINNE_30 + KVINNE_31 + KVINNE_32+   00003750
+                                   KVINNE_33 + KVINNE_34 + KVINNE_35+   00003760
+                                   KVINNE_36 + KVINNE_37 + KVINNE_38+   00003770
+                                   KVINNE_39 + KVINNE_40 + KVINNE_41+   00003780
+                                   KVINNE_42 + KVINNE_43 + KVINNE_44+   00003790
+                                   KVINNE_45 + KVINNE_46 + KVINNE_47+   00003800
+                                   KVINNE_48 + KVINNE_49 + KVINNE_50+   00003810
+                                   KVINNE_51 + KVINNE_52 + KVINNE_53+   00003820
+                                   KVINNE_54 + KVINNE_55 + KVINNE_56+   00003830
+                                   KVINNE_57 + KVINNE_58 + KVINNE_59+   00003840
+                                   KVINNE_60 + KVINNE_61 + KVINNE_62+   00003850
+                                   KVINNE_63 + KVINNE_64 + KVINNE_65+   00003860
+                                   KVINNE_66 + KVINNE_67 + KVINNE_68+   00003870
+                                   KVINNE_69 + KVINNE_70 + KVINNE_71+   00003880
+                                   KVINNE_72 + KVINNE_73 + KVINNE_74+   00003890
+                                   KVINNE_75 + KVINNE_76 + KVINNE_77+   00003900
+                                   KVINNE_78 + KVINNE_79 + KVINNE_80+   00003910
+                                   KVINNE_81 + KVINNE_82 + KVINNE_83+   00003920
+                                   KVINNE_84 + KVINNE_85 + KVINNE_86+   00003930
+                                   KVINNE_87 + KVINNE_88 + KVINNE_89+   00003940
+                                   KVINNE_90 + KVINNE_91 + KVINNE_92+   00003950
+                                   KVINNE_93 + KVINNE_94 + KVINNE_95+   00003960
+                                   KVINNE_96 + KVINNE_97 + KVINNE_98+   00003970
+                                   KVINNE_99 + KVINNE_100;              00003980
+                        END;                                            00003990
+                                                                        00004000
+                     CALL LES_DB_KONTI;                                 00004010
+                                                                        00004020
+                     IF KONTI_FINNES THEN                               00004030
+                        IF KONTI.POST_KONTO ^= 0 THEN                   00004040
+                           IN2_SEGM.POSTGIRONR = KONTI.POST_KONTO;      00004050
+                                                                        00004060
+                                                                        00004070
+                     EXEC CICS SEND TEXT FROM (IN2_SEGM) ACCUM PAGING   00004080
+                            L80 PRINT ERASE;                            00004090
+                                                                        00004100
+                     EXEC CICS SEND TEXT FROM (TEKST) ACCUM PAGING      00004110
+                            L80 PRINT ERASE;                            00004120
+                  END;                                                  00004130
+                                                                        00004140
+               CALL LES_DB_ROT;                                         00004150
+            END;                                                        00004160
+                                                                        00004170
+            EXEC CICS SEND PAGE RELEASE;                                00004180
+                                                                        00004190
+            SEND_MAP      = '1'B;                                       00004200
+            PROGRAM_ID    = 'R001TK70';                                 00004210
+                                                                        00004220
+        END;                                                            00004230
+                                                                        00004240
+      WHEN('X','x')                                                     00004250
+        DO;                                                             00004260
+            TRANSKODE  = 'RT03';                                        00004270
+            PROGRAM_ID = 'R001TK03';                                    00004280
+                                                                        00004290
+            SEND_MAP   = '1'B;                                          00004300
+        END;                                                            00004310
+                                                                        00004320
+      OTHERWISE                                                         00004330
+        DO;                                                             00004340
+            ALLOCATE S001001O;                                          00004350
+            /* FEILMELDING 'UGYLDIG VALGSKODE' SKRIVES */               00004360
+            S001001O.MELDING1O   = 'UGYLDIG VALGSKODE';                 00004370
+            S001001O.VALGA       = 'I';  /* MDT SET, HIGH INT */        00004380
+            S001001O.VALGO       = VALGSKODE;                           00004390
+            EXEC CICS SEND MAP('S001001') MAPSET('S001T73') ERASE;      00004400
+                                                                        00004410
+            TRANSKODE = 'RT70';                                         00004420
+        END;                                                            00004430
+  END;                                                                  00004440
+                                                                        00004450
+  CALL TK_DATABASE(TK_CLOSE);                                           00004460
+                                                                        00004470
+  EXEC CICS XCTL PROGRAM(PROGRAM_ID) COMMAREA(KOM_OMR);                 00004480
+                                                                        00004490
+                                                                        00004500
+  FEILBEH:                                                              00004510
+      TRANSKODE  = 'RT03';                                              00004520
+      PROGRAM_ID = 'R001TK70';                                          00004530
+                                                                        00004540
+      CALL TK_DATABASE(TK_CLOSE);                                       00004550
+                                                                        00004560
+      EXEC CICS SEND MAP('S001013') MAPSET('S001TK3') MAPONLY ERASE;    00004570
+                                                                        00004580
+      EXEC CICS RETURN TRANSID(TRANSKODE) COMMAREA(KOM_OMR);            00004590
+                                                                        00004600
+ %PAGE;                                                                 00004610
+                                                                        00004620
+ TK_DATABASE:                                                           00004630
+   PROC    (STYRING);                                                   00004640
+                                                                        00004650
+   DCL                                                                  00004660
+      STYRING             CHAR (5);                                     00004670
+                                                                        00004680
+  /* **************************************************************** */00004690
+  /*     DL1-PARAMETRE SOM BRUKES VED INITIERINGS- OG AVSLUTTNINGS-   */00004700
+  /*     KALL                                                         */00004710
+  /* **************************************************************** */00004720
+                                                                        00004730
+     DCL                                                                00004740
+       PSB_NAVN                    CHAR (8)       INIT('B001TK02'),     00004750
+       PCB_FUNCTION                CHAR (4)       INIT('PCB '),         00004760
+       TERM_FUNCTION               CHAR (4)       INIT('TERM');         00004770
+                                                                        00004780
+                                                                        00004790
+  /* **************************************************************** */00004800
+  /*     DLI CALL-PARAMETRE                                           */00004810
+  /* **************************************************************** */00004820
+                                                                        00004830
+     DCL 1  DLI_PARAM,                                                  00004840
+            2   PARM_CT_1          FIXED BIN (31)  INIT ( 1 ),          00004850
+            2   PARM_CT_3          FIXED BIN (31)  INIT ( 3 ),          00004860
+            2   PARM_CT_4          FIXED BIN (31)  INIT ( 4 );          00004870
+                                                                        00004880
+                                                                        00004890
+                                                                        00004900
+     IF STYRING = 'OPEN '                         THEN                  00004910
+        DO;                                                             00004920
+           CALL   PLITDLI                        (PARM_CT_3,            00004930
+                                                  PCB_FUNCTION,         00004940
+                                                  PSB_NAVN,             00004950
+                                                  UIBPTR);              00004960
+                                                                        00004970
+           IF DLIUIB.UIBFCTR               ^=    '00000000'B THEN       00004980
+             DO;                                                        00004990
+                S001001O.MELDING1O =                                    00005000
+                 'DB-FEIL PÅ ÅPNINGSKALLET, KODE:' !!                   00005010
+                  UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);            00005020
+                                                                        00005030
+                EXEC CICS SEND MAP('S001001') MAPSET('S001T73')         00005040
+                       ERASE CURSOR;                                    00005050
+                                                                        00005060
+                EXEC CICS RECEIVE MAP('S001001')                        00005070
+                       MAPSET('S001T73') SET(BMSMAPBR) ASIS;            00005080
+                                                                        00005090
+                EXEC CICS ABEND ABCODE(FEIL);                           00005100
+             END;                                                       00005110
+        END;                                                            00005120
+     ELSE                                                               00005130
+        DO;                                                             00005140
+           CALL   PLITDLI                     (PARM_CT_1,               00005150
+                                               TERM_FUNCTION);          00005160
+                                                                        00005170
+           IF DLIUIB.UIBFCTR               ^=    '00000000'B THEN       00005180
+             DO;                                                        00005190
+                S001001O.MELDING1O =                                    00005200
+                 'DB-FEIL PÅ STENGINGSKALLET, KODE:' !!                 00005210
+                  UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);            00005220
+                                                                        00005230
+                EXEC CICS SEND MAP('S001001') MAPSET('S001T73') ERASE;  00005240
+                                                                        00005250
+                EXEC CICS RECEIVE MAP('S001001')                        00005260
+                       MAPSET('S001T73') SET(BMSMAPBR);                 00005270
+                                                                        00005280
+                EXEC CICS ABEND ABCODE(FEIL);                           00005290
+             END;                                                       00005300
+        END;                                                            00005310
+                                                                        00005320
+ END TK_DATABASE;                                                       00005330
+                                                                        00005340
+                                                                        00005350
+ LES_DB_ROT: PROC;                                                      00005360
+                                                                        00005370
+     TK = '';                                                           00005380
+                                                                        00005390
+     CALL PLITDLI       (FIRE              ,                            00005400
+                         GET               ,                            00005410
+                         TK2               ,                            00005420
+                         TK                ,                            00005430
+                         SSA2_TK)          ;                            00005440
+                                                                        00005450
+     IF DLIUIB.UIBRCODE.UIBFCTR ^= '00000000'B THEN                     00005460
+        DO;                                                             00005470
+           S001001O.MELDING1O =                                         00005480
+            'FEIL VED LES PÅ ROT:' !!                                   00005490
+             UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);                 00005500
+                                                                        00005510
+           EXEC CICS SEND MAP('S001001') MAPSET('S001T73')              00005520
+                  ERASE CURSOR;                                         00005530
+                                                                        00005540
+           EXEC CICS RECEIVE MAP('S001001')                             00005550
+                  MAPSET('S001T73') SET(BMSMAPBR) ASIS;                 00005560
+                                                                        00005570
+           EXEC CICS ABEND ABCODE(FEIL);                                00005580
+        END;                                                            00005590
+                                                                        00005600
+     IF ((TK2.STATUS_KODE = 'GE') ! (TK2.STATUS_KODE = 'GB')) THEN      00005610
+        TK_FINNES = '0'B;                                               00005620
+                                                                        00005630
+     ELSE                                                               00005640
+        IF TK2.STATUS_KODE ^= '  ' THEN                                 00005650
+           DO;                                                          00005660
+              S001001O.MELDING1O =                                      00005670
+               'FEIL VED LES PÅ ROT, STATUS:' !! TK2.STATUS_KODE;       00005680
+                                                                        00005690
+              EXEC CICS SEND MAP('S001001') MAPSET('S001T73')           00005700
+                     ERASE CURSOR;                                      00005710
+                                                                        00005720
+              EXEC CICS RECEIVE MAP('S001001')                          00005730
+                     MAPSET('S001T73') SET(BMSMAPBR) ASIS;              00005740
+                                                                        00005750
+              EXEC CICS ABEND ABCODE(FEIL);                             00005760
+           END;                                                         00005770
+        ELSE                                                            00005780
+           TK_FINNES = '1'B;                                            00005790
+                                                                        00005800
+ END LES_DB_ROT;                                                        00005810
+                                                                        00005820
+                                                                        00005830
+ LES_DB_KONTI: PROC;                                                    00005840
+                                                                        00005850
+     KONTI = '';                                                        00005860
+                                                                        00005870
+     CALL PLITDLI       (FIRE              ,                            00005880
+                         GNP               ,                            00005890
+                         TK2               ,                            00005900
+                         KONTI             ,                            00005910
+                         SSA_KONTI_UQUAL)  ;                            00005920
+                                                                        00005930
+     IF DLIUIB.UIBRCODE.UIBFCTR ^= '00000000'B THEN                     00005940
+        DO;                                                             00005950
+           S001001O.MELDING1O =                                         00005960
+            'FEIL VED LES PÅ KONTI:' !!                                 00005970
+             UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);                 00005980
+                                                                        00005990
+           EXEC CICS SEND MAP('S001001') MAPSET('S001T73')              00006000
+                  ERASE CURSOR;                                         00006010
+                                                                        00006020
+           EXEC CICS RECEIVE MAP('S001001')                             00006030
+                  MAPSET('S001T73') SET(BMSMAPBR) ASIS;                 00006040
+                                                                        00006050
+           EXEC CICS ABEND ABCODE(FEIL);                                00006060
+        END;                                                            00006070
+                                                                        00006080
+     IF TK2.STATUS_KODE = 'GE' THEN                                     00006090
+        KONTI_FINNES = '0'B;                                            00006100
+                                                                        00006110
+     ELSE                                                               00006120
+        IF TK2.STATUS_KODE ^= '  ' THEN                                 00006130
+           DO;                                                          00006140
+              S001001O.MELDING1O =                                      00006150
+               'FEIL VED LES PÅ KONTI, STATUS:' !! TK2.STATUS_KODE;     00006160
+                                                                        00006170
+              EXEC CICS SEND MAP('S001001') MAPSET('S001T73')           00006180
+                     ERASE CURSOR;                                      00006190
+                                                                        00006200
+              EXEC CICS RECEIVE MAP('S001001')                          00006210
+                     MAPSET('S001T73') SET(BMSMAPBR) ASIS;              00006220
+                                                                        00006230
+              EXEC CICS ABEND ABCODE(FEIL);                             00006240
+           END;                                                         00006250
+        ELSE                                                            00006260
+           KONTI_FINNES = '1'B;                                         00006270
+                                                                        00006280
+ END LES_DB_KONTI;                                                      00006290
+                                                                        00006300
+ LES_DB_INNBYGG: PROC;                                                  00006310
+                                                                        00006320
+     INNBYGG = '';                                                      00006330
+                                                                        00006340
+     CALL PLITDLI       (FIRE              ,                            00006350
+                         GNP               ,                            00006360
+                         TK2               ,                            00006370
+                         INNBYGG           ,                            00006380
+                         SSA_INNB_UQUAL)   ;                            00006390
+                                                                        00006400
+     IF DLIUIB.UIBRCODE.UIBFCTR ^= '00000000'B THEN                     00006410
+        DO;                                                             00006420
+           S001001O.MELDING1O =                                         00006430
+            'FEIL VED LES PÅ INNBYGG:' !!                               00006440
+             UNSPEC(UIBFCTR) !! ' ' !! UNSPEC(UIBDLTR);                 00006450
+                                                                        00006460
+           EXEC CICS SEND MAP('S001001') MAPSET('S001T73')              00006470
+                  ERASE CURSOR;                                         00006480
+                                                                        00006490
+           EXEC CICS RECEIVE MAP('S001001')                             00006500
+                  MAPSET('S001T73') SET(BMSMAPBR) ASIS;                 00006510
+                                                                        00006520
+           EXEC CICS ABEND ABCODE(FEIL);                                00006530
+        END;                                                            00006540
+                                                                        00006550
+     IF TK2.STATUS_KODE = 'GE' THEN                                     00006560
+        INNB_FINNES = '0'B;                                             00006570
+                                                                        00006580
+     ELSE                                                               00006590
+        IF TK2.STATUS_KODE ^= '  ' THEN                                 00006600
+           DO;                                                          00006610
+              S001001O.MELDING1O =                                      00006620
+               'FEIL VED LES PÅ INNBYGG, STATUS:' !! TK2.STATUS_KODE;   00006630
+                                                                        00006640
+              EXEC CICS SEND MAP('S001001') MAPSET('S001T73')           00006650
+                     ERASE CURSOR;                                      00006660
+                                                                        00006670
+              EXEC CICS RECEIVE MAP('S001001')                          00006680
+                     MAPSET('S001T73') SET(BMSMAPBR) ASIS;              00006690
+                                                                        00006700
+              EXEC CICS ABEND ABCODE(FEIL);                             00006710
+           END;                                                         00006720
+        ELSE                                                            00006730
+           INNB_FINNES = '1'B;                                          00006740
+                                                                        00006750
+ END LES_DB_INNBYGG;                                                    00006760
+                                                                        00006770
+ END R01TK70;                                                           00006780

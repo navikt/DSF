@@ -1,0 +1,699 @@
+ /*       SIST ENDRET 12/10-95 14.01.26 AV   JDA0310                  */00000000
+ /* ***************************************************************** */00000010
+ /*               R 0 0 1 U 8 0 5                                     */00000020
+ /* ***************************************************************** */00000030
+ /*IDENTIFIKASJON:                                                    */00000040
+ /* **********************                                            */00000050
+ /*  PROGRAM-IDENT : R001U805   KONTROLL_EE_SPES   SUBPROGRAM         */00000060
+ /*  PROGRAM-SPRÅK : PLI                                              */00000070
+ /*  PROGRAMMERER  : HERMAN                                           */00000080
+ /*  PROGRAMMET BLE LAGET :       1294                                */00000090
+ /*                                                                   */00000100
+ /* ***************************************************************** */00000110
+ /*HENSIKT:                                                           */00000120
+ /* **********                                                        */00000130
+ /*  KONTROLLERER GRUNNBLANKETT EE - DEN SPESIELLE DEL.               */00000140
+ /*  RETURNERER FEIL_FUNNET = '1'B VED FEIL, ELLERS '0'B.             */00000150
+ /*                                                                   */00000160
+ /* ***************************************************************** */00000170
+ /*PROGRAMTILKNYTTING:                                                */00000180
+ /* ********************                                              */00000190
+ /*  PROGRAMMET INCLUDES AV R001U801 - KONTROLL_GRUNNBLANKETT_EE      */00000200
+ /*  ARBEIDSOMRÅDET P001U801 ER INCLUDET I HOVEDPROG.                 */00000210
+ /*  BRUK :                                                           */00000220
+ /*      CALL KONTROLL_EE_SPES(FEIL_FUNNET);                          */00000230
+ /*                                                                   */00000240
+ /*  FØLGENDE FUNKSJONER BRUKES HER, MEN INCLUDES I HOVEDPROG :       */00000250
+ /*      R0019910 - F_NUMERISK                                        */00000260
+ /*      R0019912 - F_FELT_PIC_CHARNN                                 */00000270
+ /*      VERIFY   - BUILTIN-FUNCTION                                  */00000280
+ /*                                                                   */00000290
+ /*  EKSTERN PROSEDYRE SOM CALLES :                                   */00000300
+ /*                                                                   */00000310
+ /*  INTERNE PROSEDYRER :                                             */00000320
+ /*      KONTROLL_EE_SPES(FEIL_FUNNET)                                */00000330
+ /*      SJEKK_TT_NUMERISK                                            */00000340
+ /*                                                                   */00000350
+ /* ***************************************************************** */00000360
+ /*DATASETTOPPLYSNINGER:                                              */00000370
+ /* ***********************                                           */00000380
+ /*   STATTAB - STATSBORGERSKAPSTABELL - EXEC CICS READ DATASET       */00000390
+ /*                                      ('STATTAB')........          */00000400
+ /* ***************************************************************** */00000410
+ /*FEILMELDINGER:                                                     */00000420
+ /* *******************                                               */00000430
+ /*   MELDINGSNR LEGGES INN I TRANSAKSJONEN - SAMTIDIG SOM            */00000440
+ /*   FEIL_FUNNET SETTES = '1'B.                                      */00000450
+ /*   HOVEDPROG LEGGER UT TILHØRENDE FEILMELDINGER PÅ SKJERMBILDET.   */00000460
+ /*                                                                   */00000470
+ /* ***************************************************************** */00000480
+ KONTROLL_EE_SPES:                                                      00000490
+   PROC(FEIL_FUNNET);                                                   00000500
+ %PAGE;                                                                 00000510
+   DCL                                                                  00000520
+      FEIL_FUNNET         BIT(1);                                       00000530
+   DCL                                                                  00000540
+      KEY_BIT1                   BIT(32) BASED (KEY_PEKER1),            00000550
+      KEY_BIT2                   BIT(32) BASED (KEY_PEKER2),            00000560
+      KEY_PEKER1                 POINTER,                               00000570
+      KEY_PEKER2                 POINTER,                               00000580
+      ST_RECL                    CHAR (35);                             00000590
+   DCL                                                                  00000600
+      T_FNR               PIC'(11)9';                                   00000610
+   DCL                                                                  00000620
+      1 FNR DEF T_FNR,                                                  00000630
+         2 DG             PIC'99',                                      00000640
+         2 MN             PIC'99',                                      00000650
+         2 ÅR             PIC'99',                                      00000660
+         2 PERSNR,                                                      00000670
+            3 ÅRHUNDRE    PIC'999',                                     00000680
+            3 REST        PIC'99';                                      00000690
+   DCL                                                                  00000700
+      FYLT_SEKSTISJU      PIC'(4)9',                                    00000710
+      FYLT_SYTTI          PIC'(4)9';                                    00000720
+   DCL                                                                  00000730
+      DØD_DMÅ             PIC'(6)9',                                    00000740
+      DØD_Å    DEF DØD_DMÅ   POS(5)    PIC'99',                         00000750
+      DØD_M    DEF DØD_DMÅ   POS(3)    PIC'99',                         00000760
+      HJ_ÅM               PIC'(4)9',                                    00000770
+      HJ_Å     DEF HJ_ÅM     POS(1)    PIC'99',                         00000780
+      HJ_M     DEF HJ_ÅM     POS(3)    PIC'99',                         00000790
+      HJ_VIRK_ÅM          PIC'(4)9',                                    00000800
+      HJ_STI_ÅM           PIC'(4)9',                                    00000810
+      FEIL                BIT(1);                                       00000820
+   DCL                                                                  00000830
+      TT_MAKS_TIL_DATO    PIC'(4)9',                                    00000840
+      TIL_DATO_ÅM         PIC'(4)9',                                    00000850
+      W_TT_MND            PIC'99';                                      00000860
+ %SKIP(2);                                                              00000870
+      T_FNR       = EES.FNR;                                            00000880
+                                                                        00000890
+ /* ***************************************************************** */00000900
+ /* TESTER OM FORUTSETNINGENE FOR Å KONTROLLERE FELTENE I SPES.INFO   */00000910
+ /* DELEN ER TILSTEDE. DVS.:                                          */00000920
+ /* - ET ELLER FLERE FELT MÅ VÆRE UTFYLT                              */00000930
+ /* - NUMERISKE FELT KAN BARE INNEHOLDE NUMERISKE VERDIER             */00000940
+ /* ***************************************************************** */00000950
+                                                                        00000960
+    FEIL_FUNNET = '0'B;                                                 00000970
+    HJ_VIRK_ÅM  = F_SNU_DATO(EES.VIRK_DATO_MÅ);                         00000980
+    DØD_DMÅ     = EES.DØDSDATO_EK;                                      00000990
+    HJ_Å        = DØD_Å;                                                00001000
+    HJ_M        = DØD_M;                                                00001010
+                                                                        00001020
+    CALL SJEKK_NUMERISK;                                                00001030
+    IF FEIL_FUNNET THEN                                                 00001040
+      GO TO L999_FEIL;                                                  00001050
+                                                                        00001060
+    IF EES.NORSK_BOSATT = 'J'    THEN                                   00001070
+       CALL ETTERLATT_BOSATT;                                           00001080
+    ELSE                                                                00001090
+       CALL KONTROLL_ETTERLATT;                                         00001100
+    IF EES.NORSK_BOSATT_EK = 'J'    THEN                                00001110
+       CALL AVDØD_BOSATT;                                               00001120
+    ELSE                                                                00001130
+       DO;                                                              00001140
+          CALL KONTROLL_AVDØD;                                          00001150
+          IF EESP.BEREGN_FOLKETRYGD ^= ' '   THEN                       00001160
+             CALL KONTROLL_EØS;                                         00001170
+       END;                                                             00001180
+   IF EESP.BEREGN_FOLKETRYGD = ' '        THEN                          00001190
+      CALL AVDØD_EØS;                                                   00001200
+                                                                        00001210
+   ETTERLATT_BOSATT: PROC;                                              00001220
+    IF ^(EESP.STATSBORGER = 0         &                                 00001230
+         EESP.BOSATT      = 0         &                                 00001240
+         EESP.PENSJONSTRYGDET = ' '   &                                 00001250
+         EESP.TT_LIK_PÅ   = ' '       &                                 00001260
+         EESP.MINST_20ÅR  = ' '       &                                 00001270
+         EESP.KONVENSJON  = ' '       &                                 00001280
+         EESP.KONVENSJON_LAND = 0     &                                 00001290
+         EESP.FRAVIK_BOSATT_EØS = ' ' &                                 00001300
+         EESP.FRAVIK_10_1 = ' '       &                                 00001310
+         EESP.TT_PÅ       = ' '       &                                 00001320
+         EESP.TT_FRAMTIDIG= ' '       &                                 00001330
+         EESP.TT_FAKTISK  = ' '       &                                 00001340
+         EESP.UNG_UFØR    = ' '       &                                 00001350
+         EESP.FRAVIK_FLYKT= ' '       &                                 00001360
+         EESP.TT_ENDRES   = ' '       &                                 00001370
+         EESP.OVERKOMP_UTL= ' '       &                                 00001380
+         EESP.IKKE_GP     = ' '       &                                 00001390
+         EESP.TT_FRA_1937_ÅR = 0         &                              00001400
+         EESP.TT_FRA_1937_MND= 0         &                              00001410
+         EESP.TT_F67         = 0         &                              00001420
+         EESP.TT_E66_Å       = 0         &                              00001430
+         EESP.TT_E66_M       = 0         &                              00001440
+         EESP.FRAVIK_19_3    = 0         &                              00001450
+         EESP.BEREGNING_KONVENSJON = ' '       &                        00001460
+         EESP.TT_KONVENSJON_ÅR = 0   )       THEN                       00001470
+         DO;                                                            00001480
+             FEIL_FUNNET         = '1'B;                                00001490
+             EESP.STATSBORGERNR  = 1815;                                00001500
+         END;                                                           00001510
+   END ETTERLATT_BOSATT;                                                00001520
+                                                                        00001530
+   AVDØD_BOSATT: PROC;                                                  00001540
+    IF ^(EESP.STATSBORGER_EK     = 0         &                          00001550
+         EESP.BOSATT_EK          = 0         &                          00001560
+         EESP.FRAVIK_FLYKT_EK    = ' '       &                          00001570
+         EESP.FRAVIK_10_1_3      = ' '       &                          00001580
+         EESP.STI_MÅ_EK          = 0         &                          00001590
+         EESP.TT_FRA_1937_ÅR_EK  = 0         &                          00001600
+         EESP.TT_FRA_1937_MND_EK = 0         &                          00001610
+         EESP.TT_F67_EK          = 0         &                          00001620
+         EESP.TT_E66_Å_EK        = 0         &                          00001630
+         EESP.TT_E66_M_EK        = 0         &                          00001640
+         EESP.FRAVIK_19_3_EK     = 0         &                          00001650
+         EESP.OVERKOMP_UTL_EK    = ' '       &                          00001660
+         EESP.AVKORT_SÆRTILL_EK  = ' '       &                          00001670
+         EESP.TP_NORDISK_EK      = 0         &                          00001680
+         EESP.TP_NORDISK_LAND_EK = 0         &                          00001690
+         EESP.BEREGNING_KONVENSJON_EK = ' '  &                          00001700
+         EESP.TT_KONVENSJON_ÅR_EK = 0        &                          00001710
+         EESP.BEREGN_FOLKETRYGD  = ' '  )       THEN                    00001720
+         DO;                                                            00001730
+             FEIL_FUNNET         = '1'B;                                00001740
+             EESP.STATSBORGER_EKNR = 1816;                              00001750
+         END;                                                           00001760
+   END AVDØD_BOSATT;                                                    00001770
+                                                                        00001780
+   AVDØD_EØS: PROC;                                                     00001790
+        IF ^(EESP.EØS_8_4_3A          = ' '     &                       00001800
+             EESP.TT_TEORETISK_ÅR     = 0       &                       00001810
+             EESP.TT_TEORETISK_MND    = 0       &                       00001820
+             EESP.TT_PRORATA_ÅR       = 0       &                       00001830
+             EESP.TT_PRORATA_MND      = 0       &                       00001840
+             EESP.PENSJON_EØS         = 0       &                       00001850
+             EESP.EØS_ÅR(1)           = 0   )    THEN                   00001860
+         DO;                                                            00001870
+             FEIL_FUNNET         = '1'B;                                00001880
+             EESP.BEREGN_FOLKETRYGDNR = 1818;                           00001890
+         END;                                                           00001900
+   END AVDØD_EØS;                                                       00001910
+                                                                        00001920
+   KONTROLL_ETTERLATT: PROC;                                            00001930
+                                                                        00001940
+    KEY_PEKER1  = ADDR(EESP.STATSBORGER);               /*3.1*/         00001950
+    KEY_PEKER2  = ADDR(EESP.BOSATT);                    /*3.2*/         00001960
+                                                                        00001970
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND1);               00001980
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)       00001990
+                                               INTO(ST_RECL);           00002000
+              GOTO STAT_UT;                                             00002010
+          NOTFND1:                                                      00002020
+              FEIL_FUNNET        = '1'B;                                00002030
+              EESP.STATSBORGERNR = 24;                                  00002040
+              GOTO STAT_UT;                                             00002050
+          STAT_UT:                                                      00002060
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND2);               00002070
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT2)       00002080
+                                               INTO(ST_RECL);           00002090
+              GOTO BO_UT;                                               00002100
+          NOTFND2:                                                      00002110
+              FEIL_FUNNET   = '1'B;                                     00002120
+              EESP.BOSATTNR = 25;                                       00002130
+              GOTO BO_UT;                                               00002140
+          BO_UT:                                                        00002150
+                                                                        00002160
+            IF EESP.PENSJONSTRYGDET = 'X'     THEN        /*3.3.1*/     00002170
+               EESP.PENSJONSTRYGDET = 'J';                              00002180
+            IF ^(EESP.PENSJONSTRYGDET = ' ' !                           00002190
+                 EESP.PENSJONSTRYGDET = 'J')  THEN                      00002200
+               DO;                                                      00002210
+                  FEIL_FUNNET            = '1'B;                        00002220
+                  EESP.PENSJONSTRYGDETNR = 354;                         00002230
+               END;                                                     00002240
+            IF EESP.TT_LIK_PÅ    = 'X'     THEN           /*3.3.2*/     00002250
+               EESP.TT_LIK_PÅ    = 'J';                                 00002260
+            ELSE                                                        00002270
+            IF ^(EESP.TT_LIK_PÅ  = ' ' ! EESP.TT_LIK_PÅ = 'J')          00002280
+               THEN                                                     00002290
+               DO;                                                      00002300
+                  FEIL_FUNNET         = '1'B;                           00002310
+                  EESP.TT_LIK_PÅNR    = 478;                            00002320
+               END;                                                     00002330
+            IF EESP.MINST_20ÅR     = 'X'            THEN  /*3.3.3*/     00002340
+               EESP.MINST_20ÅR     = 'J';                               00002350
+            IF ^(EESP.MINST_20ÅR     = ' ' !                            00002360
+                 EESP.MINST_20ÅR     = 'J')  THEN                       00002370
+               DO;                                                      00002380
+                  FEIL_FUNNET            = '1'B;                        00002390
+                  EESP.MINST_20ÅRNR     = 1806;                         00002400
+               END;                                                     00002410
+            IF EESP.KONVENSJON = 'X'             THEN     /*3.3.4*/     00002420
+               EESP.KONVENSJON = 'J';                                   00002430
+            IF ^(EESP.KONVENSJON = ' ' ! EESP.KONVENSJON = 'J') THEN    00002440
+               DO;                                                      00002450
+                  FEIL_FUNNET       = '1'B;                             00002460
+                  EESP.KONVENSJONNR = 1806;                             00002470
+               END;                                                     00002480
+                                                                        00002490
+          KEY_PEKER1  = ADDR(EESP.KONVENSJON_LAND);       /*3.3.4*/     00002500
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND5);               00002510
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT1)       00002520
+                                               INTO(ST_RECL);           00002530
+              GOTO UT2;                                                 00002540
+          NOTFND5:                                                      00002550
+              FEIL_FUNNET        = '1'B;                                00002560
+              EESP.KONVENSJON_LANDNR = 24;                              00002570
+              GOTO UT2;                                                 00002580
+          UT2:                                                          00002590
+                                                                        00002600
+            IF EESP.KONVENSJON = 'J'   & KONVENSJON_LAND = 0    THEN    00002610
+               DO;                                                      00002620
+                  FEIL_FUNNET       = '1'B;                             00002630
+                  EESP.KONVENSJON_LANDNR = 395;                         00002640
+               END;                                                     00002650
+            IF EESP.KONVENSJON ^= 'J'  & KONVENSJON_LAND > 0    THEN    00002660
+               DO;                                                      00002670
+                  FEIL_FUNNET       = '1'B;                             00002680
+                  EESP.KONVENSJONNR = 396;                              00002690
+               END;                                                     00002700
+            IF EESP.FRAVIK_BOSATT_EØS = 'N'      THEN     /*3.3.5*/     00002710
+               EESP.FRAVIK_BOSATT_EØS = ' ';                            00002720
+            IF EESP.FRAVIK_BOSATT_EØS = 'X'      THEN                   00002730
+               EESP.FRAVIK_BOSATT_EØS = 'J';                            00002740
+            IF ^(EESP.FRAVIK_BOSATT_EØS = ' ' !                         00002750
+                 EESP.FRAVIK_BOSATT_EØS = 'J') THEN                     00002760
+               DO;                                                      00002770
+                  FEIL_FUNNET       = '1'B;                             00002780
+                  EESP.FRAVIK_BOSATT_EØSNR = 1807;                      00002790
+               END;                                                     00002800
+            IF EESP.TT_PÅ        = 'N'     THEN           /*3.3.6*/     00002810
+               EESP.TT_PÅ        = ' ';                                 00002820
+            ELSE                                                        00002830
+            IF EESP.TT_PÅ        = 'X'     THEN                         00002840
+               EESP.TT_PÅ        = 'J';                                 00002850
+            ELSE                                                        00002860
+            IF ^(EESP.TT_PÅ      = ' ' ! EESP.TT_PÅ = 'J')              00002870
+               THEN                                                     00002880
+               DO;                                                      00002890
+                  FEIL_FUNNET         = '1'B;                           00002900
+                  EESP.TT_PÅ          = 478;                            00002910
+               END;                                                     00002920
+            IF EESP.TT_FRAMTIDIG = 'N'     THEN           /*3.3.6*/     00002930
+               EESP.TT_FRAMTIDIG = ' ';                                 00002940
+            ELSE                                                        00002950
+            IF EESP.TT_FRAMTIDIG = 'X'     THEN                         00002960
+               EESP.TT_FRAMTIDIG = 'J';                                 00002970
+            ELSE                                                        00002980
+            IF ^(EESP.TT_FRAMTIDIG = ' ' ! EESP.TT_FRAMTIDIG = 'J')     00002990
+               THEN                                                     00003000
+               DO;                                                      00003010
+                  FEIL_FUNNET         = '1'B;                           00003020
+                  EESP.TT_FRAMTIDIG   = 479;                            00003030
+               END;                                                     00003040
+            IF EESP.TT_FAKTISK   = 'N'     THEN           /*3.3.6*/     00003050
+               EESP.TT_FAKTISK   = ' ';                                 00003060
+            ELSE                                                        00003070
+            IF EESP.TT_FAKTISK   = 'X'     THEN                         00003080
+               EESP.TT_FAKTISK   = 'J';                                 00003090
+            ELSE                                                        00003100
+            IF ^(EESP.TT_FAKTISK = ' ' ! EESP.TT_FAKTISK   = 'J')       00003110
+               THEN                                                     00003120
+               DO;                                                      00003130
+                  FEIL_FUNNET         = '1'B;                           00003140
+                  EESP.TT_FAKTISK     = 480;                            00003150
+               END;                                                     00003160
+            IF EESP.UNG_UFØR     = 'N'     THEN                         00003170
+               EESP.UNG_UFØR     = ' ';                                 00003180
+            ELSE                                                        00003190
+  /***      IF EESP.UNG_UFØR     = 'X'     THEN                         00003200
+               EESP.UNG_UFØR     = 'J';                                 00003210
+            ELSE                                                        00003220
+  ***/                                                    /*3.3.7*/     00003230
+            IF ^(EESP.UNG_UFØR   = ' ' ! EESP.UNG_UFØR     = 'J')       00003240
+               THEN                                                     00003250
+               DO;                                                      00003260
+                  FEIL_FUNNET         = '1'B;                           00003270
+                  EESP.UNG_UFØR       = 272;                            00003280
+               END;                                                     00003290
+            IF EESP.FRAVIK_FLYKT = 'N'     THEN                         00003300
+               EESP.FRAVIK_FLYKT = ' ';                                 00003310
+                                                          /*3.4*/       00003320
+            IF ^(EESP.FRAVIK_FLYKT = ' ' ! EESP.FRAVIK_FLYKT = 'J')     00003330
+               THEN                                                     00003340
+               DO;                                                      00003350
+                  FEIL_FUNNET         = '1'B;                           00003360
+                  EESP.FRAVIK_FLYKTNR = 272;                            00003370
+               END;                                                     00003380
+            IF ^(EESP.OVERKOMP_UTL = 'J' !                /*3.6*/       00003390
+                 EESP.OVERKOMP_UTL = ' ' !                              00003400
+                 EESP.OVERKOMP_UTL = 'N')         THEN                  00003410
+               DO;                                                      00003420
+                  FEIL_FUNNET         = '1'B;                           00003430
+                  EESP.OVERKOMP_UTLNR = 272;                            00003440
+               END;                                                     00003450
+            IF EESP.IKKE_GP = 'X'    THEN                 /*3.7*/       00003460
+               EESP.IKKE_GP = 'J';                                      00003470
+            IF ^(EESP.IKKE_GP = ' ' ! EESP.IKKE_GP = 'J') THEN          00003480
+               DO;                                                      00003490
+                  FEIL_FUNNET    = '1'B;                                00003500
+                  EESP.IKKE_GPNR = 1811;                                00003510
+               END;                                                     00003520
+            IF EESP.BEREGNING_KONVENSJON = 'N'      THEN  /*3.8.3*/     00003530
+               EESP.BEREGNING_KONVENSJON = ' ';                         00003540
+            IF EESP.BEREGNING_KONVENSJON = 'X'      THEN                00003550
+               EESP.BEREGNING_KONVENSJON = 'J';                         00003560
+            IF ^(EESP.BEREGNING_KONVENSJON = ' ' !                      00003570
+                 EESP.BEREGNING_KONVENSJON = 'J') THEN                  00003580
+               DO;                                                      00003590
+                  FEIL_FUNNET            = '1'B;                        00003600
+                  EESP.BEREGNING_KONVENSJONNR = 1811;                   00003610
+               END;                                                     00003620
+                                                                        00003630
+ /* ***************************************************************** */00003640
+ /*              DIV. KRYSSKONTROLLER - ETTERLATTE                    */00003650
+ /* ***************************************************************** */00003660
+                                                                        00003670
+      IF FEIL_FUNNET THEN                                               00003680
+         GO TO L999_FEIL;                                               00003690
+                                                                        00003700
+            IF BOSATT ^= 0                     THEN        /*3.2*/      00003710
+               IF ^(PENSJONSTRYGDET     = 'J'  !           /*3.3.1*/    00003720
+                    TT_LIK_PÅ           = 'J'  !           /*3.3.2*/    00003730
+                    MINST_20ÅR         = 'J'  !            /*3.3.3*/    00003740
+                    KONVENSJON          = 'J'  !           /*3.3.4*/    00003750
+                    FRAVIK_BOSATT_EØS   = 'J')      THEN   /*3.3.5*/    00003760
+                  DO;                                                   00003770
+                     FEIL_FUNNET         = '1'B;                        00003780
+                     EESP.PENSJONSTRYGDETNR = 1817;                     00003790
+                  END;                                                  00003800
+            IF BOSATT = 0                        THEN                   00003810
+               IF (PENSJONSTRYGDET     = 'J')  !                        00003820
+                  (MINST_20ÅR         = 'J')  !                         00003830
+                  (KONVENSJON          = 'J')  !                        00003840
+                  (FRAVIK_BOSATT_EØS   = 'J')      THEN                 00003850
+                  DO;                                                   00003860
+                     FEIL_FUNNET         = '1'B;                        00003870
+                     EESP.BOSATTNR       = 1809;                        00003880
+                  END;                                                  00003890
+            IF (KONVENSJON          = 'J') &                            00003900
+               (FRAVIK_BOSATT_EØS   = 'J')      THEN                    00003910
+                  DO;                                                   00003920
+                     FEIL_FUNNET         = '1'B;                        00003930
+                     EESP.KONVENSJONNR   = 1808;                        00003940
+                  END;                                                  00003950
+            IF FRAVIK_BOSATT_EØS   = 'J'   &               /*3.3.5*/    00003960
+                    FRAVIK_FLYKT  ^= 'J'         THEN      /*3.4*/      00003970
+               IF ^(STATSBORGER < 107)       & /*NORDEN          */     00003980
+                  ^(STATSBORGER = 112)       & /*BELGIA          */     00003990
+                  ^(STATSBORGER = 117)       & /*FRANKRIKE       */     00004000
+                  ^(STATSBORGER = 118)       & /*GIBRALTAR       */     00004010
+                  ^(STATSBORGER = 119)       & /*HELLAS          */     00004020
+                  ^(STATSBORGER = 121)       & /*IRLAND          */     00004030
+                  ^(STATSBORGER = 123)       & /*ITALIA          */     00004040
+                  ^(STATSBORGER = 129)       & /*LUXEMBURG       */     00004050
+                  ^(STATSBORGER = 127)       & /*NEDERLAND       */     00004060
+                  ^(STATSBORGER = 132)       & /*PORTUGAL        */     00004070
+                  ^(STATSBORGER = 137)       & /*SPANIA          */     00004080
+                  ^(STATSBORGER = 139)       & /*STORBRITANNIA   */     00004090
+                  ^(STATSBORGER = 144)       & /*VEST-TYSKLAND   */     00004100
+                  ^(STATSBORGER = 151)       & /*ØST-TYSKLAND    */     00004110
+                  ^(STATSBORGER = 153) THEN    /*ØSTERRIKE       */     00004120
+                  DO;                                                   00004130
+                     FEIL_FUNNET         = '1'B;                        00004140
+                     FRAVIK_BOSATT_EØSNR = 1812;                        00004150
+                  END;                                                  00004160
+                                                                        00004170
+            IF FRAVIK_FLYKT = 'J'                 THEN     /*3.4*/      00004180
+               IF BOSATT > 0    &       /*IKKE I NORGE*/                00004190
+                  PENSJONSTRYGDET ^= 'J'           THEN                 00004200
+                  DO;                                                   00004210
+                     FEIL_FUNNET         = '1'B;                        00004220
+                     FRAVIK_FLYKTNR      = 469;                         00004230
+                  END;                                                  00004240
+            IF IKKE_GP = 'J'     &                         /*3.7*/      00004250
+               BOSATT > 106              THEN                           00004260
+                  DO;                                                   00004270
+                     FEIL_FUNNET         = '1'B;                        00004280
+                     IKKE_GPNR           = 1813;                        00004290
+                  END;                                                  00004300
+            IF TT_FRA_1937_ÅR > 0    &                     /*3.8.1*/    00004310
+               HJ_VIRK_ÅM < 9100                THEN                    00004320
+                  DO;                                                   00004330
+                     FEIL_FUNNET         = '1'B;                        00004340
+                     TT_FRA_1937_ÅRNR     = 475;                        00004350
+                  END;                                                  00004360
+                                                                        00004370
+        FYLT_SEKSTISJU = ((ÅR + 67) * 12) + MN;                         00004380
+                                                                        00004390
+        FYLT_SYTTI = FYLT_SEKSTISJU + (3 * 12);                         00004400
+                                                                        00004410
+ /* ***************************************************************** */00004420
+ /* KONTROLLERER SØKERENS TRYGDETID :                                 */00004430
+ /* ***************************************************************** */00004440
+                                                                        00004450
+    TT_MAKS_TIL_DATO = (HJ_Å - FNR.ÅR - 16) * 100 + HJ_M;               00004460
+                                                                        00004470
+    W_TT_MND  = EESP.TT_FRA_1937_ÅR * 12 + EESP.TT_FRA_1937_MND;        00004480
+                                                                        00004490
+    IF W_TT_MND > TT_MAKS_TIL_DATO THEN                                 00004500
+       DO;                                                              00004510
+          FEIL_FUNNET     = '1'B;                                       00004520
+          EESP.TT_FRA_1937_ÅRNR  = 359;                                 00004530
+       END;                                                             00004540
+                                                                        00004550
+   END KONTROLL_ETTERLATT;                                              00004560
+                                                                        00004570
+   SJEKK_NUMERISK: PROC;                                                00004580
+                                                                        00004590
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR4(EESP.TP_NORDISK_EK)) THEN          00004600
+        DO;                                                /*4.8*/      00004610
+           FEIL_FUNNET           = '1'B;                                00004620
+           EESP.TP_NORDISK_EKNR  = 200;                                 00004630
+        END;                                                            00004640
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR1(EESP.FRAVIK_19_3)) THEN            00004650
+        DO;                                                /*3.8.2*/    00004660
+           FEIL_FUNNET           = '1'B;                                00004670
+           EESP.FRAVIK_19_3NR  = 200;                                   00004680
+        END;                                                            00004690
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR1(EESP.FRAVIK_19_3_EK)) THEN         00004700
+        DO;                                                /*4.7*/      00004710
+           FEIL_FUNNET           = '1'B;                                00004720
+           EESP.FRAVIK_19_3_EKNR = 200;                                 00004730
+        END;                                                            00004740
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_KONVENSJON_ÅR)) THEN       00004750
+        DO;                                                /*3.8.3*/    00004760
+           FEIL_FUNNET           = '1'B;                                00004770
+           EESP.TT_KONVENSJON_ÅRNR  = 200;                              00004780
+        END;                                                            00004790
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_KONVENSJON_ÅR_EK)) THEN    00004800
+        DO;                                                /*4.9*/      00004810
+           FEIL_FUNNET           = '1'B;                                00004820
+           EESP.TT_KONVENSJON_ÅR_EKNR  = 200;                           00004830
+        END;                                                            00004840
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_FRA_1937_ÅR)) THEN         00004850
+        DO;                                                /*3.8.1*/    00004860
+           FEIL_FUNNET           = '1'B;                                00004870
+           EESP.TT_FRA_1937_ÅRNR  = 200;                                00004880
+        END;                                                            00004890
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_FRA_1937_MND)) THEN        00004900
+        DO;                                                             00004910
+           FEIL_FUNNET           = '1'B;                                00004920
+           EESP.TT_FRA_1937_MNDNR = 200;                                00004930
+        END;                                                            00004940
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR4(EESP.STI_MÅ_EK)) THEN /*4.4*/      00004950
+        DO;                                                             00004960
+           FEIL_FUNNET        = '1'B;                                   00004970
+           EESP.STI_MÅ_EKNR      = 200;                                 00004980
+        END;                                                            00004990
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_F67)) THEN    /*3.8.2*/    00005000
+        DO;                                                             00005010
+           FEIL_FUNNET           = '1'B;                                00005020
+           EESP.TT_F67NR         = 200;                                 00005030
+        END;                                                            00005040
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_E66_Å)) THEN  /*3.8.2*/    00005050
+        DO;                                                             00005060
+           FEIL_FUNNET           = '1'B;                                00005070
+           EESP.TT_E66_ÅNR       = 200;                                 00005080
+        END;                                                            00005090
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_E66_M)) THEN  /*3.8.2*/    00005100
+        DO;                                                             00005110
+           FEIL_FUNNET           = '1'B;                                00005120
+           EESP.TT_E66_MNR       = 200;                                 00005130
+        END;                                                            00005140
+  IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_FRA_1937_ÅR_EK)) THEN         00005150
+     DO;                                                   /*4.6*/      00005160
+        FEIL_FUNNET              = '1'B;                                00005170
+        EESP.TT_FRA_1937_ÅR_EKNR = 200;                                 00005180
+     END;                                                               00005190
+  IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_FRA_1937_MND_EK)) THEN        00005200
+     DO;                                                   /*4.6*/      00005210
+        FEIL_FUNNET               = '1'B;                               00005220
+        EESP.TT_FRA_1937_MND_EKNR = 200;                                00005230
+     END;                                                               00005240
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_F67_EK)) THEN /*4.7*/      00005250
+        DO;                                                             00005260
+           FEIL_FUNNET           = '1'B;                                00005270
+           EESP.TT_F67_EKNR      = 200;                                 00005280
+        END;                                                            00005290
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_E66_Å_EK)) THEN /*4.7*/    00005300
+        DO;                                                             00005310
+           FEIL_FUNNET           = '1'B;                                00005320
+           EESP.TT_E66_Å_EKNR    = 200;                                 00005330
+        END;                                                            00005340
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR2(EESP.TT_E66_M_EK)) THEN /*4.7*/    00005350
+        DO;                                                             00005360
+           FEIL_FUNNET           = '1'B;                                00005370
+           EESP.TT_E66_M_EKNR    = 200;                                 00005380
+        END;                                                            00005390
+     IF ^F_NUMERISK(F_FELT_PIC_CHAR5(EESP.PENSJON_EØS)) THEN /*4.15*/   00005400
+        DO;                                                             00005410
+           FEIL_FUNNET           = '1'B;                                00005420
+           EESP.PENSJON_EØSNR    = 200;                                 00005430
+        END;                                                            00005440
+   END SJEKK_NUMERISK;                                                  00005450
+ /* ***************************************************************** */00005460
+ /*           F E L T K O N T R O L L E R  -  AVDØDE                  */00005470
+ /* ***************************************************************** */00005480
+                                                                        00005490
+  KONTROLL_AVDØD: PROC;                                                 00005500
+                                                                        00005510
+  DCL                                                                   00005520
+      TT_EK       PIC'99';                                              00005530
+   DCL                                                                  00005540
+      KEY_BIT3                   BIT(32) BASED (KEY_PEKER3),            00005550
+      KEY_BIT4                   BIT(32) BASED (KEY_PEKER4),            00005560
+      KEY_PEKER3                 POINTER,                               00005570
+      KEY_PEKER4                 POINTER;                               00005580
+                                                                        00005590
+      KEY_PEKER3      = ADDR(EESP.STATSBORGER_EK);           /*4.1*/    00005600
+      KEY_PEKER4      = ADDR(EESP.BOSATT_EK);                /*4.2*/    00005610
+                                                                        00005620
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND3);               00005630
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT3)       00005640
+                                               INTO(ST_RECL);           00005650
+              GOTO STAT_UT2;                                            00005660
+          NOTFND3:                                                      00005670
+              FEIL_FUNNET           = '1'B;                             00005680
+              EESP.STATSBORGER_EKNR = 24;                               00005690
+              GOTO STAT_UT2;                                            00005700
+          STAT_UT2:                                                     00005710
+              EXEC CICS HANDLE CONDITION NOTFND(NOTFND4);               00005720
+              EXEC CICS READ DATASET ('STATTAB') RIDFLD(KEY_BIT4)       00005730
+                                               INTO(ST_RECL);           00005740
+              GOTO BO_UT2;                                              00005750
+          NOTFND4:                                                      00005760
+              FEIL_FUNNET      = '1'B;                                  00005770
+              EESP.BOSATT_EKNR = 25;                                    00005780
+              GOTO BO_UT2;                                              00005790
+          BO_UT2:                                                       00005800
+            IF EESP.FRAVIK_FLYKT_EK = 'N'     THEN           /*4.3*/    00005810
+               EESP.FRAVIK_FLYKT_EK = ' ';                              00005820
+            IF ^(EESP.FRAVIK_FLYKT_EK = ' ' ! EESP.FRAVIK_FLYKT_EK= 'J')00005830
+               THEN                                                     00005840
+               DO;                                                      00005850
+                  FEIL_FUNNET         = '1'B;                           00005860
+                  EESP.FRAVIK_FLYKT_EKNR = 26;                          00005870
+               END;                                                     00005880
+            IF EESP.FRAVIK_10_1_3   = 'X'            THEN    /*4.4*/    00005890
+               EESP.FRAVIK_10_1_3   = 'J';                              00005900
+            IF EESP.FRAVIK_10_1_3  ^= 'J'            THEN               00005910
+               EESP.FRAVIK_10_1_3   = ' ' ;                             00005920
+                                                                        00005930
+            IF EESP.FRAVIK_10_1_3  = 'J'   &                            00005940
+               EESP.STI_MÅ_EK = 0 THEN                                  00005950
+               DO;                                                      00005960
+                  FEIL_FUNNET        = '1'B;                            00005970
+                  EESP.STI_MÅ_EKNR   = 393;                             00005980
+               END;                                                     00005990
+            IF EESP.STI_MÅ_EK > 0 THEN                       /*4.4*/    00006000
+               DO;                                                      00006010
+                  HJ_STI_ÅM   = F_SNU_DATO(EESP.STI_MÅ_EK);             00006020
+                  IF  ^(HJ_STI_ÅM >= HJ_ÅM  &                           00006030
+                        HJ_STI_ÅM <= HJ_VIRK_ÅM) THEN                   00006040
+                     DO;                                                00006050
+                        FEIL_FUNNET        = '1'B;                      00006060
+                        EESP.STI_MÅ_EKNR      = 362;                    00006070
+                     END;                                               00006080
+               END;                                                     00006090
+                                                                        00006100
+  IF ^(EESP.OVERKOMP_UTL_EK = 'J' ! EESP.OVERKOMP_UTL_EK = ' ' !        00006110
+       EESP.OVERKOMP_UTL_EK = 'N')        THEN               /*4.5*/    00006120
+     DO;                                                                00006130
+        FEIL_FUNNET            = '1';                                   00006140
+        EESP.OVERKOMP_UTL_EKNR = 35;                                    00006150
+     END;                                                               00006160
+            IF EESP.AVKORT_SÆRTILL_EK = 'N'         THEN     /*4.8*/    00006170
+               EESP.AVKORT_SÆRTILL_EK = ' ';                            00006180
+            IF ^(EESP.AVKORT_SÆRTILL_EK = ' ' !                         00006190
+                 EESP.AVKORT_SÆRTILL_EK = 'J') THEN                     00006200
+               DO;                                                      00006210
+                  FEIL_FUNNET            = '1'B;                        00006220
+                  EESP.AVKORT_SÆRTILL_EKNR = 452; /*EØS-HL*/            00006230
+               END;                                                     00006240
+            IF EESP.AVKORT_SÆRTILL_EK ^= 'J' &                          00006250
+               EESP.TP_NORDISK_EK > 0               THEN     /*4.8*/    00006260
+               DO;                                                      00006270
+                  FEIL_FUNNET         = '1'B;                           00006280
+                  EESP.TP_NORDISK_EKNR = 458;    /*EØS-HL*/             00006290
+               END;                                                     00006300
+            IF EESP.AVKORT_SÆRTILL_EK ^= 'J' &                          00006310
+               EESP.TP_NORDISK_LAND_EK > 0          THEN     /*4.8*/    00006320
+               DO;                                                      00006330
+                  FEIL_FUNNET         = '1'B;                           00006340
+                  EESP.TP_NORDISK_LAND_EKNR = 459; /*EØS-HL*/           00006350
+               END;                                                     00006360
+            IF EESP.TP_NORDISK_EK  > 0      &                /*4.8*/    00006370
+               EESP.TP_NORDISK_LAND_EK = 0          THEN                00006380
+               DO;                                                      00006390
+                  FEIL_FUNNET         = '1'B;                           00006400
+                  EESP.TP_NORDISK_LAND_EKNR = 460; /*EØS-HL*/           00006410
+               END;                                                     00006420
+            IF AVKORT_SÆRTILL_EK = 'J' &                   /*4.8*/      00006430
+               BOSATT_EK > 106              THEN           /*4.2*/      00006440
+                  DO;                                                   00006450
+                     FEIL_FUNNET         = '1'B;                        00006460
+                     AVKORT_SÆRTILL_EKNR = 1814;                        00006470
+                  END;                                                  00006480
+  END KONTROLL_AVDØD;                                                   00006490
+  /* *******************************************************  */                
+                                                                                
+  KONTROLL_EØS: PROC;                                                   00006500
+            /** EØS - INFORMASJON : */                                  00006510
+                                                                        00006520
+            IF ^(EESP.BEREGN_FOLKETRYGD  = 'J' !          /*4.10*/      00006530
+                 EESP.BEREGN_FOLKETRYGD  = 'N')  THEN                   00006540
+               DO;                                                      00006550
+                  FEIL_FUNNET            = '1'B;                        00006560
+                  EESP.BEREGN_FOLKETRYGDNR = 453;   /*EØS-HL */         00006570
+               END;                                                     00006580
+            IF EESP.EØS_8_4_3A     = 'N'            THEN  /*4.11*/      00006590
+               EESP.EØS_8_4_3A     = ' ';                               00006600
+            IF ^(EESP.EØS_8_4_3A     = ' ' !                            00006610
+                 EESP.EØS_8_4_3A     = 'J')  THEN                       00006620
+               DO;                                                      00006630
+                  FEIL_FUNNET            = '1'B;                        00006640
+                  EESP.EØS_8_4_3ANR      = 454;       /*EØS-HL */       00006650
+               END;                                                     00006660
+            IF TT_TEORETISK_MND > 12         THEN         /*4.13*/      00006670
+               DO;                                                      00006680
+                  FEIL_FUNNET            = '1'B;                        00006690
+                  TT_TEORETISK_MNDNR = 455;       /*EØS-HL */           00006700
+               END;                                                     00006710
+            IF TT_PRORATA_MND > 12         THEN           /*4.14*/      00006720
+               DO;                                                      00006730
+                  FEIL_FUNNET            = '1'B;                        00006740
+                  TT_PRORATA_MNDNR = 456;      /* EØS-HL */             00006750
+               END;                                                     00006760
+            IF EØS_ÅR(1) > 0               THEN           /*4.12*/      00006770
+               DO;                                                      00006780
+                  IF EØS_ÅR(1) < 67         THEN                        00006790
+                     DO;                                                00006800
+                        FEIL_FUNNET          = '1'B;                    00006810
+                        EØS_ÅRNR(1)          = 457;       /*EØS-HL */   00006820
+                     END;                                               00006830
+                  ELSE                                                  00006840
+         /*         DO J = 2 TO 33 UNTIL (EØS_ÅR(J) = 0);     */        00006850
+                    DO J = 2 TO 33 WHILE (EØS_ÅR(J) > 0);               00006860
+                       IF EØS_ÅR(J - 1)  > EØS_ÅR (J)   THEN            00006870
+                          DO;                                           00006880
+                             FEIL_FUNNET       = '1'B;                  00006890
+                             EØS_ÅRNR(1)       = 461;      /* EØS-HL */ 00006900
+                          END;                                          00006910
+                    END;                                                00006920
+               END;                                                     00006930
+  END KONTROLL_EØS;                                                     00006940
+  L999_FEIL :                                                           00006950
+  END KONTROLL_EE_SPES;                                                 00006960

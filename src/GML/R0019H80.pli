@@ -1,0 +1,563 @@
+ /*       SIST ENDRET 19/05-98 13.04.44 AV   JDA7339                  */00000000
+ /*       SIST ENDRET 19/05-98 12.51.54 AV   JDA7339                  */00000010
+ /*       SIST ENDRET 04/02-91 14.01.55 AV   DYBVIK                   */00000020
+ /*       SIST ENDRET 01/12-87 10.26.01 AV   DYBVIK                   */00000030
+ /*       SIST ENDRET 22/12-86 08.42.58 AV   DYBVIK                   */00000040
+ /*       SIST ENDRET 16/09-86 11.50.09 AV   DYBVIK                   */00000050
+ /*       SIST ENDRET 19/06-86 14.32.27 AV   BRITT                    */00000060
+ R0019H8: PROC (FR1_PEKER) OPTIONS (MAIN);                              00000070
+ %SKIP(3);                                                              00000080
+ /********************************************************************/ 00000090
+ /*IDENTIFIKASJON                                                    */ 00000100
+ /*     R0019H80            -           HOVEDPROGRAM I PL1           */ 00000110
+ /*     PROGRAMMERER: BRITT FOSSUM      JUNI -86                     */ 00000120
+ /*HENSIKT                                                           */ 00000130
+ /*     SKRIVE MELDING TIL ETTERLATTE MED 0 I BRUTTO YTELSE          */ 00000140
+ /*INPUT                                                             */ 00000150
+ /*     OMRNULL:                                                     */ 00000160
+ /*     SORTERT FILE MED ALLE ETTERLATTE MED 0 I BRUTTO YTELSE       */ 00000170
+ /*     DANNET VED OMREGNING - 9H01                                  */ 00000180
+ /********************************************************************/ 00000190
+ /*ENDRET 181187 AV BRITT                                            */ 00000200
+ /*     BREVENE SKAL LAGES I 2 EKS. JFR. BREV FRA P2 130787.         */ 00000210
+ /********************************************************************/ 00000220
+ %SKIP(2);                                                              00000230
+ %INCLUDE P0019953;                     /*  TRYGDEKONTOR-TABELLEN */    00000240
+ %INCLUDE P0019925;                     /*  GRUNNBELØPSTABELLEN   */    00000250
+                                                                        00000260
+                                                                        00000270
+ %PAGE;                                                                 00000280
+                                                                        00000290
+ /*  DCL I FORBINDELSE MED BRUK AV FOLKEREGISTER-BASEN */               00000300
+                                                                        00000310
+     DCL FR1_PEKER            POINTER;                                  00000320
+     DCL PLITDLI              ENTRY;                                    00000330
+     DCL IO_HJELPE_PTR        POINTER;                                  00000340
+     DCL GU                   CHAR(4)         INIT  ('GU  ');           00000350
+     DCL FIRE                 FIXED BIN (31)  INIT  (4);                00000360
+                                                                        00000370
+     DCL 1 FR1_SSA STATIC,                                              00000380
+           2 HOVEDDEL         CHAR (17)       INIT('FR0PERSN(FODSELNR'),00000390
+           2 REL_OP           CHAR (2)        INIT(' ='),               00000400
+           2 KEY_FNR          FIXED DEC (11)  INIT(0),                  00000410
+           2 H_PAR            CHAR (1)        INIT(')');                00000420
+                                                                        00000430
+     DCL 1 FR0PERSN,                                                    00000440
+           2 FR_FNR           FIXED DEC (11),                           00000450
+           2 FR_ADR1          CHAR (25),                                00000460
+           2 FR_ADR2          CHAR (25),                                00000470
+           2 FR_ADR4          CHAR (21);                                00000480
+                                                                        00000490
+     DCL 1 FR1_PCB            BASED (FR1_PEKER),                        00000500
+ %INCLUDE P0012003;                           /*  PCB-OMRÅDET */        00000510
+                                                                        00000520
+                                                                        00000530
+ /*  FILER */                                                           00000540
+                                                                        00000550
+     DCL  OMRNULL             FILE RECORD INPUT;                        00000560
+     DCL  TRKFIL              FILE RECORD SEQUENTIAL INPUT ENV(VSAM);   00000570
+     DCL  GFIL                FILE RECORD INPUT KEYED ENV(VSAM);        00000580
+     DCL  BREV                FILE STREAM OUTPUT PRINT;                 00000590
+     DCL  SYSPRINT   EXTERNAL FILE STREAM OUTPUT PRINT;                 00000600
+                                                                        00000610
+                                                                        00000620
+     DCL  1 ETTERLATTEREC,                                              00000630
+                                                                        00000640
+             2 FNR            PIC      '(11)9',                         00000650
+             2 NAVN           CHAR      (25),                           00000660
+             2 SPROG          CHAR      (1),                            00000670
+             2 TKNR           PIC      '(4)9',                          00000680
+             2 INNT_GRENSE    PIC      '(7)9';                          00000690
+                                                                        00000700
+ /*  BRYTERE, TELLERE, PEKERE OG INDEKSER */                            00000710
+                                                                        00000720
+     DCL  TKNR_FUNNET         BIT(1) INIT ('0'B);                       00000730
+     DCL  EOF                 BIT(1) INIT ('0'B);                       00000740
+     DCL  EOF_TRKFIL          BIT(1) INIT ('0'B);                       00000750
+     DCL  TELLER_LEST         BINARY FIXED (31) INIT (0B);              00000760
+     DCL  TELLER_SKREVET      BINARY FIXED (31) INIT (0B);              00000770
+     DCL  TELLER_VSAM_FEIL    BINARY FIXED (31) INIT (0B);              00000780
+     DCL  G_PEKER             POINTER;                                  00000790
+     DCL  I                   BINARY FIXED (15);                        00000800
+                                                                        00000810
+ /*  INNEBYGDE FUNKSJONER */                                            00000820
+                                                                        00000830
+     DCL (DATE,ADDR,ONCODE)   BUILTIN;                                  00000840
+                                                                        00000850
+ /*  HJELPEFELTER */                                                    00000860
+                                                                        00000870
+     DCL  W01_TKNR            CHAR (4) INIT ('0000');                   00000880
+     DCL  W01_FORRIGE_TKNR    CHAR (4) INIT ('0000');                   00000890
+                                                                        00000900
+     DCL  1 W01_IO,                                                     00000910
+            2 NOKKEL          CHAR (8),                                 00000920
+            2 REST            CHAR (1009);                              00000930
+                                                                        00000940
+     DCL  W01_GKEY            CHAR (8) INIT ('P0019925');               00000950
+                                                                        00000960
+     DCL  W01_DATO_ÅMD        CHAR(6);                                  00000970
+     DCL  W01_AAR             DEF W01_DATO_ÅMD POS(1) CHAR(2);          00000980
+     DCL  W01_MND             DEF W01_DATO_ÅMD POS(3) CHAR(2);          00000990
+     DCL  W01_DAG             DEF W01_DATO_ÅMD POS(5) CHAR(2);          00001000
+                                                                        00001010
+     DCL  W01_G               FIXED DEC (5);                            00001020
+     DCL  W01_G_ENDR_DATO_ÅMD PIC '(6)9';                               00001030
+     DCL  W01_G_ENDR_AAR      DEF W01_G_ENDR_DATO_ÅMD                   00001040
+                                              POS(1) PIC '(2)9';        00001050
+     DCL  W01_G_ENDR_MND      DEF W01_G_ENDR_DATO_ÅMD                   00001060
+                                              POS(3) PIC '(2)9';        00001070
+                                                                        00001080
+ /*  HJELPEFELTER FOR Å SNU FØDSELSDATO */                              00001090
+                                                                        00001100
+     DCL  W01_SNU_FNR         PIC '(11)9';                              00001110
+     DCL  W01_FNR_DAG         DEF W01_SNU_FNR POS(1)  PIC '(2)9';       00001120
+     DCL  W01_FNR_ÅR          DEF W01_SNU_FNR POS(5)  PIC '(2)9';       00001130
+                                                                        00001140
+     DCL  W01_HJELPE_FELT     PIC '(2)9';                               00001150
+                                                                        00001160
+ /*  REDEFINERING AV ADRESSE4 */                                        00001170
+                                                                        00001180
+     DCL  01 W01_ADR4,                                                  00001190
+             02 POSTNR        CHAR (4),                                 00001200
+             02 FILLER        CHAR (1),                                 00001210
+             02 POSTSTED      CHAR (16);                                00001220
+                                                                        00001230
+     DCL  W02_ADR4_CHAR       DEF W01_ADR4    CHAR(21);                 00001240
+                                                                        00001250
+                                                                        00001260
+ %SKIP(2);                                                              00001270
+ /*------------------------------------------------------------------*/ 00001280
+ /*  SLUTT PÅ DEKLARASJONENE.  CALLER INITIERING OG LESER 1. RECORD. */ 00001290
+ /*------------------------------------------------------------------*/ 00001300
+                                                                        00001310
+          ON KEY(TRKFIL)                                                00001320
+             BEGIN;                                                     00001330
+                IF ONCODE ^= 0 THEN                                     00001340
+                   DO;                                                  00001350
+                      PUT EDIT ('FEIL MED TRKFIL: ONCODE = ',ONCODE,    00001360
+                                'TRYGDEKONTORNR: ',ETTERLATTEREC.TKNR)  00001370
+                               (PAGE,COL(5),A,P'99',COL(40),A,P'9999'); 00001380
+                      TELLER_VSAM_FEIL = TELLER_VSAM_FEIL + 1;          00001390
+                      IF TELLER_VSAM_FEIL > 5 THEN                      00001400
+                         DO;                                            00001410
+                            PUT EDIT ('ALVORLIG FEIL MED TRKFIL.  ',    00001420
+                                      'PROGRAMMET AVBRYTES.')           00001430
+                                     (PAGE,COL(5),A,A);                 00001440
+                            STOP;                                       00001450
+                         END;                                           00001460
+                   END;                                                 00001470
+             END;                                                       00001480
+                                                                        00001490
+          ON KEY(GFIL)                                                  00001500
+             BEGIN;                                                     00001510
+                PUT EDIT ('FEIL VED INITIERING AV GRUNNBELØPSTABELL.',  00001520
+                          ' ONCODE = ',ONCODE)                          00001530
+                         (PAGE,COL(5),A,A,P'99');                       00001540
+                PUT EDIT ('PROGRAMMET AVBRYTES.')                       00001550
+                         (SKIP(1),COL(5),A);                            00001560
+                STOP;                                                   00001570
+             END;                                                       00001580
+                                                                        00001590
+          ON ERROR BEGIN;                                               00001600
+             ON ERROR SYSTEM;                                           00001610
+             PUT EDIT ('FEIL HAR OPPSTÅTT !!!!! ONCODE = ',ONCODE)      00001620
+                      (A,A(4));                                         00001630
+          END;                                                          00001640
+                                                                        00001650
+          ON ENDFILE (OMRNULL) EOF = '1'B;                              00001660
+          ON ENDFILE (TRKFIL) EOF_TRKFIL = '1'B;                        00001670
+                                                                        00001680
+          CALL P005_INITIERING;                                         00001690
+                                                                        00001700
+          READ FILE (OMRNULL) INTO (ETTERLATTEREC);                     00001710
+                                                                        00001720
+                                                                        00001730
+ /* TEST FOR Å UNNGÅ DUMMY-RECORD                                    */ 00001740
+                                                                        00001750
+          IF ETTERLATTEREC.FNR = 99999999999 THEN                       00001760
+             READ FILE (OMRNULL) INTO (ETTERLATTEREC);                  00001770
+ %SKIP(2);                                                              00001780
+ /*------------------------------------------------------------------*/ 00001790
+ /* SJEKKER OM TKNR ER LIKT FORRIGE TKNR OG KALLER EVT PROSEDYREN    */ 00001800
+ /* SOM FINNER TRYGDEKONTOROPPLYSNINGER.                             */ 00001810
+ /* FINNER UT OM NYNORSKTEKST ELLER BOKMÅLSTEKST SKAL SKRIVES OG     */ 00001820
+ /* KALLER PROCEDYRENE SOM GJØR DETTE. LESER NESTE RECORD.           */ 00001830
+ /*------------------------------------------------------------------*/ 00001840
+ L100:    DO WHILE (^EOF );                                             00001850
+             W01_TKNR = ETTERLATTEREC.TKNR;                             00001860
+             TELLER_LEST = TELLER_LEST + 1;                             00001870
+             IF W01_TKNR > W01_FORRIGE_TKNR THEN                        00001880
+                DO;                                                     00001890
+                   TKNR_FUNNET = '0'B;                                  00001900
+                   CALL P030_FINN_TRYGDEKOPPL;                          00001910
+                END;                                                    00001920
+             ELSE                                                       00001930
+                IF W01_TKNR <  W01_FORRIGE_TKNR THEN                    00001940
+                   DO;                                                  00001950
+                      PUT EDIT ('R0019H80: PROGRAMMET AVBRYTES.',       00001960
+                                'TRYGDEKONTORNUMMER UTE AV SEKVENS')    00001970
+                               (PAGE,COL(5),A,COL(40),A);               00001980
+                      PUT EDIT (FNR,ETTERLATTEREC.TKNR)                 00001990
+                               (SKIP(1),COL(5),                         00002000
+                                P'999999B999B99',                       00002010
+                                COL(39),F(5));                          00002020
+                      LEAVE L100;                                       00002030
+                   END;                                                 00002040
+             IF TKNR_FUNNET THEN                                        00002050
+                DO;                                                     00002060
+                   ETTERLATTEREC.INNT_GRENSE =                          00002070
+                                  ETTERLATTEREC.INNT_GRENSE / 100;      00002080
+                   ETTERLATTEREC.INNT_GRENSE =                          00002090
+                                  ETTERLATTEREC.INNT_GRENSE * 100;      00002100
+                                                                        00002110
+                   /* ******************************************* */    00002120
+                   /* FINN ADRESSEN VED OPPSLAG I FOLKEREGISTERET */    00002130
+                   /* FDATO Må SNUS TIL FORMAT ÅÅMMDD FOR Å       */    00002140
+                   /* BRUKES SOM NØKKEL I FOLKEREGISTERET.        */    00002150
+                   /* ******************************************* */    00002160
+                                                                        00002170
+                   W01_SNU_FNR     = ETTERLATTEREC.FNR;                 00002180
+                                                                        00002190
+                   W01_HJELPE_FELT = W01_FNR_DAG;                       00002200
+                   W01_FNR_DAG     = W01_FNR_ÅR;                        00002210
+                   W01_FNR_ÅR      = W01_HJELPE_FELT;                   00002220
+                                                                        00002230
+                   KEY_FNR         = W01_SNU_FNR;                       00002240
+                                                                        00002250
+                   CALL PLITDLI (FIRE,                                  00002260
+                                 GU,                                    00002270
+                                 FR1_PCB,                               00002280
+                                 FR0PERSN,                              00002290
+                                 FR1_SSA);                              00002300
+                                                                        00002310
+                   IF FR1_PCB.STATUS_KODE = '  ' THEN                   00002320
+                      W02_ADR4_CHAR = FR_ADR4;                          00002330
+                   ELSE                                                 00002340
+                      IF FR1_PCB.STATUS_KODE = 'GE' THEN                00002350
+                         DO;                                            00002360
+                            FR_ADR1 = (25)' ';                          00002370
+                            FR_ADR2 = (25)' ';                          00002380
+                            W02_ADR4_CHAR = (21)' ';                    00002390
+                            PUT EDIT ('IKKE FUNNET FOLKEREG: ',         00002400
+                                       ETTERLATTEREC.FNR)               00002410
+                                     (SKIP(1),COL(5),A,                 00002420
+                                      COL(39),P'(11)9');                00002430
+                         END;                                           00002440
+                       ELSE                                             00002450
+                         DO;                                            00002460
+                            EOF = '1'B;                                 00002470
+                            PUT EDIT ('R0019H80: PROGRAMMET AVBRYTES.', 00002480
+                                      'FEIL V DATABASEN.')              00002490
+                                     (PAGE,COL(5),A,COL(40),A);         00002500
+                            PUT EDIT ('STATUSCODE = ',                  00002510
+                                       FR1_PCB.STATUS_KODE)             00002520
+                                     (SKIP(1),COL(5),A,                 00002530
+                                      COL(39),A);                       00002540
+                         END;                                           00002550
+                                                                        00002560
+                   SELECT (SPROG);                                      00002570
+                      WHEN ('B')                                        00002580
+                         DO;                                            00002590
+                            CALL P010_SKRIV_BOKMALSTEKST;               00002600
+   /* 181187 BF */          CALL P010_SKRIV_BOKMALSTEKST;               00002610
+   /* 181187 BF */          TELLER_SKREVET = TELLER_SKREVET + 1;        00002620
+                         END;                                           00002630
+                      WHEN ('N')                                        00002640
+                         DO;                                            00002650
+                            CALL P020_SKRIV_NYNORSKTEKST;               00002660
+   /* 181187 BF */          CALL P020_SKRIV_NYNORSKTEKST;               00002670
+   /* 181187 BF */          TELLER_SKREVET = TELLER_SKREVET + 1;        00002680
+                         END;                                           00002690
+                      WHEN (' ')                                        00002700
+                         DO;                                            00002710
+                            IF TKNRTAB.TKSPRÅK = 'N' THEN               00002720
+                               DO;                                      00002730
+                                  CALL P020_SKRIV_NYNORSKTEKST;         00002740
+   /* 181187 BF */                CALL P020_SKRIV_NYNORSKTEKST;         00002750
+                               END;                                     00002760
+                            ELSE                                        00002770
+                               DO;                                      00002780
+                                  CALL P010_SKRIV_BOKMALSTEKST;         00002790
+   /* 181187 BF */                CALL P010_SKRIV_BOKMALSTEKST;         00002800
+                               END;                                     00002810
+   /* 181187 BF */          TELLER_SKREVET = TELLER_SKREVET + 1;        00002820
+                         END;                                           00002830
+                      OTHERWISE                                         00002840
+                         DO;                                            00002850
+                            EOF = '1'B;                                 00002860
+                            PUT EDIT ('R0019H80: PROGRAMMET AVBRYTES.', 00002870
+                                      'FEIL SPRÅKKODE.')                00002880
+                                     (PAGE,COL(5),A,COL(40),A);         00002890
+                            PUT EDIT (SPROG,FNR,ETTERLATTEREC.TKNR)     00002900
+                                     (SKIP(1),COL(5),A,                 00002910
+                                      COL(10),P'999999B999B99',         00002920
+                                      COL(39),F(5));                    00002930
+                         END;                                           00002940
+                   END;                                                 00002950
+                END;                                                    00002960
+             ELSE                                                       00002970
+                DO;                                                     00002980
+                   PUT EDIT ('FEIL TRYGDEKONTORNUMMER.')                00002990
+                            (PAGE,COL(5),A);                            00003000
+                   PUT EDIT (ETTERLATTEREC.TKNR,FNR)                    00003010
+                            (COL(39),F(5),COL(50),P'999999B999B99');    00003020
+                END;                                                    00003030
+             READ FILE (OMRNULL) INTO (ETTERLATTEREC);                  00003040
+          END L100;                                                     00003050
+                                                                        00003060
+          PUT EDIT ('ANTALL RECORDS LEST: ', TELLER_LEST)               00003070
+                   (PAGE, COL(5),A(21),F(6));                           00003080
+          PUT EDIT ('ANTALL BREV SKREVET: ', TELLER_SKREVET)            00003090
+                   (SKIP, COL(5),A(21),F(6));                           00003100
+                                                                        00003110
+          CLOSE FILE (OMRNULL);                                         00003120
+          CLOSE FILE (TRKFIL);                                          00003130
+          CLOSE FILE (BREV);                                            00003140
+          SIGNAL FINISH;                                                00003150
+                                                                        00003160
+ %PAGE;                                                                 00003170
+ P005_INITIERING: PROC;                                                 00003180
+ /*------------------------------------------------------------------*/ 00003190
+ /*  INITIERER DATO OG FINNER AKTUELT GRUNNBELØP OG G-ENDRINGSDATO.  */ 00003200
+ /*  ÅPNER FILER.                                                    */ 00003210
+ /*------------------------------------------------------------------*/ 00003220
+          W01_DATO_ÅMD = DATE;                                          00003230
+                                                                        00003240
+          OPEN FILE(GFIL);                                              00003250
+          READ FILE (GFIL) INTO (W01_IO) KEY (W01_GKEY);                00003260
+          CLOSE FILE(GFIL);                                             00003270
+                                                                        00003280
+          G_PEKER = ADDR(REST);                                         00003290
+                                                                        00003300
+          DO I = 1 TO 60 WHILE (G_TAB_PERIODE(I).GRUNNBELØP < 99999);   00003310
+          END;                                                          00003320
+          I = I - 1;                                                    00003330
+                                                                        00003340
+          W01_G_ENDR_DATO_ÅMD = G_TAB_PERIODE(I).PERIODE_START_ÅMD;     00003350
+          W01_G               = G_TAB_PERIODE(I).GRUNNBELØP;            00003360
+                                                                        00003370
+          OPEN FILE (OMRNULL);                                          00003380
+          OPEN FILE (TRKFIL);                                           00003390
+          OPEN FILE (BREV) PAGESIZE(60);                                00003400
+                                                                        00003410
+     END P005_INITIERING;                                               00003420
+                                                                        00003430
+ %PAGE;                                                                 00003440
+ P010_SKRIV_BOKMALSTEKST: PROC;                                         00003450
+ /*------------------------------------------------------------------*/ 00003460
+ /* SKRIVER BREV MED BOKMÅLSTEKST.                                   */ 00003470
+ /*------------------------------------------------------------------*/ 00003480
+          PUT FILE (BREV) EDIT (' ') (PAGE,COL(5),A(1));                00003490
+          PUT FILE (BREV) EDIT ('FOLKETRYGDEN') (SKIP(3),COL(8),A(12)); 00003500
+          PUT FILE (BREV) EDIT ('DATO  ',W01_DAG,'.',W01_MND,'.',       00003510
+                                W01_AAR)                                00003520
+                               (COL(54),A(6),A(2),A(1),A(2),A(1),A(2)); 00003530
+          PUT FILE (BREV) EDIT ('FØDSELSNUMMER')                        00003540
+                               (SKIP(7),COL(54),A(13));                 00003550
+          PUT FILE (BREV) EDIT (NAVN) (SKIP(1),COL(8),A(25));           00003560
+          PUT FILE (BREV) EDIT (FNR) (COL(54),P'999999B999B99');        00003570
+          PUT FILE (BREV) EDIT (FR_ADR1)                                00003580
+                               (SKIP(1),COL(8),A(25));                  00003590
+          PUT FILE (BREV) EDIT (FR_ADR2)                                00003600
+                               (SKIP(1),COL(8),A(25));                  00003610
+          PUT FILE (BREV) EDIT ('TRYGDEKONTOR')                         00003620
+                               (COL(54),A(12));                         00003630
+          PUT FILE (BREV) EDIT (TKNRTAB.TKNAVN)                         00003640
+                               (SKIP(1),COL(54),A(25));                 00003650
+          PUT FILE (BREV) EDIT (POSTNR,'  ',POSTSTED)                   00003660
+                               (SKIP(1),COL(8),A(4),A(2),A(16));        00003670
+          PUT FILE (BREV) EDIT ('TRYGDEKONTORNUMMER')                   00003680
+                               (SKIP(1),COL(54),A(18));                 00003690
+          PUT FILE (BREV) EDIT (TKNRTAB.TKNR) (SKIP(1),COL(54),A(4));   00003700
+          PUT FILE (BREV) EDIT ('DE FÅR FOR TIDEN IKKE UTBETALT ETTER', 00003710
+                                'LATTEPENSJON.  DETTE SKYLDES AT')      00003720
+                               (SKIP(6),COL(8),A(36),A(31));            00003730
+          PUT FILE (BREV) EDIT ('ETTERLATTEPENSJONEN REDUSERES PÅ GRU', 00003740
+                                'NN AV EGEN ARBEIDSINNTEKT ETTER')      00003750
+                               (SKIP(1),COL(8),A(36),A(31));            00003760
+          PUT FILE (BREV) EDIT ('BESTEMTE REGLER.')                     00003770
+                               (SKIP(1),COL(8),A(16));                  00003780
+          PUT FILE (BREV) EDIT ('I DETTE BREVET TAR VI SIKTE PÅ Å GI ', 00003790
+                                'INFORMASJON SLIK AT DE SELV KAN')      00003800
+                               (SKIP(2),COL(8),A(36),A(31));            00003810
+          PUT FILE (BREV) EDIT ('KONTROLLERE OM DE NÅ HAR RETT TIL Å ', 00003820
+                                'FÅ UTBETALT PENSJON:')                 00003830
+                               (SKIP(1),COL(8),A(36),A(20));            00003840
+          PUT FILE (BREV) EDIT ('FOLKETRYGDENS GRUNNBELØP ER FORHØYET', 00003850
+                                ' TIL KR. ',W01_G)                      00003860
+                               (SKIP(2),COL(8),A(36),A(9),P'99B999');   00003870
+          PUT FILE (BREV) EDIT (' FRA 01.',W01_G_ENDR_MND,'.',          00003880
+                                W01_G_ENDR_AAR,'.  FRA')                00003890
+                               (COL(59),A(8),A(2),A(1),A(2),A(6));      00003900
+          PUT FILE (BREV) EDIT ('SAMME DATO ER DERES BRUTTO ETTERLATT', 00003910
+                                'EPENSJON FORHØYET.  DETTE INNE-')      00003920
+                               (SKIP(1),COL(8),A(36),A(31));            00003930
+          PUT FILE (BREV) EDIT ('BÆRER AT DE KAN HA RETT TIL Å FÅ ',    00003940
+                                'UTBETALT PENSJON DERSOM DERES')        00003950
+                               (SKIP(1),COL(8),A(33),A(29));            00003960
+          PUT FILE (BREV) EDIT ('FAKTISKE ARBEIDSINNTEKT (MEDREGNET ',  00003970
+                                ' OVERTIDSGODTGJØRELSE OG EVENTUELLE')  00003980
+                               (SKIP(1),COL(8),A(35),A(35));            00003990
+          PUT FILE (BREV) EDIT ('ANDRE TILLEGG) ER LAVERE ENN ')        00004000
+                               (SKIP(1),COL(8),A(29));                  00004010
+          PUT FILE (BREV) EDIT (INNT_GRENSE,' KRONER PR. ÅR.  DE MÅ ',  00004020
+                                'I SÅ FALL')                            00004030
+                               (COL(37),P'ZZZBZZ9',A(23),A(9));         00004040
+          PUT FILE (BREV) EDIT ('MELDE FRA TIL TRYGDEKONTORET OM ',     00004050
+                                'DERES NÅVÆRENDE ARBEIDSINNTEKT.')      00004060
+                               (SKIP(1),COL(8),A(32),A(31));            00004070
+          PUT FILE (BREV) EDIT ('ETTERLATTEPENSJON REDUSERES ETTER FO', 00004080
+                                'RVENTET ÅRLIG ARBEIDSINNTEKT PÅ')      00004090
+                               (SKIP(2),COL(8),A(36),A(31));            00004100
+          PUT FILE (BREV) EDIT ('FØLGENDE MÅTE:')                       00004110
+                               (SKIP(1),COL(8),A(14));                  00004120
+          PUT FILE (BREV) EDIT ('SAMLET ÅRLIG ARBEIDSINNTEKT (PENSJON', 00004130
+                                'SGIVENDE INNTEKT)')                    00004140
+                               (SKIP(2),COL(8),A(36),A(17));            00004150
+          PUT FILE (BREV) EDIT ('-"FRIBELØP"  (HALVPARTEN AV ',         00004160
+                                'FOLKETRYGDENS GRUNNBELØP)')            00004170
+                               (SKIP(1),COL(8),A(28),A(25));            00004180
+          PUT FILE (BREV) EDIT ('= "NETTO ÅRLIG ARBEIDSINNTEKT"')       00004190
+                               (SKIP(2),COL(8),A(30));                  00004200
+          PUT FILE (BREV) EDIT ('FRADRAGET I ETTERLATTEPENSJONEN UTGJ', 00004210
+                                'ØR SÅ 40 PROSENT AV "NETTO ÅRLIG')     00004220
+                               (SKIP(2),COL(8),A(36),A(32));            00004230
+          PUT FILE (BREV) EDIT ('ARBEIDSINNTEKT".')                     00004240
+                               (SKIP(1),COL(8),A(16));                  00004250
+          PUT FILE (BREV) EDIT ('DERSOM DERES BRUTTO ETTERLATTEPENSJO', 00004260
+                                'N (GRUNNPENSJON + TILLEGGSPENSJON)')   00004270
+                               (SKIP(2),COL(8),A(36),A(34));            00004280
+          PUT FILE (BREV) EDIT ('ER HØYERE ENN FRADRAGET SOM ER BEREG', 00004290
+                                'NET, HAR DE RETT TIL Å FÅ UTBE-')      00004300
+                               (SKIP(1),COL(8),A(36),A(31));            00004310
+          PUT FILE (BREV) EDIT ('TALT DET OVERSKYTENDE, ',              00004320
+                                'MED FRADRAG FOR SKATT.')               00004330
+                               (SKIP(1),COL(8),A(23),A(22));            00004340
+          PUT FILE (BREV) EDIT ('MED HILSEN')                           00004350
+                               (SKIP(5),COL(38),A(10));                 00004360
+          PUT FILE (BREV) EDIT ('TRYGDEKONTORET')                       00004370
+                               (SKIP(3),COL(36),A(14));                 00004380
+                                                                        00004390
+     END P010_SKRIV_BOKMALSTEKST;                                       00004400
+ %PAGE;                                                                 00004410
+ /*------------------------------------------------------------------*/ 00004420
+ /* SKRIVER BREV MED NYNORSKTEKST.                                   */ 00004430
+ /*------------------------------------------------------------------*/ 00004440
+ P020_SKRIV_NYNORSKTEKST: PROCEDURE;                                    00004450
+                                                                        00004460
+          PUT FILE (BREV) EDIT (' ') (PAGE,COL(5),A(1));                00004470
+          PUT FILE (BREV) EDIT ('FOLKETRYGDA') (SKIP(3),COL(8),A(11));  00004480
+          PUT FILE (BREV) EDIT ('DATO  ',W01_DAG,'.',W01_MND,'.',       00004490
+                                W01_AAR)                                00004500
+                               (COL(54),A(6),A(2),A(1),A(2),A(1),A(2)); 00004510
+          PUT FILE (BREV) EDIT ('FØDSELSNUMMER')                        00004520
+                               (SKIP(7),COL(54),A(13));                 00004530
+          PUT FILE (BREV) EDIT (NAVN) (SKIP(1),COL(8),A(25));           00004540
+          PUT FILE (BREV) EDIT (FNR) (COL(54),P'999999B999B99');        00004550
+          PUT FILE (BREV) EDIT (FR_ADR1)                                00004560
+                               (SKIP(1),COL(8),A(25));                  00004570
+          PUT FILE (BREV) EDIT (FR_ADR2)                                00004580
+                               (SKIP(1),COL(8),A(25));                  00004590
+          PUT FILE (BREV) EDIT ('TRYGDEKONTOR')                         00004600
+                               (COL(54),A(12));                         00004610
+          PUT FILE (BREV) EDIT (TKNRTAB.TKNAVN)                         00004620
+                               (SKIP(1),COL(54),A(25));                 00004630
+          PUT FILE (BREV) EDIT (POSTNR,'  ',POSTSTED)                   00004640
+                               (SKIP(1),COL(8),A(4),A(2),A(16));        00004650
+          PUT FILE (BREV) EDIT ('TRYGDEKONTORNUMMER')                   00004660
+                               (SKIP(1),COL(54),A(18));                 00004670
+          PUT FILE (BREV) EDIT (TKNRTAB.TKNR) (SKIP(1),COL(54),A(4));   00004680
+          PUT FILE (BREV) EDIT ('DE FÅR FOR TIDA IKKJE UTBETALT ATTLE', 00004690
+                                'VANDEPENSJON.  DETTE KJEM AV AT')      00004700
+                               (SKIP(6),COL(8),A(36),A(31));            00004710
+          PUT FILE (BREV) EDIT ('ATTLEVANDEPENSJON BLIR REDUSERT ETTE', 00004720
+                                'R VISSE REGLAR NÅR EIN HAR EIGA')      00004730
+                               (SKIP(1),COL(8),A(36),A(31));            00004740
+          PUT FILE (BREV) EDIT ('ARBEIDSINNTEKT.')                      00004750
+                               (SKIP(1),COL(8),A(15));                  00004760
+          PUT FILE (BREV) EDIT ('VI VIL I DETTE BREVET GI DYKK INFORM', 00004770
+                                'ASJON SLIK AT DE SJØLV KAN')           00004780
+                               (SKIP(2),COL(8),A(36),A(26));            00004790
+          PUT FILE (BREV) EDIT ('KONTROLLERE OM DE NO HAR RETT TIL Å ', 00004800
+                                'FÅ UTBETALT PENSJON:')                 00004810
+                               (SKIP(1),COL(8),A(36),A(20));            00004820
+          PUT FILE (BREV) EDIT ('GRUNNBELØPET I FOLKETRYGDA ER AUKA',   00004830
+                                ' TIL KR. ',W01_G)                      00004840
+                               (SKIP(2),COL(8),A(34),A(9),P'99B999');   00004850
+          PUT FILE (BREV) EDIT (' FRÅ 01.',W01_G_ENDR_MND,'.',          00004860
+                                W01_G_ENDR_AAR,'.  FRÅ')                00004870
+                               (COL(58),A(8),P'99',A(1),P'99',A(6));    00004880
+          PUT FILE (BREV) EDIT ('SAME DATO ER DYKKAR BRUTTO ATTLEVAND', 00004890
+                                'EPENSJON AUKA.  DETTE FØRER TIL')      00004900
+                               (SKIP(1),COL(8),A(36),A(31));            00004910
+          PUT FILE (BREV) EDIT ('AT DE KAN HA RETT TIL Å FÅ UTBETA',    00004920
+                                'LT PENSJON DERSOM DEN FAKTISKE')       00004930
+                               (SKIP(1),COL(8),A(33),A(30));            00004940
+          PUT FILE (BREV) EDIT ('ARBEIDSINNTEKTA DYKKAR (MEDREKNA ',    00004950
+                                ' OVERTIDSGODTGJERSLE OG EVENTUELLE')   00004960
+                               (SKIP(1),COL(8),A(33),A(34));            00004970
+          PUT FILE (BREV) EDIT ('ANDRE TILLEGG) ER LÅGARE ENN KR. ')    00004980
+                               (SKIP(1),COL(8),A(33));                  00004990
+          PUT FILE (BREV) EDIT (INNT_GRENSE,' PR. ÅR.  DERSOM ARBEIDS', 00005000
+                                'INN-')                                 00005010
+                               (COL(41),P'ZZZBZZ9',A(24),A(4));         00005020
+          PUT FILE (BREV) EDIT ('TEKTA DYKKAR NO ER LÅGARE ENN DETTE,', 00005030
+                                ' MÅ DE MELDE FRÅ TIL TRYGDE-')         00005040
+                               (SKIP(1),COL(8),A(36),A(28));            00005050
+          PUT FILE (BREV) EDIT ('KONTORET.')                            00005060
+                               (SKIP(1),COL(8),A(9));                   00005070
+          PUT FILE (BREV) EDIT ('ATTLEVANDEPENSJON BLIR REDUSERT ETTE', 00005080
+                                'R VENTA ÅRLEG ARBEIDSINNTEKT PÅ')      00005090
+                               (SKIP(2),COL(8),A(36),A(31));            00005100
+          PUT FILE (BREV) EDIT ('DENNE MÅTEN:')                         00005110
+                               (SKIP(1),COL(8),A(12));                  00005120
+          PUT FILE (BREV) EDIT ('SAMLA ÅRLEG ARBEIDSINNTEKT (PENSJON',  00005130
+                                'SGIVANDE INNTEKT)')                    00005140
+                               (SKIP(2),COL(8),A(35),A(17));            00005150
+          PUT FILE (BREV) EDIT ('- "FRIBELØP"  (HALVPARTEN AV ',        00005160
+                                'GRUNNBELØPET I FOLKETRYGDA)')          00005170
+                               (SKIP(1),COL(8),A(29),A(27));            00005180
+          PUT FILE (BREV) EDIT ('= "NETTO ÅRLEG ARBEIDSINNTEKT"')       00005190
+                               (SKIP(2),COL(8),A(30));                  00005200
+          PUT FILE (BREV) EDIT ('40 PROSENT AV "NETTO ÅRLEG ARBEIDSIN', 00005210
+                                'NTEKT" BLIR SÅ TREKT FRÅ BRUTTO')      00005220
+                               (SKIP(2),COL(8),A(36),A(31));            00005230
+          PUT FILE (BREV) EDIT ('ATTLEVANDEPENSJON.')                   00005240
+                               (SKIP(1),COL(8),A(18));                  00005250
+          PUT FILE (BREV) EDIT ('DERSOM DYKKAR BRUTTO ATTLEVANDEPENSJ', 00005260
+                                'ON (GRUNNPENSJON + TILLEGGS-')         00005270
+                               (SKIP(2),COL(8),A(36),A(28));            00005280
+          PUT FILE (BREV) EDIT ('PENSJON) ER HØGARE ENN DET FRÅDRAGET', 00005290
+                                ' SOM ER UTREKNA, HAR DE RETT TIL')     00005300
+                               (SKIP(1),COL(8),A(36),A(32));            00005310
+          PUT FILE (BREV) EDIT ('Å FÅ UTBETALT DET OVERSKYTANDE ',      00005320
+                                'FRÅTREKT SKATT.')                      00005330
+                               (SKIP(1),COL(8),A(31),A(15));            00005340
+          PUT FILE (BREV) EDIT ('MED HELSING')                          00005350
+                               (SKIP(5),COL(38),A(11));                 00005360
+          PUT FILE (BREV) EDIT ('TRYGDEKONTORET')                       00005370
+                               (SKIP(3),COL(36),A(14));                 00005380
+                                                                        00005390
+     END P020_SKRIV_NYNORSKTEKST;                                       00005400
+ %PAGE;                                                                 00005410
+ /*------------------------------------------------------------------*/ 00005420
+ /* FINNER NAVNET TIL TRYGDEKONTORET FRA FIL MED TRYGDEKONTOROPPL.   */ 00005430
+ /*------------------------------------------------------------------*/ 00005440
+ P030_FINN_TRYGDEKOPPL: PROCEDURE;                                      00005450
+          TELLER_VSAM_FEIL = 0;                                         00005460
+          READ FILE (TRKFIL) INTO (TKNRTAB);                            00005470
+ L200:    DO WHILE ( (TKNRTAB.TKNR ^> W01_TKNR) &                       00005480
+                     (^EOF_TRKFIL));                                    00005490
+             IF TKNRTAB.TKNR = W01_TKNR THEN                            00005500
+                DO;                                                     00005510
+                   TKNR_FUNNET = '1'B;                                  00005520
+                   LEAVE L200;                                          00005530
+                END;                                                    00005540
+             READ FILE (TRKFIL) INTO (TKNRTAB);                         00005550
+          END L200;                                                     00005560
+          W01_FORRIGE_TKNR = TKNRTAB.TKNR;                              00005570
+     END P030_FINN_TRYGDEKOPPL;                                         00005580
+                                                                        00005590
+                                                                        00005600
+                                                                        00005610
+ END R0019H8;                                                           00005620
